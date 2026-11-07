@@ -1,0 +1,21 @@
+{
+  "name": "@egress/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The only backend surface the UI uses: EgressClient interface, mock and SpacetimeDB implementations, React hooks.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.ts"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@egress/core": "0.1.0",
+    "@egress/sim": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  }
+}

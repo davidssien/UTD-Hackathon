@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/*.test.ts"
+    "test": "node --test tests/*.test.ts",
+    "test:backend": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\"",
+    "typecheck:backend": "tsc -p packages/core && tsc -p packages/sim && tsc -p packages/client && tsc -p services/runner"
   },
   "dependencies": {
     "lucide-react": "^1.70.0",
@@ -26,5 +28,9 @@
     "eslint-config-next": "16.4.5",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ]
 }
