@@ -494,7 +494,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 **Goal:** nothing works end-to-end yet, but every boundary exists, compiles, and is frozen, so both lanes can build in parallel.
 
-- [ ] **0.1 Workspaces:**
+- [x] **0.1 Workspaces:**
   - Root `package.json` gets `workspaces`.
   - `tsconfig.base.json`: strict, `erasableSyntaxOnly`, `allowImportingTsExtensions`, `noEmit`.
   - Package skeletons with `exports` → `src/index.ts`.
@@ -505,16 +505,16 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - Install the `spacetime` CLI (`iwr https://windows.spacetimedb.com -useb | iex`).
   - *Human:* `spacetime login`.
   - Scaffold the TS module in `spacetimedb/`.
-- [ ] **0.3 `@egress/core`:**
+- [x] **0.3 `@egress/core`:**
   - All §4 types plus Zod mirrors, and `DomainError`.
   - Canonical JSON and `layoutHash`.
   - The frame codec, with round-trip tests.
   - `applyEdit` with `createWallChain`, `createBox` and `deleteEntities` working. Everything else returns `NOT_IMPLEMENTED`.
-- [ ] **0.4 Fixtures:**
+- [x] **0.4 Fixtures:**
   - `content/scenes/one-room.json`: a 10 × 8 m room with one 0.9 m exit.
   - `content/scenes/two-rooms-corridor.json`: two rooms feeding a 1.2 m corridor to one exit, a deliberate bottleneck.
   - A test checks both parse and pass diagnostics.
-- [ ] **0.5 Module:**
+- [ ] **0.5 Module:** (code written and typechecked; publish + codegen wait on the CLI)
   - All §5 tables, `sessions`, and the views.
   - Reducers stubbed, with their auth checks.
   - Publish `egress-dev` to Maincloud.
@@ -528,15 +528,15 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   Fallbacks:
   - If (a) fails, use authorized procedures such as `getReplayChunks(runId, fromIndex)`.
   - If (b) fails, keep the module's validation self-contained.
-- [ ] **0.7 Runner skeleton:**
+- [ ] **0.7 Runner skeleton:** (config, Nemotron client and spike script done; connection waits on bindings)
   - Create and store a token, connect, and print the identity.
   - Add the identity constant to the module allowlist.
   - Subscribe to `runner_queue`.
-- [ ] **0.8 `@egress/client`:**
+- [x] **0.8 `@egress/client`:**
   - The interface.
   - `MockEgressClient`: uses `core.applyEdit` and plays a canned 20-second run of actors walking to the exit.
   - The React hooks.
-- [ ] **0.9 `/dev` shell:**
+- [x] **0.9 `/dev` shell:** (Edit tools work against the mock)
   - Mode tabs.
   - Toolbar placeholders per mode.
   - A 2D canvas rendering a fixture through the mock.
@@ -740,3 +740,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D18 | 11-07 | The original contracts file is reference only; this plan supersedes it. |
 | D19 | 11-07 | New entity IDs derive deterministically from `requestId` (`${requestId}.${n}`). Proposals are applied with `requestId = proposalId`, so the IDs match their ghost previews. |
 | D20 | 11-07 | The agent defaults to `nvidia/nemotron-3-super-120b-a12b`, with `nvidia/nemotron-3.5-lightning-30b-a3b` as fallback. |
+| D21 | 11-07 | **Runner identity:** the runner registers itself once with `register_service(secret)`. The module stores only the secret's SHA-256, and the secret lives in `services/runner/.env`. This replaces the hard-coded identity allowlist in §5, so the runner can move to another machine without a republish. |
+| D22 | 11-07 | **Views:** SpacetimeDB 2.14 supports view parameters on the server, but the client subscription syntax for them is unverified. We keep the `sessions`-scoped views, written as query-builder semijoins so they stay incremental. Runner views are procedural and gated on `service_identities`. |
+| D23 | 11-07 | **Toolchain findings:**<br>• Node type stripping works through npm-workspace symlinks, which resolves the §12 risk.<br>• Turbopack transpiles workspace packages automatically, so `next.config.ts` is unchanged.<br>• Binary columns use `t.byteArray()`.<br>• The root `tsconfig.json` excludes `spacetimedb/`, `services/` and `docs/`. |
+| D24 | 11-07 | **Agent-started runs:** `start_agent_run` creates candidate and baseline runs already claimed by the runner. They use the normal chunk and result reducers, so they appear as ordinary runs. |
