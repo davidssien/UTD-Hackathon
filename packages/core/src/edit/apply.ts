@@ -13,7 +13,7 @@ import {
 } from '../document.ts';
 import { DomainError, type DomainErrorData } from '../errors.ts';
 import {
-  cross, distance, dot, MIN_WALL_LENGTH_M, normalize, segmentIntersection, sub, VERTEX_MERGE_M,
+  cross, distance, dot, MIN_WALL_LENGTH_M, normalize, OPENING_END_CLEARANCE_M, projectOnSegment, segmentIntersection, sub, VERTEX_MERGE_M,
 } from '../geometry.ts';
 import type { EditCommand, EgressDocument, Entity, Floor, ID, Opening, Vec2, Vertex, Wall, WallMaterial } from '../types.ts';
 
@@ -143,22 +143,121 @@ class Working {
     return id;
   }
 
-  addWall(floorId: ID, startVertexId: ID, endVertexId: ID, style: WallStyle): ID {
-    if (startVertexId === endVertexId) throw new DomainError('INVALID_GEOMETRY', 'Walls need two different endpoints.');
-    const a = this.position(startVertexId), b = this.position(endVertexId);
-    if (distance(a, b) < MIN_WALL_LENGTH_M - 1e-9) throw new DomainError('INVALID_GEOMETRY', `Walls must be at least ${MIN_WALL_LENGTH_M} m long.`);
+  /**
+   * Draw a wall from a to b. Stretches already covered by a collinear wall are
+   * reused rather than duplicated (D25), so boxes can share sides; the rest
+   * become new walls. Junctions are resolved afterwards by `planarize`.
+   */
+  addWallSpan(floorId: ID, a: Vec2, b: Vec2, style: WallStyle): void {
+    const len = distance(a, b);
+    const dir = normalize(sub(b, a));
+    const covered: [number, number][] = [];
     for (const w of this.walls.values()) {
       if (w.floorId !== floorId) continue;
-      const same = (w.startVertexId === startVertexId && w.endVertexId === endVertexId) || (w.startVertexId === endVertexId && w.endVertexId === startVertexId);
-      if (same) throw new DomainError('INVALID_GEOMETRY', 'A wall already exists here.', { wallId: w.id });
-      if (collinearOverlap(a, b, this.position(w.startVertexId), this.position(w.endVertexId))) {
-        throw new DomainError('INVALID_GEOMETRY', 'This wall would overlap an existing wall.', { wallId: w.id });
-      }
+      const c = this.position(w.startVertexId), d = this.position(w.endVertexId);
+      if (!collinear(a, dir, c) || !collinear(a, dir, d)) continue;
+      const tc = dot(sub(c, a), dir), td = dot(sub(d, a), dir);
+      const lo = Math.max(0, Math.min(tc, td)), hi = Math.min(len, Math.max(tc, td));
+      if (hi - lo > VERTEX_MERGE_M) covered.push([lo, hi]);
     }
-    // TODO(Pass 1): split walls at T-junctions and crossings so the graph stays planar.
+    covered.sort((p, q) => p[0] - q[0]);
+    let cursor = 0;
+    const at = (t: number) => ({ x: a.x + dir.x * t, y: a.y + dir.y * t });
+    for (const [lo, hi] of [...covered, [len, len] as [number, number]]) {
+      if (lo - cursor > VERTEX_MERGE_M) this.addWall(floorId, this.vertexAt(floorId, at(cursor)), this.vertexAt(floorId, at(lo)), style);
+      cursor = Math.max(cursor, hi);
+    }
+  }
+
+  addWall(floorId: ID, startVertexId: ID, endVertexId: ID, style: WallStyle): ID {
+    if (startVertexId === endVertexId) throw new DomainError('INVALID_GEOMETRY', 'Walls need two different endpoints.');
     const id = this.nextId();
     this.walls.set(id, { kind: 'wall', id, floorId, startVertexId, endVertexId, ...style });
     return id;
+  }
+
+  /**
+   * Keep the floor's wall graph planar (Plan.md §4): split walls wherever a
+   * vertex lies on a wall's interior (T-junction) or two walls cross.
+   */
+  planarize(floorId: ID): void {
+    for (let i = 0; i < 10_000; i++) if (!this.splitOnce(floorId)) return;
+    throw new DomainError('INTERNAL_ERROR', 'Wall graph did not settle while splitting intersections.');
+  }
+
+  private splitOnce(floorId: ID): boolean {
+    const walls = [...this.walls.values()].filter(w => w.floorId === floorId);
+    const vertices = [...this.vertices.values()].filter(v => v.floorId === floorId);
+    for (const w of walls) {
+      const a = this.position(w.startVertexId), b = this.position(w.endVertexId);
+      const len = distance(a, b);
+      for (const v of vertices) {
+        if (v.id === w.startVertexId || v.id === w.endVertexId) continue;
+        const hit = projectOnSegment(v.position, a, b);
+        const along = hit.t * len;
+        if (hit.distance <= VERTEX_MERGE_M && along > VERTEX_MERGE_M && len - along > VERTEX_MERGE_M) {
+          this.splitWall(w.id, v.id);
+          return true;
+        }
+      }
+    }
+    for (let i = 0; i < walls.length; i++) {
+      for (let j = i + 1; j < walls.length; j++) {
+        const w = walls[i], u = walls[j];
+        if (w.startVertexId === u.startVertexId || w.startVertexId === u.endVertexId || w.endVertexId === u.startVertexId || w.endVertexId === u.endVertexId) continue;
+        const a = this.position(w.startVertexId), b = this.position(w.endVertexId);
+        const c = this.position(u.startVertexId), d = this.position(u.endVertexId);
+        const hit = segmentIntersection(a, b, c, d);
+        if (!hit) continue;
+        const lw = distance(a, b), lu = distance(c, d);
+        const interior = (t: number, len: number) => t * len > VERTEX_MERGE_M && (1 - t) * len > VERTEX_MERGE_M;
+        if (!interior(hit.t, lw) || !interior(hit.u, lu)) continue; // endpoint touches are handled above
+        const vertexId = this.vertexAt(floorId, hit.point);
+        this.splitWall(w.id, vertexId);
+        this.splitWall(u.id, vertexId);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Split a wall at a vertex on it. The first piece keeps the id; openings move to the piece holding their center. */
+  splitWall(wallId: ID, vertexId: ID): void {
+    const w = this.wall(wallId);
+    const at = distance(this.position(w.startVertexId), this.position(vertexId));
+    for (const o of this.openings.values()) {
+      if (o.wallId !== w.id) continue;
+      const lo = o.offsetM - o.widthM / 2, hi = o.offsetM + o.widthM / 2;
+      if (lo < at + OPENING_END_CLEARANCE_M && hi > at - OPENING_END_CLEARANCE_M) {
+        throw new DomainError('INVALID_GEOMETRY', `Walls cannot meet inside or right next to a ${o.openingKind}.`, { openingId: o.id, wallId: w.id });
+      }
+    }
+    const second = this.nextId();
+    this.walls.set(w.id, { ...w, endVertexId: vertexId });
+    this.walls.set(second, { ...w, id: second, startVertexId: vertexId });
+    for (const o of [...this.openings.values()]) {
+      if (o.wallId === w.id && o.offsetM > at) this.openings.set(o.id, { ...o, wallId: second, offsetM: o.offsetM - at });
+    }
+  }
+
+  /** Merge vertex `from` into `into`: rewire walls, drop walls that collapse or duplicate. */
+  mergeVertex(from: ID, into: ID): void {
+    for (const w of [...this.walls.values()]) {
+      if (w.startVertexId !== from && w.endVertexId !== from) continue;
+      const start = w.startVertexId === from ? into : w.startVertexId;
+      const end = w.endVertexId === from ? into : w.endVertexId;
+      if (start === end) { this.deleteWall(w.id); continue; }
+      const twin = [...this.walls.values()].find(x => x.id !== w.id && ((x.startVertexId === start && x.endVertexId === end) || (x.startVertexId === end && x.endVertexId === start)));
+      if (twin) {
+        if ([...this.openings.values()].some(o => o.wallId === w.id)) {
+          throw new DomainError('INVALID_GEOMETRY', 'Merging these corners would stack a wall that has openings onto another wall.', { wallId: w.id });
+        }
+        this.deleteWall(w.id);
+        continue;
+      }
+      this.walls.set(w.id, { ...w, startVertexId: start, endVertexId: end });
+    }
+    this.vertices.delete(from);
   }
 
   deleteOpening(id: ID) {
@@ -209,15 +308,11 @@ class Working {
   }
 }
 
-function collinearOverlap(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
-  const dir = normalize(sub(b, a));
-  const off = (p: Vec2) => Math.abs(cross(dir, sub(p, a)));
-  if (off(c) > VERTEX_MERGE_M || off(d) > VERTEX_MERGE_M) return false;
-  const len = distance(a, b);
-  const tc = dot(sub(c, a), dir), td = dot(sub(d, a), dir);
-  const lo = Math.max(0, Math.min(tc, td)), hi = Math.min(len, Math.max(tc, td));
-  return hi - lo > VERTEX_MERGE_M;
-}
+/** Is p on the infinite line through a with unit direction dir? */
+const collinear = (a: Vec2, dir: Vec2, p: Vec2) => Math.abs(cross(dir, sub(p, a))) <= VERTEX_MERGE_M;
+
+/** Smallest wall piece a move may leave behind (splits can create pieces shorter than MIN_WALL_LENGTH_M). */
+const MIN_PIECE_M = 0.05;
 
 // ── Command handlers ────────────────────────────────────────────────────────
 
@@ -226,13 +321,13 @@ function apply(ws: Working, command: EditCommand): void {
     case 'createWallChain': {
       ws.floor(command.floorId);
       const style = { thicknessM: command.thicknessM, heightM: command.heightM, material: command.material };
-      const ids: ID[] = [];
-      for (const p of command.points) {
-        const id = ws.vertexAt(command.floorId, p);
-        if (ids[ids.length - 1] !== id) ids.push(id);
+      const points = command.points.filter((p, i) => i === 0 || distance(p, command.points[i - 1]) > VERTEX_MERGE_M);
+      if (points.length < 2) throw new DomainError('INVALID_GEOMETRY', `Walls must be at least ${MIN_WALL_LENGTH_M} m long.`);
+      for (let i = 1; i < points.length; i++) {
+        if (distance(points[i - 1], points[i]) < MIN_WALL_LENGTH_M - 1e-9) throw new DomainError('INVALID_GEOMETRY', `Walls must be at least ${MIN_WALL_LENGTH_M} m long.`);
       }
-      if (ids.length < 2) throw new DomainError('INVALID_GEOMETRY', `Walls must be at least ${MIN_WALL_LENGTH_M} m long.`);
-      for (let i = 1; i < ids.length; i++) ws.addWall(command.floorId, ids[i - 1], ids[i], style);
+      for (let i = 1; i < points.length; i++) ws.addWallSpan(command.floorId, points[i - 1], points[i], style);
+      ws.planarize(command.floorId);
       return;
     }
     case 'createBox': {
@@ -242,8 +337,9 @@ function apply(ws: Working, command: EditCommand): void {
       if (x1 - x0 < MIN_WALL_LENGTH_M || y1 - y0 < MIN_WALL_LENGTH_M) throw new DomainError('INVALID_GEOMETRY', `Boxes must be at least ${MIN_WALL_LENGTH_M} m on each side.`);
       const style = { thicknessM: command.thicknessM, heightM: command.heightM, material: command.material };
       // Counter-clockwise from the south-west corner.
-      const corners = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }].map(p => ws.vertexAt(command.floorId, p));
-      for (let i = 0; i < 4; i++) ws.addWall(command.floorId, corners[i], corners[(i + 1) % 4], style);
+      const corners = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+      for (let i = 0; i < 4; i++) ws.addWallSpan(command.floorId, corners[i], corners[(i + 1) % 4], style);
+      ws.planarize(command.floorId);
       return;
     }
     case 'eraseByLine': {
@@ -257,19 +353,19 @@ function apply(ws: Working, command: EditCommand): void {
     case 'moveVertex': {
       const v = ws.vertices.get(command.vertexId);
       if (!v) throw new DomainError('NOT_FOUND', `Vertex ${command.vertexId} does not exist.`);
-      for (const other of ws.vertices.values()) {
-        if (other.id !== v.id && other.floorId === v.floorId && distance(other.position, command.to) <= VERTEX_MERGE_M) {
-          // TODO(Pass 1): merge vertices instead of rejecting.
-          throw new DomainError('INVALID_GEOMETRY', 'Moving onto another corner is not supported yet.');
-        }
-      }
       ws.vertices.set(v.id, { ...v, position: { x: command.to.x, y: command.to.y } });
-      for (const w of ws.walls.values()) {
-        if (w.startVertexId !== v.id && w.endVertexId !== v.id) continue;
-        if (distance(ws.position(w.startVertexId), ws.position(w.endVertexId)) < MIN_WALL_LENGTH_M - 1e-9) {
-          throw new DomainError('INVALID_GEOMETRY', `Walls must be at least ${MIN_WALL_LENGTH_M} m long.`, { wallId: w.id });
+      const target = [...ws.vertices.values()].find(o => o.id !== v.id && o.floorId === v.floorId && distance(o.position, command.to) <= VERTEX_MERGE_M);
+      if (target) {
+        ws.mergeVertex(v.id, target.id);
+      } else {
+        for (const w of ws.walls.values()) {
+          if (w.startVertexId !== v.id && w.endVertexId !== v.id) continue;
+          if (distance(ws.position(w.startVertexId), ws.position(w.endVertexId)) < MIN_PIECE_M) {
+            throw new DomainError('INVALID_GEOMETRY', 'That move would shrink a wall to nothing.', { wallId: w.id });
+          }
         }
       }
+      ws.planarize(v.floorId);
       return;
     }
     case 'updateWall': {

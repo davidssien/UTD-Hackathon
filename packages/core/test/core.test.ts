@@ -42,18 +42,65 @@ test('wall chain reuses an existing vertex within 1 mm', () => {
   assert.equal(two.doc.vertices.length, 3);
 });
 
-test('rejects short, duplicate and overlapping walls without changing the document', () => {
+test('rejects walls shorter than 0.5 m', () => {
+  const r = applyEdit(base(), { requestId: 'x', commands: [{ kind: 'createWallChain', floorId: 'f0', points: [{ x: 1, y: 1 }, { x: 1.2, y: 1 }], ...style }] });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.error.code, 'INVALID_GEOMETRY');
+});
+
+test('redrawing an existing wall is a no-op; a partly overlapping wall only adds the new stretch', () => {
   const box = applyEditOrThrow(base(), { requestId: 'b', commands: [{ kind: 'createBox', floorId: 'f0', min: { x: 0, y: 0 }, max: { x: 6, y: 6 }, ...style }] }).doc;
-  const cases = [
-    [{ x: 1, y: 1 }, { x: 1.2, y: 1 }],
-    [{ x: 0, y: 0 }, { x: 6, y: 0 }],
-    [{ x: 2, y: 0 }, { x: 8, y: 0 }],
-  ];
-  for (const points of cases) {
-    const r = applyEdit(box, { requestId: 'x', commands: [{ kind: 'createWallChain', floorId: 'f0', points, ...style }] });
-    assert.equal(r.ok, false);
-    if (!r.ok) assert.equal(r.error.code, 'INVALID_GEOMETRY');
-  }
+  const same = applyEditOrThrow(box, { requestId: 'x', commands: [{ kind: 'createWallChain', floorId: 'f0', points: [{ x: 0, y: 0 }, { x: 6, y: 0 }], ...style }] });
+  assert.equal(same.doc.revision, box.revision, 'no change');
+  const longer = applyEditOrThrow(box, { requestId: 'y', commands: [{ kind: 'createWallChain', floorId: 'f0', points: [{ x: 2, y: 0 }, { x: 8, y: 0 }], ...style }] });
+  assert.equal(longer.doc.walls.length, 5, 'adds only the 6→8 m stretch');
+  assert.equal(longer.doc.vertices.length, 5);
+});
+
+test('adjacent boxes share their common side and form a T-junction graph', () => {
+  const r = applyEditOrThrow(base(), { requestId: 'b', commands: [
+    { kind: 'createBox', floorId: 'f0', min: { x: 0, y: 0 }, max: { x: 5, y: 5 }, ...style },
+    { kind: 'createBox', floorId: 'f0', min: { x: 5, y: -2 }, max: { x: 10, y: 3 }, ...style },
+  ] });
+  // Left box: 4 walls, its east side split at (5,3) → 5. Right box adds south, east, north and the west stretch (5,-2)→(5,0).
+  assert.equal(r.doc.walls.length, 9);
+  assert.ok(r.doc.vertices.some(v => v.position.x === 5 && v.position.y === 3), 'T-junction vertex at (5,3)');
+  const degree = new Map<string, number>();
+  for (const w of r.doc.walls) for (const v of [w.startVertexId, w.endVertexId]) degree.set(v, (degree.get(v) ?? 0) + 1);
+  assert.equal(Math.max(...degree.values()), 3);
+});
+
+test('crossing walls are split at a shared new vertex', () => {
+  const r = applyEditOrThrow(base(), { requestId: 'x', commands: [
+    { kind: 'createWallChain', floorId: 'f0', points: [{ x: 0, y: 0 }, { x: 4, y: 0 }], ...style },
+    { kind: 'createWallChain', floorId: 'f0', points: [{ x: 2, y: -2 }, { x: 2, y: 2 }], ...style },
+  ] });
+  assert.equal(r.doc.walls.length, 4);
+  const center = r.doc.vertices.find(v => v.position.x === 2 && v.position.y === 0)!;
+  assert.equal(r.doc.walls.filter(w => w.startVertexId === center.id || w.endVertexId === center.id).length, 4);
+});
+
+test('a split keeps openings on the piece that holds them and refuses to cut through a door', () => {
+  let doc = applyEditOrThrow(base(), { requestId: 'a', commands: [{ kind: 'createWallChain', floorId: 'f0', points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], ...style }] }).doc;
+  doc = applyEditOrThrow(doc, { requestId: 'd', commands: [{ kind: 'createOpening', wallId: doc.walls[0].id, openingKind: 'door', offsetM: 8, widthM: 0.9 }] }).doc;
+  const t = applyEditOrThrow(doc, { requestId: 't', commands: [{ kind: 'createWallChain', floorId: 'f0', points: [{ x: 4, y: 0 }, { x: 4, y: 3 }], ...style }] });
+  const door = t.doc.openings[0];
+  const host = t.doc.walls.find(w => w.id === door.wallId)!;
+  assert.notEqual(host.id, doc.walls[0].id, 'door moved to the second piece');
+  assert.ok(Math.abs(door.offsetM - 4) < 1e-9, 'offset re-measured from the split');
+  const bad = applyEdit(doc, { requestId: 'u', commands: [{ kind: 'createWallChain', floorId: 'f0', points: [{ x: 8, y: 0 }, { x: 8, y: 3 }], ...style }] });
+  assert.equal(bad.ok, false);
+});
+
+test('moving a corner onto another merges them', () => {
+  const doc = applyEditOrThrow(base(), { requestId: 'a', commands: [
+    { kind: 'createWallChain', floorId: 'f0', points: [{ x: 0, y: 0 }, { x: 4, y: 0 }], ...style },
+    { kind: 'createWallChain', floorId: 'f0', points: [{ x: 4, y: 1 }, { x: 4, y: 4 }], ...style },
+  ] }).doc;
+  const loose = doc.vertices.find(v => v.position.x === 4 && v.position.y === 1)!;
+  const r = applyEditOrThrow(doc, { requestId: 'm', commands: [{ kind: 'moveVertex', vertexId: loose.id, to: { x: 4, y: 0 } }] });
+  assert.equal(r.doc.vertices.length, 3);
+  assert.equal(r.doc.walls.length, 2);
 });
 
 test('eraseByLine deletes only the walls it crosses, plus their openings and orphan vertices', () => {
