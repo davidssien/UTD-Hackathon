@@ -12,3 +12,4 @@ export * from './document.ts';
 export * from './edit/apply.ts';
 export * from './codec/frames.ts';
 export * from './parse.ts';
+export * from './random.ts';
