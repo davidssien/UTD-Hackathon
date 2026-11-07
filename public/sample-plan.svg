@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="620" viewBox="0 0 800 620">
+<rect width="800" height="620" fill="#fff"/>
+<g fill="none" stroke="#202020" stroke-width="10" stroke-linecap="square">
+<path d="M65 60H735V550H480 M425 550H65V60 M310 60V225 M310 275V550 M65 325H220 M270 325H310 M310 235H485 M535 235H735 M505 60V235 M505 235V370 M505 425V550 M505 395H735"/>
+</g>
+<g font-family="Arial" font-size="14" fill="#999" text-anchor="middle"><text x="185" y="180">BEDROOM 01</text><text x="185" y="440">BEDROOM 02</text><text x="405" y="145">BATH</text><text x="620" y="145">KITCHEN</text><text x="405" y="395">LIVING / DINING</text><text x="620" y="325">STUDIO</text><text x="620" y="480">ENTRY</text></g>
+<g stroke="#aaa" stroke-width="1" fill="none"><path d="M310 275 A50 50 0 0 0 360 225 M270 325 A50 50 0 0 0 220 275 M535 235 A50 50 0 0 0 485 185 M505 425 A55 55 0 0 0 560 370"/></g>
+</svg>
