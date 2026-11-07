@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  ACTOR_EXITED, ACTOR_QUEUED, CELL_SIZE_M, TICK_RATE_HZ, parseDocument, projectOnSegment,
+  ACTOR_EXITED, ACTOR_QUEUED, CELL_SIZE_M, TICK_RATE_HZ, deriveLayout, parseDocument, projectOnSegment,
   type EditCommand, type EgressDocument, type OpeningKind, type Pace, type Vec2,
 } from '@egress/core';
 import { createMockClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
@@ -57,6 +57,7 @@ function Harness({ client }: { client: EgressClient }) {
         </select>
         <span style={{ color: '#6b7385' }}>mock backend · rev {view.doc?.revision ?? '–'}</span>
         {view.lastError && <span style={{ color: '#b42318' }}>{view.lastError.code}: {view.lastError.message}</span>}
+        {view.doc && deriveLayout(view.doc).diagnostics.map((d, i) => <span key={i} title={d.message} style={{ color: d.level === 'error' ? '#b42318' : '#b54708' }}>⚠ {d.code}</span>)}
       </header>
       {mode === 'edit' && <EditMode client={client} />}
       {mode === 'live' && <LiveMode client={client} playback={playback} onRun={setRunId} />}
@@ -318,23 +319,36 @@ function PlanCanvas({ doc, onPointer, overlay, playback, ghosts }: {
 }
 
 function drawDoc(ctx: CanvasRenderingContext2D, doc: EgressDocument, toScreen: (p: Vec2) => Vec2, scale: number, style: { color?: string; dash?: number[]; only?: Set<string> }) {
-  const pos = new Map(doc.vertices.map(v => [v.id, v.position]));
-  ctx.setLineDash(style.dash ?? []);
-  for (const w of doc.walls) {
-    if (style.only && !style.only.has(w.id)) continue;
-    const a = toScreen(pos.get(w.startVertexId)!), b = toScreen(pos.get(w.endVertexId)!);
-    ctx.strokeStyle = style.color ?? (w.material === 'glass' ? '#7cc4e8' : w.material === 'reinforced' ? '#3b3f4a' : '#5b6270');
-    ctx.lineWidth = Math.max(2, w.thicknessM * scale); ctx.lineCap = 'square';
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  const { walls, topology } = deriveLayout(doc);
+  const path = (polygon: Vec2[]) => {
+    ctx.beginPath();
+    polygon.forEach((p, i) => { const s = toScreen(p); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+    ctx.closePath();
+  };
+  if (!style.only) {
+    ctx.fillStyle = '#eef2f7';
+    for (const room of topology.rooms) { path(room.polygon); ctx.fill(); }
   }
+  const material = new Map(doc.walls.map(w => [w.id, w.material]));
+  ctx.setLineDash(style.dash ?? []);
+  for (const piece of walls.pieces) {
+    if (style.only && !style.only.has(piece.wallId)) continue;
+    path(piece.polygon);
+    if (style.only) { ctx.strokeStyle = style.color ?? '#9e77ed'; ctx.lineWidth = 1.5; ctx.stroke(); continue; }
+    const m = material.get(piece.wallId);
+    ctx.fillStyle = m === 'glass' ? '#9fd3ee' : m === 'reinforced' ? '#2e323b' : '#5b6270';
+    ctx.fill();
+  }
+  if (!style.only) {
+    ctx.fillStyle = '#5b6270';
+    for (const hub of walls.hubs) { path(hub.polygon); ctx.fill(); }
+  }
+  ctx.lineCap = 'butt';
   for (const o of doc.openings) {
     if (style.only && !style.only.has(o.id)) continue;
     const seg = openingSegment(doc, o.id);
     if (!seg) continue;
     const a = toScreen(seg.a), b = toScreen(seg.b);
-    const wall = doc.walls.find(w => w.id === o.wallId)!;
-    ctx.lineCap = 'butt';
-    if (!style.only) { ctx.strokeStyle = '#fbfcfd'; ctx.lineWidth = wall.thicknessM * scale + 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
     ctx.strokeStyle = style.color ?? (o.openingKind === 'exit' ? '#12b76a' : o.openingKind === 'door' ? '#b54708' : '#53b1fd');
     ctx.lineWidth = o.openingKind === 'exit' ? 5 : 3;
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
