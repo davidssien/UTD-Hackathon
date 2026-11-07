@@ -39,7 +39,7 @@ export class DomainError extends Error {
 
   /** Reducer errors cross the wire as strings; this is the inverse of `toWire`. */
   static fromWire(text: string): DomainError {
-    const match = /^([A-Z_]+): (.*)$/s.exec(text);
+    const match = /^([A-Z_]+): ([\s\S]*)$/.exec(text);
     return match ? new DomainError(match[1] as DomainErrorCode, match[2]) : new DomainError('INTERNAL_ERROR', text);
   }
 
