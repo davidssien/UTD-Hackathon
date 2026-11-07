@@ -28,9 +28,34 @@ export function wallGeometries(walls: Wall[], height = 2.8) {
     const matrix = new THREE.Matrix4().makeRotationY(angle);
     matrix.setPosition((wall.x1 + wall.x2) / 2, 0, (wall.z1 + wall.z2) / 2);
     if (wallLength(wall) < EPS) continue;
+    const length = wallLength(wall);
+    // Intersect the offset edges at a two-wall corner. Both walls share the
+    // same diagonal seam, rather than ending in overlapping square caps.
+    const endShift = (atStart: boolean, side: number) => {
+      const px = atStart ? wall.x1 : wall.x2, pz = atStart ? wall.z1 : wall.z2;
+      const neighbors = walls.filter(w => w.id !== wall.id &&
+        (Math.hypot(w.x1-px,w.z1-pz)<.001 || Math.hypot(w.x2-px,w.z2-pz)<.001));
+      if (neighbors.length !== 1) return 0;
+      const other = neighbors[0], otherLength = wallLength(other);
+      if (otherLength < EPS) return 0;
+      const dx = (wall.x2-wall.x1)/length, dz = (wall.z2-wall.z1)/length;
+      const starts = Math.hypot(other.x1-px,other.z1-pz)<.001;
+      const ox = (starts ? other.x2-other.x1 : other.x1-other.x2)/otherLength;
+      const oz = (starts ? other.z2-other.z1 : other.z1-other.z2)/otherLength;
+      const cross = dx*oz-dz*ox;
+      if (Math.abs(cross)<.01) return 0;
+      const sign = atStart ? 1 : -1;
+      const otherSide = -side*sign;
+      const ax = -dz*side*wall.thickness/2, az = dx*side*wall.thickness/2;
+      const bx = -oz*otherSide*other.thickness/2, bz = ox*otherSide*other.thickness/2;
+      const shift = ((bx-ax)*oz-(bz-az)*ox)/cross;
+      return Math.abs(shift) <= Math.min(length/3, otherLength/3, Math.max(wall.thickness,other.thickness)*4) ? shift : 0;
+    };
     for (const piece of wallSections(wall, height)) {
       const x = piece.center, y = piece.bottom, w = piece.width / 2, d = wall.thickness / 2, h = piece.height;
-      const vertices = [[x-w,y,-d],[x+w,y,-d],[x+w,y+h,-d],[x-w,y+h,-d],[x-w,y,d],[x+w,y,d],[x+w,y+h,d],[x-w,y+h,d]].map(p => new THREE.Vector3(...p).applyMatrix4(matrix));
+      const vertices = [[x-w,y,-d],[x+w,y,-d],[x+w,y+h,-d],[x-w,y+h,-d],[x-w,y,d],[x+w,y,d],[x+w,y+h,d],[x-w,y+h,d]].map(p => new THREE.Vector3(
+        p[0] + (Math.abs(p[0]+length/2)<EPS ? endShift(true, Math.sign(p[2])) : Math.abs(p[0]-length/2)<EPS ? endShift(false, Math.sign(p[2])) : 0), p[1], p[2]
+      ).applyMatrix4(matrix));
       const faces = [[0,3,2,1],[4,5,6,7],[0,4,7,3],[1,2,6,5],[0,1,5,4],[3,7,6,2]].map(f => f.map(i => vertices[i]));
       solids.push({ wallId: wall.id, faces, planes: faces.map(f => new THREE.Plane().setFromCoplanarPoints(f[0], f[1], f[2])) });
     }

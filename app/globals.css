@@ -241,3 +241,77 @@ button:focus-visible { outline: 2px solid #739d54; outline-offset: 4px; }
 .placement-tip { width:max-content; max-width:min(320px, calc(100% - 24px)); }
 .tool-floor,.tool-fill-floor { cursor:crosshair!important; }
 @media(max-width:650px) { .build-picker button { width:96px; padding:14px 8px; } .build-picker span { font-size:8px; } }
+
+/* The building console is attached to the viewport, with a warm toy palette. */
+:root {
+  --paper: #fffdf8;
+  --ink: #384944;
+  --accent: #427b64;
+  --accent-soft: #e2f0dc;
+  --line: #dedfd3;
+  --danger: #bb554b;
+  --ease: cubic-bezier(.2,.8,.2,1);
+}
+button { -webkit-tap-highlight-color: transparent; transition: background 160ms, color 160ms, border-color 160ms, box-shadow 180ms, scale 180ms var(--ease); }
+button:not(:disabled):active { scale: .96; }
+button:disabled { cursor: default; }
+button:focus-visible { outline: 3px solid #72a790; outline-offset: 3px; }
+.view-tabs { background: var(--paper); border-color: var(--line); border-radius: 18px; padding: 6px; backdrop-filter: none; box-shadow: 0 5px 0 #dce0d780, 0 9px 24px #3849440b; }
+.view-tabs button { border-radius: 12px; font-weight: 600; }
+.view-tabs button.active { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 -2px 0 #c4d8bc; }
+.build-toolbar {
+  bottom: 0; width: min(580px, 100%); gap: 8px; padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  border: 1px solid var(--line); border-bottom: 0; border-radius: 28px 28px 0 0;
+  background: var(--paper); backdrop-filter: none;
+  box-shadow: 0 -8px 30px #3849440d, inset 0 3px 0 #fff;
+}
+.build-toolbar>button { position: relative; min-width: 0; flex: 1; height: 62px; border-radius: 17px; color: var(--ink); padding: 10px 12px; font-weight: 600; }
+.build-toolbar>button::after { content: ''; position: absolute; bottom: 4px; width: 18px; height: 3px; border-radius: 4px; background: var(--accent); opacity: 0; scale: .4 1; transition: opacity 160ms, scale 200ms var(--ease); }
+.build-toolbar>button.active::after { opacity: 1; scale: 1; }
+.build-toolbar>button:hover { background: #f0f2e9; box-shadow: 0 3px 8px #3849440a; }
+.build-toolbar>button.active { background: var(--accent-soft); color: var(--accent); border-color: #bfd6b7; box-shadow: inset 0 -3px 0 #c9debf; }
+.build-toolbar>button.delete-active { background: #fbe5dd; color: var(--danger); border-color: #efc6bc; box-shadow: inset 0 -3px 0 #efc6bc; }
+.build-toolbar>button.delete-active::after { background: var(--danger); }
+.build-toolbar small { font-size: 9px; color: #7b8b7c; }
+.furniture-picker {
+  bottom: 142px; width: min(550px, calc(100% - 24px)); gap: 8px; padding: 12px;
+  background: var(--paper); border-color: var(--line); border-radius: 22px;
+  box-shadow: 0 8px 0 #dce0d74d, 0 16px 35px #38494412;
+  animation: tray-in 180ms var(--ease);
+}
+.furniture-picker button { flex: 1; min-width: 0; width: auto; padding: 16px 8px; border-radius: 15px; color: var(--ink); background: #f3f5ec; border-color: #e0e5d7; }
+.furniture-picker button:hover { background: var(--accent-soft); box-shadow: 0 4px 0 #c9debf; translate: 0 -2px; }
+.furniture-picker strong { font-weight: 600; }
+.furniture-picker span { line-height: 1.4; text-align: center; }
+.build-instruction { bottom: 99px; background: var(--paper); color: #617569; border-radius: 10px; padding: 7px 12px; max-width: calc(100% - 24px); white-space: normal; width: max-content; }
+.build-instruction.with-utilities { bottom: 144px; }
+.edit-utilities { bottom: 97px; }
+.edit-utilities .history-buttons, .selection-actions { background: var(--paper); backdrop-filter: none; border-radius: 13px; border-color: var(--line); }
+.error-toast { bottom: 195px; border-radius: 16px; border-color: #edc2b9; background: #fff1eb; color: #9d4c42; box-shadow: 0 8px 25px #bb554b10; animation: invalid-shake 240ms ease-out; }
+.success-feedback { position: absolute; top: 90px; left: 50%; translate: -50% 0; background: var(--accent-soft); color: var(--accent); padding: 8px 14px; border-radius: 12px; font-size: 11px; z-index: 4; pointer-events: none; animation: tray-in 160ms var(--ease); }
+.placement-tip { background: var(--paper); border-radius: 11px; box-shadow: 0 3px 12px #38494410; }
+.upload-button { border-radius: 12px; background: var(--paper); border-color: var(--line); }
+.placement-failed .three-host canvas, .placement-failed .editable-plan { animation: invalid-flash 260ms ease-out; }
+@keyframes tray-in { from { opacity: 0; margin-bottom: -8px; } to { opacity: 1; margin-bottom: 0; } }
+@keyframes invalid-shake { 25%,75% { margin-left: -4px; } 50% { margin-left: 4px; } }
+@keyframes invalid-flash { 50% { filter: sepia(.18); } }
+@media(max-width:650px) {
+  .build-toolbar { width: 100%; max-width: 100%; bottom: 0; padding: 10px 9px max(10px, env(safe-area-inset-bottom)); gap: 4px; }
+  .build-toolbar>button { width: auto; gap: 8px; padding: 8px; font-size: 12px; }
+  .build-toolbar small { font-size: 8px; }
+  .build-picker { flex-wrap: wrap; }
+  .build-picker button { flex-basis: calc(50% - 8px); padding: 11px 8px; gap: 6px; }
+  .view-tabs { top: 14px; }
+  .furniture-picker { bottom: 183px; }
+  .build-instruction { bottom: 97px; }
+  .build-instruction.with-utilities { bottom: 145px; }
+  .edit-utilities { bottom: 97px; }
+  .selection-actions span { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+}
+@media(prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.furniture-picker { animation: none; opacity: 1; translate: 0 0; transition: opacity 160ms var(--ease), translate 160ms var(--ease), display 160ms allow-discrete; }
+.furniture-picker[hidden] { display: none; opacity: 0; translate: 0 8px; pointer-events: none; }
+@starting-style { .furniture-picker:not([hidden]) { opacity: 0; translate: 0 8px; } }
+@media(prefers-reduced-motion:reduce) { .furniture-picker { transition: none; } }

@@ -6,13 +6,43 @@ export type Point = { x: number; z: number };
 export type Tool = 'select' | 'wall' | 'floor' | 'fill-floor' | 'door' | 'window' | 'delete';
 export type Opening = { id: string; type: 'door' | 'window'; offset: number; width: number; height: number; sill: number };
 export type EditCommand =
+  | { type: 'invalid'; reason: string }
   | { type: 'floor'; start: Point; end: Point }
   | { type: 'fill-floor'; point: Point }
+  | { type: 'delete-base-floor' }
   | { type: 'delete-floor'; floorId: string }
+  | { type: 'resize-wall'; wallId: string; endpoint: 'start' | 'end'; point: Point }
   | { type: 'wall'; start: Point; end: Point }
   | { type: 'opening'; wallId: string; kind: 'door' | 'window'; point: Point }
   | { type: 'delete-walls'; wallIds: string[] }
   | { type: 'delete'; wallId: string; openingId?: string };
+
+// Weld tiny recognition gaps at corners before the first edit. Keep walls with
+// openings untouched so their measured offsets remain stable.
+export function joinWallEndpoints(walls: Wall[]): Wall[] {
+  const result = walls.map(w => ({ ...w }));
+  const ends = result.flatMap(w => (['start', 'end'] as const).map(end => ({ w, end })));
+  const used = new Set<number>();
+  const position = (e: typeof ends[number]) => e.end === 'start' ? { x: e.w.x1, z: e.w.z1 } : { x: e.w.x2, z: e.w.z2 };
+  for (let i = 0; i < ends.length; i++) {
+    if (used.has(i) || ends[i].w.openings?.length) continue;
+    const a = position(ends[i]);
+    const cluster = [i];
+    for (let j = i+1; j < ends.length; j++) {
+      if (used.has(j) || ends[j].w === ends[i].w || ends[j].w.openings?.length) continue;
+      const b = position(ends[j]);
+      if (Math.hypot(a.x-b.x,a.z-b.z) <= .3) cluster.push(j);
+    }
+    if (cluster.length < 2) continue;
+    const center = cluster.reduce((p,k) => { const q = position(ends[k]); return { x: p.x+q.x/cluster.length, z: p.z+q.z/cluster.length }; }, { x: 0, z: 0 });
+    for (const k of cluster) {
+      const { w, end } = ends[k]; used.add(k);
+      if (end === 'start') { w.x1 = center.x; w.z1 = center.z; }
+      else { w.x2 = center.x; w.z2 = center.z; }
+    }
+  }
+  return result;
+}
 
 export const wallLength = (wall: Wall) => Math.hypot(wall.x2 - wall.x1, wall.z2 - wall.z1);
 
@@ -60,7 +90,31 @@ export function openingAt(wall: Wall, kind: 'door' | 'window', point: Point): { 
 }
 
 export function editBuilding(building: Building, command: EditCommand): { building: Building; error?: string } {
+  if (command.type === 'invalid') return { building, error: command.reason };
   const floorBounds = getFloorBounds(building);
+  if (command.type === 'delete-base-floor') return { building: floorBounds ? { ...building, floorBounds: null } : building };
+  if (command.type === 'resize-wall') {
+    const target = building.walls.find(w => w.id === command.wallId);
+    if (!target) return { building };
+    const old = command.endpoint === 'start' ? { x: target.x1, z: target.z1 } : { x: target.x2, z: target.z2 };
+    const point = snapPoint(command.point, building.walls.filter(w => w.id !== target.id));
+    if (![point.x, point.z].every(Number.isFinite)) return { building, error: 'Choose a valid grid point.' };
+    if (Math.hypot(point.x - old.x, point.z - old.z) < .001) return { building };
+    const walls = building.walls.map(w => {
+      const start = Math.hypot(w.x1 - old.x, w.z1 - old.z) < .001;
+      const end = Math.hypot(w.x2 - old.x, w.z2 - old.z) < .001;
+      return start || end ? { ...w, x1: start ? point.x : w.x1, z1: start ? point.z : w.z1, x2: end ? point.x : w.x2, z2: end ? point.z : w.z2 } : w;
+    });
+    for (const w of walls) {
+      if (w === building.walls.find(v => v.id === w.id)) continue;
+      const remaining = walls.filter(v => v.id !== w.id);
+      const check = editBuilding({ ...building, walls: remaining }, { type: 'wall', start: { x: w.x1, z: w.z1 }, end: { x: w.x2, z: w.z2 } });
+      if (check.error) return { building, error: check.error };
+      if ((w.openings ?? []).some(o => o.offset + o.width / 2 + .1 > wallLength(w))) return { building, error: 'Move or delete the opening before shortening this wall.' };
+    }
+    return { building: { ...building, floorBounds, walls } };
+  }
+
   if (command.type === 'delete-floor') {
     const floors = (building.floors ?? []).filter(f => f.id !== command.floorId);
     return { building: floors.length === (building.floors ?? []).length ? building : { ...building, floorBounds, floors } };
@@ -136,7 +190,7 @@ export type EditorState = { present: Building | null; past: Building[]; future: 
 export type EditorAction = { type: 'load'; building: Building | null } | { type: 'edit'; command: EditCommand } | { type: 'undo' } | { type: 'redo' } | { type: 'clear-error' };
 export const initialEditor: EditorState = { present: null, past: [], future: [], error: '' };
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
-  if (action.type === 'load') return { ...initialEditor, present: action.building ? { ...action.building, floorBounds: getFloorBounds(action.building) } : null };
+  if (action.type === 'load') return { ...initialEditor, present: action.building ? { ...action.building, walls: joinWallEndpoints(action.building.walls), floorBounds: getFloorBounds(action.building) } : null };
   if (action.type === 'clear-error') return { ...state, error: '' };
   if (action.type === 'undo') {
     if (!state.past.length || !state.present) return state;

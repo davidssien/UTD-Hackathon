@@ -7,7 +7,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { getFloorBounds, type Building } from '@/lib/floorplan';
 import { wallGeometries } from '@/lib/wall-geometry';
 import { polygonArea, roomAt } from '@/lib/rooms';
-import { floorRectangle, nearestWall, openingAt, snapPoint, wallEnd, wallLength, type EditCommand, type Point, type Tool } from '@/lib/building-editor';
+import { editBuilding, floorRectangle, nearestWall, openingAt, snapPoint, wallEnd, wallLength, type EditCommand, type Point, type Tool } from '@/lib/building-editor';
 
 export type ViewerHandle = { view: (preset: 'perspective' | 'top' | 'front' | 'fit') => void; export: () => Promise<void>; cancelBuild: () => void };
 type Props = { active: boolean; building: Building | null; sceneKey: string; tool: Tool; selectedWalls: string[]; onSelectionChange: (ids: string[]) => void; onEdit: (command: EditCommand) => void };
@@ -50,6 +50,7 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
   const host = useRef<HTMLDivElement>(null);
   const runtime = useRef<Runtime | null>(null);
   const editing = useRef({ building, tool, onEdit, selectedWalls, onSelectionChange });
+  const knownObjects = useRef(new Set<string>());
   const framedSource = useRef<string | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { editing.current = { building, tool, onEdit, selectedWalls, onSelectionChange }; runtime.current?.refreshSelection(); }, [building, tool, onEdit, selectedWalls, onSelectionChange]);
@@ -107,7 +108,7 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
       if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
       controls.enabled = runtime.current?.active ?? false;
     };
-    const blur = () => endRotation();
+    const blur = () => { endRotation(); cancel(); };
     const r: Runtime = { camera, controls, model, ghost, center: new THREE.Vector3(0, 1.4, 0), extent: 20, active: true, cancel, cancelGesture: blur, refreshSelection: () => {
       disposeGroup(selection);
       const ids = new Set(editing.current.selectedWalls);
@@ -148,18 +149,21 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
       if (tool === 'wall' && picked.ground) {
         const start = anchor ?? snapPoint(picked.ground, building.walls);
         const end = anchor ? wallEnd(anchor, picked.ground, building.walls, e.shiftKey) : start;
-        ghostBox(start, anchor ? end : { x: start.x + .02, z: start.z }, '#8aaf66', anchor ? 2.8 : .12, anchor ? .2 : .18);
-        text = anchor ? `${Math.hypot(end.x - start.x, end.z - start.z).toFixed(2)} m · Click to build` : 'Click to start a wall';
+        const invalid = anchor ? editBuilding(building, { type: 'wall', start, end }).error : undefined;
+        ghostBox(start, anchor ? end : { x: start.x + .02, z: start.z }, invalid ? '#c65f4b' : '#8aaf66', anchor ? 2.8 : .12, anchor ? .2 : .18);
+        text = invalid ?? (anchor ? `${Math.hypot(end.x - start.x, end.z - start.z).toFixed(2)} m · Click to build` : 'Click to start a wall');
       } else if (tool === 'floor' && picked.ground) {
         const current = snapPoint(picked.ground, building.walls);
         if (anchor) {
-          const points = floorRectangle(anchor, current); if (polygonArea(points) > .001) ghost.add(floorMesh(points, true));
+          const points = floorRectangle(anchor, current);
+          const invalid = editBuilding(building, { type: 'floor', start: anchor, end: current }).error;
+          const mesh = floorMesh(points, true); (mesh.material as THREE.MeshStandardMaterial).color.set(invalid ? '#dc685f' : '#91b36c'); ghost.add(mesh);
           text = `${polygonArea(points).toFixed(2)} m² · Click to finish floor`;
         } else text = 'Click the first floor corner';
       } else if (tool === 'fill-floor' && picked.ground) {
         const points = roomAt(building.walls, picked.ground);
         if (points) { ghost.add(floorMesh(points, true)); text = `Fill room · ${polygonArea(points).toFixed(2)} m²`; }
-        else text = 'Close the surrounding wall gaps to fill this room';
+        else { ghostBox(picked.ground, { x: picked.ground.x + .5, z: picked.ground.z }, '#dc685f', .05, .5); text = 'Close the surrounding wall gaps to fill this room'; }
       } else if (tool === 'delete' && picked.hit?.object.userData.floorId) {
         const floor = building.floors?.find(f => f.id === picked.hit!.object.userData.floorId);
         ghost.add(new THREE.Box3Helper(new THREE.Box3().setFromObject(picked.hit.object), '#c65f4b'));
@@ -171,7 +175,12 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
           const o = result.opening, wall = picked.wall, length = wallLength(wall);
           const dx = (wall.x2 - wall.x1) / length, dz = (wall.z2 - wall.z1) / length;
           ghostBox({ x: wall.x1 + dx * (o.offset - o.width / 2), z: wall.z1 + dz * (o.offset - o.width / 2) }, { x: wall.x1 + dx * (o.offset + o.width / 2), z: wall.z1 + dz * (o.offset + o.width / 2) }, '#78b8ca', o.height, wall.thickness + .08, o.sill);
+        } else if (picked.point) {
+          ghostBox(picked.point, { x: picked.point.x + (tool === 'door' ? .9 : 1.2), z: picked.point.z }, '#dc685f', 1.2);
         }
+      } else if ((tool === 'door' || tool === 'window') && picked.ground) {
+        ghostBox(picked.ground, { x: picked.ground.x + .9, z: picked.ground.z }, '#dc685f', 1.2);
+        text = 'Choose an existing wall';
       } else if (tool === 'delete' && picked.hit && picked.wall) {
         const isOpening = picked.hit.object.userData.openingId;
         const selected = editing.current.selectedWalls;
@@ -278,17 +287,19 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
       if (tool === 'wall' && picked.ground) {
         if (!anchor) { anchor = snapPoint(picked.ground, building.walls); preview(e); return; }
         const end = wallEnd(anchor, picked.ground, building.walls, e.shiftKey);
-        if (Math.hypot(end.x - anchor.x, end.z - anchor.z) >= .5) { onEdit({ type: 'wall', start: anchor, end }); anchor = null; clearGhost(); }
+        { onEdit({ type: 'wall', start: anchor, end }); anchor = null; clearGhost(); }
       } else if (tool === 'floor' && picked.ground) {
         const end = snapPoint(picked.ground, building.walls);
         if (!anchor) { anchor = end; return; }
-        if (polygonArea(floorRectangle(anchor, end)) >= .25) { onEdit({ type: 'floor', start: anchor, end }); anchor = null; clearGhost(); }
+        { onEdit({ type: 'floor', start: anchor, end }); anchor = null; clearGhost(); }
       } else if (!moved && tool === 'fill-floor' && picked.ground) {
         onEdit({ type: 'fill-floor', point: picked.ground }); clearGhost();
       } else if (!moved && (tool === 'door' || tool === 'window') && picked.wall && picked.point) {
         onEdit({ type: 'opening', wallId: picked.wall.id, kind: tool, point: picked.point }); clearGhost();
+      } else if (!moved && (tool === 'door' || tool === 'window')) {
+        onEdit({ type: 'invalid', reason: 'Choose a wall to place a door or window.' }); clearGhost();
       } else if (!moved && tool === 'delete' && picked.hit?.object.userData.floorId) {
-        onEdit({ type: 'delete-floor', floorId: picked.hit.object.userData.floorId }); clearGhost();
+        onEdit(picked.hit.object.userData.floorId === '__base__' ? { type: 'delete-base-floor' } : { type: 'delete-floor', floorId: picked.hit.object.userData.floorId }); clearGhost();
       } else if (!moved && tool === 'delete' && picked.hit) {
         const id = picked.hit.object.userData.wallId;
         if (!picked.hit.object.userData.openingId && selectedWalls.includes(id) && selectedWalls.length > 1) onEdit({ type: 'delete-walls', wallIds: selectedWalls });
@@ -310,6 +321,12 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
     const animate = () => {
       frameId = requestAnimationFrame(animate);
       controls.target.copy(r.center);
+      for (const object of model.children) {
+        if (!object.userData.settleStarted) continue;
+        const progress = Math.min(1, (performance.now() - object.userData.settleStarted) / 160);
+        object.scale.y = .92 + .08 * (1 - (1-progress)**3);
+        if (progress === 1) delete object.userData.settleStarted;
+      }
       controls.update(); renderer.render(scene, camera);
     }; frameId = requestAnimationFrame(animate);
     return () => {
@@ -370,15 +387,24 @@ const BuildingViewer = forwardRef<ViewerHandle, Props>(function BuildingViewer({
       r.model.add(group);
     }
     for (const floor of building.floors ?? []) {
-      const mesh = floorMesh(floor.points); mesh.userData.floorId = floor.id; mesh.name = 'Floor'; r.model.add(mesh);
+      const mesh = floorMesh(floor.points); mesh.position.y = .01; mesh.userData.floorId = floor.id; mesh.name = 'Floor'; r.model.add(mesh);
     }
     const bounds = getFloorBounds(building);
     if (bounds) {
       const slab = new THREE.Mesh(new THREE.BoxGeometry(bounds.maxX - bounds.minX, .15, bounds.maxZ - bounds.minZ), new THREE.MeshStandardMaterial({ color: '#b7a78d', roughness: .96 }));
-      slab.position.set((bounds.minX + bounds.maxX) / 2, -.08, (bounds.minZ + bounds.maxZ) / 2); slab.receiveShadow = true; r.model.add(slab);
+      slab.position.set((bounds.minX + bounds.maxX) / 2, -.08, (bounds.minZ + bounds.maxZ) / 2); slab.receiveShadow = true; slab.userData.floorId = '__base__'; r.model.add(slab);
       r.center.set((bounds.minX + bounds.maxX) / 2, height / 2, (bounds.minZ + bounds.maxZ) / 2);
       r.extent = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ, 5);
     }
+    const nextObjects = new Set<string>();
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for (const object of r.model.children) {
+      const id = object.userData.wallId ?? object.userData.floorId;
+      if (!id) continue;
+      nextObjects.add(id);
+      if (knownObjects.current.size && !knownObjects.current.has(id) && !reducedMotion) object.userData.settleStarted = performance.now();
+    }
+    knownObjects.current = nextObjects;
     r.refreshSelection();
     // Reframe only for a newly imported source, never for ordinary edits.
     if (framedSource.current !== sceneKey) { frame(r, 'fit'); framedSource.current = sceneKey; }

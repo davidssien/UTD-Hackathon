@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { editBuilding, editorReducer, initialEditor, openingAt, snapPoint, wallEnd, wallSections } from '../lib/building-editor.ts';
+import { editBuilding, editorReducer, initialEditor, joinWallEndpoints, openingAt, snapPoint, wallEnd, wallSections } from '../lib/building-editor.ts';
 import type { Building } from '../lib/floorplan.ts';
 
 const base: Building = { width: 20, depth: 15, sourceWidth: 800, sourceHeight: 600, walls: [{ id: 'wall-1', x1: -4, z1: 0, x2: 4, z2: 0, thickness: .2 }] };
@@ -80,4 +80,37 @@ test('history starts empty and invalid edits do not create an undo step', () => 
   assert.equal(loaded.past.length, 0); assert.equal(loaded.future.length, 0);
   const state = editorReducer(loaded, { type: 'edit', command: { type: 'wall', start: { x: 0, z: 0 }, end: { x: 0, z: 0 } } });
   assert.equal(state.past.length, 0); assert.equal(state.future.length, 0);
+});
+
+test('resizing keeps connected corners joined and supports undo', () => {
+  const building = { ...base, walls: [...base.walls, { id: 'corner', x1: 4, z1: 0, x2: 4, z2: 4, thickness: .2 }] };
+  const state = editorReducer({ ...initialEditor, present: building }, { type: 'edit', command: { type: 'resize-wall', wallId: 'wall-1', endpoint: 'end', point: { x: 5, z: 0 } } });
+  assert.equal(state.present!.walls[0].x2, 5);
+  assert.equal(state.present!.walls[1].x1, 5);
+  assert.equal(editorReducer(state, { type: 'undo' }).present, building);
+});
+test('resizing rejects collapsed walls and clipped openings', () => {
+  assert.ok(editBuilding(base, { type: 'resize-wall', wallId: 'wall-1', endpoint: 'end', point: { x: -4, z: 0 } }).error);
+  const building = { ...base, walls: [{ ...base.walls[0], openings: [{ id: 'door', type: 'door' as const, offset: 6, width: .9, height: 2.1, sill: 0 }] }] };
+  assert.ok(editBuilding(building, { type: 'resize-wall', wallId: 'wall-1', endpoint: 'end', point: { x: 0, z: 0 } }).error);
+});
+
+test('base floor deletion is undoable and does not delete walls or custom floors', () => {
+  const loaded = editorReducer(initialEditor, { type: 'load', building: base });
+  const deleted = editorReducer(loaded, { type: 'edit', command: { type: 'delete-base-floor' } });
+  assert.equal(deleted.present!.floorBounds, null);
+  assert.equal(deleted.present!.walls, loaded.present!.walls);
+  assert.deepEqual(editorReducer(deleted, { type: 'undo' }).present, loaded.present);
+  assert.equal(editorReducer(editorReducer(deleted, { type: 'undo' }), { type: 'redo' }).present!.floorBounds, null);
+});
+
+
+test('nearby imported corners weld without moving the input or closing doorway gaps', () => {
+  const walls = [{ ...base.walls[0], x1: 0, x2: 4 }, { ...base.walls[0], id: 'b', x1: 4.1, z1: .1, x2: 4.1, z2: 4 }];
+  const joined = joinWallEndpoints(walls);
+  assert.equal(joined[0].x2, joined[1].x1);
+  assert.equal(joined[0].z2, joined[1].z1);
+  assert.equal(walls[0].x2, 4);
+  const separated = joinWallEndpoints([walls[0], { ...walls[1], x1: 5 }]);
+  assert.equal(separated[0].x2, 4);
 });
