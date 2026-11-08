@@ -28,7 +28,8 @@ const target = env.SPACETIME_DB_IDENTITY || db;
 const token = env.SPACETIME_TOKEN || '';
 const dir = join(root, '.spacetime');
 const configPath = join(dir, 'cli.toml');
-const SERVER = 'team';
+// The CLI seeds a fresh config with built-in servers (maincloud, local); reuse a built-in entry for the same host.
+let SERVER = 'team';
 
 function findCli() {
   if (env.SPACETIME_CLI) return env.SPACETIME_CLI;
@@ -42,12 +43,17 @@ const cli = findCli();
 
 const scrub = text => (token ? text.split(token).join('<SPACETIME_TOKEN>') : text);
 
-function spacetime(args, { quiet = false } = {}) {
+function run(args, quiet) {
   const result = spawnSync(cli, ['--config-path', configPath, ...args], { cwd: root, encoding: 'utf8', stdio: quiet ? 'pipe' : 'inherit' });
   if (result.error) {
     console.error(`Could not run the SpacetimeDB CLI (${cli}). Install it (https://spacetimedb.com/install) or set SPACETIME_CLI.`);
     process.exit(1);
   }
+  return result;
+}
+
+function spacetime(args, { quiet = false } = {}) {
+  const result = run(args, quiet);
   if (quiet && result.status !== 0) process.stderr.write(scrub(`${result.stdout ?? ''}${result.stderr ?? ''}`));
   return result.status ?? 1;
 }
@@ -55,7 +61,13 @@ function spacetime(args, { quiet = false } = {}) {
 function connect({ needToken }) {
   rmSync(configPath, { force: true });
   mkdirSync(dir, { recursive: true });
-  if (spacetime(['server', 'add', '--url', url, '--no-fingerprint', '--default', SERVER], { quiet: true }) !== 0) process.exit(1);
+  const host = new URL(url).host;
+  const listed = run(['server', 'list'], true);
+  const existing = `${listed.stdout ?? ''}`.split(/\r?\n/).map(l => l.trim().split(/\s+/)).find(cols => cols.includes(host));
+  if (existing) {
+    SERVER = existing.at(-1);
+    if (spacetime(['server', 'set-default', SERVER], { quiet: true }) !== 0) process.exit(1);
+  } else if (spacetime(['server', 'add', '--url', url, '--no-fingerprint', '--default', SERVER], { quiet: true }) !== 0) process.exit(1);
   if (!token) {
     if (needToken) { console.error('SPACETIME_TOKEN is missing: add the team token to the repo .env (see .env.example).'); process.exit(1); }
     return;
