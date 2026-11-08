@@ -219,8 +219,27 @@
 .link-row{display:flex;align-items:center;gap:8px}
 .link-row input{flex:1;height:32px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:#fff;font-size:12px}
 .link-row>svg{color:var(--muted)}
-.import-host{width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:0}
-.import-host .import-dialog{position:static;inset:auto;width:auto;height:auto;max-width:none;max-height:none;margin:0;box-shadow:none;border:0}
+/* Import plan image: a compact dialog for choosing a file, wide only while a scan is under review.
+   Studio styling over the importer's own (its logic is untouched). */
+.import-host{width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:0;--paper:var(--chrome);--accent-soft:var(--accent-2)}
+.import-host:has(.import-review){width:min(1100px,calc(100vw - 32px))}
+.import-host .import-dialog{position:static;inset:auto;width:auto;height:auto;max-width:none;max-height:none;margin:0;box-shadow:none;border:0;padding:14px 16px 16px;border-radius:12px}
+.import-host .import-dialog button{border-color:var(--line);border-radius:8px}
+.import-host .import-dialog header{gap:12px}
+.import-host .import-dialog h1{font-size:15px;font-weight:650;letter-spacing:0;margin:0}
+.import-host .import-dialog header button{width:28px;height:28px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted)}
+.import-host .import-dialog header button:hover{background:var(--chrome-2);color:var(--ink)}
+.import-host .import-dialog header svg{width:18px;height:18px}
+.import-host .import-dialog p{color:var(--muted);line-height:1.5}
+.import-host .import-upload{max-width:none;margin:4px 0 0;display:flex;flex-direction:column;gap:8px}
+.import-host .import-upload>p{margin:0}
+.import-host .import-action{margin:6px 0 0;padding:30px 16px;border:1.5px dashed var(--accent);border-radius:10px;background:var(--accent-2);color:var(--accent);font-size:13px}
+.import-host .import-action:hover{background:#dce9ff}
+.import-host .import-upload>button{width:100%;padding:9px 14px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:600}
+.import-host .import-upload>button:hover:not(:disabled){background:var(--chrome-2)}
+.import-host .qr-pair{margin-top:8px}
+.import-host .import-dialog footer button{background:var(--accent);border-color:var(--accent);color:#fff}
+.import-host .review-tools button[aria-pressed=true]{border-color:var(--accent)}
 
 @keyframes blink{50%{opacity:.35}}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -355,6 +374,7 @@
 
 /* Population brush (D76) */
 .paint-box{margin:4px 0 6px;padding:4px 8px 8px;border:1px solid var(--chrome-3);border-radius:8px;background:var(--chrome-2)}
+.paint-box .icon-button{flex:none}
 .paint-box .icon-button.on{background:var(--ink);color:#fff;border-radius:50%}
 .paint-box .field .button{height:26px;padding:0 8px;font-weight:500}
 .note:not(.warn):not(.error){background:var(--chrome-2);color:var(--ink-2)}

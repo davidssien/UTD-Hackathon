@@ -16,7 +16,7 @@ import {
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import {
-  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, PLACEABLES, VERDICT_TAGLINE, type Placeable, type PlaceableItem, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
+  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, PLACEABLES, ruleVerdict, VERDICT_TAGLINE, type Placeable, type PlaceableItem, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
   type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
 } from '@egress/core';
 import { compileFloor, paintWeights, populationCapacity, type WindFrom, type FloorAirflow } from '@egress/sim';
@@ -776,6 +776,9 @@ function endText(m: SimulationMetrics | null): string {
 
 function RunReadout({ playback, doc }: { playback: PlaybackController; doc: EgressDocument | null }) {
   const m = useEgress(playback.metrics), s = useEgress(playback.state);
+  // A finished run always shows a grade: the runner's (Nemotron's) when it sent one, else the rule grade,
+  // so a run served by an older runner still reads Great / Good / Poor / Bad.
+  const verdict = m?.complete ? m.verdict ?? { ...ruleVerdict(m), source: 'rules' as const } : null;
   const rows: [string, string][] = [
     ['Evacuation time', m?.evacuationTimeSeconds != null ? `${m.evacuationTimeSeconds.toFixed(1)} s` : '—'],
     ['Computed to', `${((m?.simulatedSeconds ?? s.liveTick / 10)).toFixed(1)} s`],
@@ -793,9 +796,9 @@ function RunReadout({ playback, doc }: { playback: PlaybackController; doc: Egre
   if (m?.unreachablePeople) rows.push(['Cannot reach an exit', String(m.unreachablePeople)]);
   if (m?.exitSwitches !== undefined) rows.push(['Exit changes', m.exitReversals ? `${m.exitSwitches} (${m.exitReversals} back)` : String(m.exitSwitches)]);
   return <section className="readout">
-    {m?.complete && m.verdict
-      ? <><div className={`run-state done verdict-${m.verdict.grade}`}>{VERDICT_TAGLINE[m.verdict.grade]}</div>
-        <p className="verdict-reason">{m.verdict.reason}{m.verdict.source === 'nemotron' ? ' · graded by Nemotron' : ''}</p></>
+    {verdict
+      ? <><div className={`run-state done verdict-${verdict.grade}`}>{VERDICT_TAGLINE[verdict.grade]}</div>
+        <p className="verdict-reason">{verdict.reason}{verdict.source === 'nemotron' ? ' · graded by Nemotron' : ''}</p></>
       : <div className={`run-state ${m?.complete ? 'done' : 'live'}`}>{endText(m)}</div>}
     <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
   </section>;
