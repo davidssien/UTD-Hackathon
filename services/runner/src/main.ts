@@ -23,8 +23,8 @@ export async function startRunner(options: { uri?: string; db?: string; token?: 
   const uri = options.uri ?? config.spacetimeUri;
   const db = options.db ?? config.spacetimeDb;
   const { conn, identity } = await connect({
-    uri, db, token: options.token === null ? undefined : options.token ?? loadToken(),
-    onToken: token => { if (options.token === undefined) saveToken(token); },
+    uri, db, token: options.token === null ? undefined : options.token ?? loadToken(uri, db),
+    onToken: token => { if (options.token === undefined) saveToken(token, uri, db); },
     log,
   });
   log(`[runner] connected to ${uri} / ${db} as ${identity.slice(0, 16)}…`);

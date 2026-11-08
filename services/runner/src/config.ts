@@ -1,15 +1,15 @@
 /**
  * Runner configuration from services/runner/.env (gitignored). The runner's
- * SpacetimeDB token is persisted next to it in .env.runner-token so its
- * identity stays stable across restarts.
+ * SpacetimeDB token is persisted per connection target next to it so local
+ * and Maincloud credentials stay separate across restarts.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envFile = join(root, '.env');
-const tokenFile = join(root, '.env.runner-token');
 
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
@@ -29,5 +29,13 @@ export const config = {
   nemotronBaseUrl: process.env.NEMOTRON_BASE_URL ?? 'https://integrate.api.nvidia.com/v1',
 };
 
-export const loadToken = (): string | undefined => (existsSync(tokenFile) ? readFileSync(tokenFile, 'utf8').trim() || undefined : undefined);
-export const saveToken = (token: string) => writeFileSync(tokenFile, token);
+function tokenFile(uri: string, db: string): string {
+  const target = createHash('sha256').update(JSON.stringify([uri, db])).digest('hex').slice(0, 16);
+  return join(root, `.env.runner-token-${target}`);
+}
+
+export const loadToken = (uri: string, db: string): string | undefined => {
+  const path = tokenFile(uri, db);
+  return existsSync(path) ? readFileSync(path, 'utf8').trim() || undefined : undefined;
+};
+export const saveToken = (token: string, uri: string, db: string) => writeFileSync(tokenFile(uri, db), token);
