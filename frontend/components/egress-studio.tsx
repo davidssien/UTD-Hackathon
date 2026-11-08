@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
-  ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, BarsArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
+  ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, BarsArrowUpIcon, CheckIcon, Cog6ToothIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
   CursorArrowRaysIcon, EyeIcon, HandRaisedIcon, ForwardIcon, LinkIcon, LockClosedIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
   SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -21,7 +21,7 @@ import {
 } from '@egress/core';
 import { compileFloor, paintWeights, populationCapacity } from '@egress/sim';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
-import type { HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
+import type { GridStyle, SceneTheme, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
 import EscapePlans from './escape-plans';
@@ -139,7 +139,20 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     try { localStorage.setItem('egress.paneCollapsed', JSON.stringify(next)); } catch { /* storage unavailable */ }
     return next;
   });
-  const theme = useMemo(() => (new URLSearchParams(location.search).get('theme') === 'black' ? 'black' : 'blueprint'), []);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [appearance, setAppearance] = useState<{ theme: SceneTheme; grid: GridStyle }>(() => {
+    const initial = { theme: new URLSearchParams(location.search).get('theme') === 'black' ? 'black' as const : 'blueprint' as const, grid: 'dotted' as const };
+    try {
+      const saved = JSON.parse(localStorage.getItem('egress.appearance') ?? '{}');
+      return { theme: ['blueprint', 'black', 'white'].includes(saved.theme) ? saved.theme : initial.theme,
+        grid: ['dotted', 'lined', 'off'].includes(saved.grid) ? saved.grid : initial.grid };
+    } catch { return initial; }
+  });
+  const { theme } = appearance;
+  const changeAppearance = (next: typeof appearance) => {
+    setAppearance(next);
+    try { localStorage.setItem('egress.appearance', JSON.stringify(next)); } catch { /* session-only settings */ }
+  };
   const [error, setError] = useState(bootError);
   const scene = useRef<SceneHandle>(null);
 
@@ -314,7 +327,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         void ((k === 'y' || e.shiftKey) ? client.redo() : client.undo()).catch(fail); return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Escape') { setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); return; }
+      if (e.key === 'Escape') { setSettingsOpen(false); setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); return; }
       if (e.key === 'PageUp' || e.key === 'PageDown') {
         const i = floors.findIndex(f => f.id === floor?.id), next = floors[i + (e.key === 'PageUp' ? 1 : -1)];
         if (next) { e.preventDefault(); setFloorId(next.id); setSelected(null); }
@@ -368,11 +381,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       if (!target.closest('.rail-anchor')) setExportOpen(false);
       if (!target.closest('.type-menu, .dock')) { setTypeMenu(null); setSlabMenu(null); }
       if (!target.closest('.context-menu')) setMenu(null);
+      if (!target.closest('.workspace-settings')) setSettingsOpen(false);
       if (!target.closest('.floor-switch')) setFloorPanel(false);
       if (!target.closest('.layers-panel, .hud-button')) setLayersOpen(false);
     }}>
     <div className="editor-surface" inert={screen === 'saves'}>
-    <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
+    <Scene ref={scene} theme={theme} gridStyle={appearance.grid} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       inputBlocked={screen === 'saves' || !!entry}
       entryView={entry?.projectId === sceneDoc?.projectId && (entry?.phase === 'iso' || entry?.phase === 'top') ? entry.phase : null}
@@ -457,6 +471,16 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <RailButton tip="Collapse" onClick={() => { setRail(false); setExportOpen(false); }}><ChevronLeftIcon /></RailButton>
     </nav>
     {!rail && <button className="rail-tab" aria-label="Open project menu" onClick={() => setRail(true)}><ChevronRightIcon /></button>}
+
+    <div className="workspace-settings">
+      <button className="icon-button settings-toggle" aria-label="Workspace settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Cog6ToothIcon /></button>
+      {settingsOpen && <div className="menu settings-panel" aria-label="Workspace settings">
+        <div className="menu-label">Background color</div>
+        <Segmented value={theme} options={[{ id: 'blueprint', name: 'Blue' }, { id: 'white', name: 'White' }, { id: 'black', name: 'Black' }]} onChange={theme => changeAppearance({ ...appearance, theme })} />
+        <div className="menu-label">Grid</div>
+        <Segmented value={appearance.grid} options={[{ id: 'lined', name: 'Lined' }, { id: 'dotted', name: 'Dotted' }, { id: 'off', name: 'Off' }]} onChange={grid => changeAppearance({ ...appearance, grid })} />
+      </div>}
+    </div>
 
     {/* Bottom: context toolbar */}
     <footer className="dock" aria-label={`${mode} tools`}>

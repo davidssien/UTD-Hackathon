@@ -59,16 +59,17 @@ interface Props {
   onTag?(key: string, at: { x: number; y: number }): void;
   playback?: PlaybackController | null;
   layer: SceneLayer;
-  /** Scene background: blueprint blue (default) or black (D70). */
   theme?: SceneTheme;
+  gridStyle?: GridStyle;
   overlay?: HeatOverlay | null;
   onSelect(id: string | null): void;
   onEdit(commands: EditCommand[]): void;
   onContext?(at: { x: number; y: number }, hit: SceneHit | null): void;
 }
 
-export type SceneTheme = 'black' | 'blueprint';
-const THEMES: Record<SceneTheme, { ground: string; dots: number }> = { black: { ground: '#0b0c0e', dots: 0.7 }, blueprint: { ground: '#1c446f', dots: 1 } };
+export type SceneTheme = 'black' | 'white' | 'blueprint';
+export type GridStyle = 'lined' | 'dotted' | 'off';
+const THEMES: Record<SceneTheme, { ground: string; dots: number }> = { white: { ground: '#ffffff', dots: 0.72 }, black: { ground: '#0b0c0e', dots: 0.7 }, blueprint: { ground: '#1c446f', dots: 1 } };
 const SUGGEST = '#3d9bff';
 const SELECT = '#ffb020';
 const WALL_STYLE: Record<WallMaterial, { thicknessM: number }> = { normal: { thicknessM: 0.2 }, reinforced: { thicknessM: 0.3 }, glass: { thicknessM: 0.12 } };
@@ -131,14 +132,16 @@ function hatchable<M extends THREE.Material>(m: M): M {
 function groundMaterial(theme: SceneTheme, overlay = false) {
   return new THREE.ShaderMaterial({
     transparent: overlay, depthWrite: !overlay,
-    uniforms: { uBase: { value: new THREE.Color(THEMES[theme].ground) }, uDot: { value: new THREE.Color('#ffffff') }, uGain: { value: THEMES[theme].dots }, uOverlay: { value: overlay ? 1 : 0 } },
+    uniforms: { uBase: { value: new THREE.Color(THEMES[theme].ground) }, uDot: { value: new THREE.Color('#ffffff') }, uGain: { value: THEMES[theme].dots }, uOverlay: { value: overlay ? 1 : 0 }, uLined: { value: 0 } },
     vertexShader: `varying vec2 vPlan;
       void main() { vec4 w = modelMatrix * vec4(position, 1.0); vPlan = vec2(w.x, -w.z); gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `uniform vec3 uBase; uniform vec3 uDot; uniform float uGain; uniform float uOverlay; varying vec2 vPlan;
+    fragmentShader: `uniform vec3 uBase; uniform vec3 uDot; uniform float uGain; uniform float uOverlay; uniform float uLined; varying vec2 vPlan;
       float dots(vec2 p, float spacing, float radiusPx) {
         vec2 px = max(fwidth(p), vec2(1e-5));
         vec2 d = (fract(p / spacing + 0.5) - 0.5) * spacing;
-        return 1.0 - smoothstep(radiusPx - 0.6, radiusPx + 0.6, length(d / px));
+        vec2 dist = abs(d / px);
+        if (uLined > 0.5) return 1.0 - smoothstep(0.0, 1.1, min(dist.x, dist.y));
+        return 1.0 - smoothstep(radiusPx - 0.6, radiusPx + 0.6, length(dist));
       }
       void main() {
         float mpp = max(fwidth(vPlan.x), fwidth(vPlan.y));
@@ -785,6 +788,25 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     r.renderer.domElement.style.cursor = painting ? 'crosshair' : '';
   }, [painting, props.editing, library]);
 
+  const gridElevation = floorOf(props.doc, props.floorId)?.elevationM ?? 0;
+  useEffect(() => {
+    const r = runtime.current;
+    if (!r) return;
+    const theme = props.theme ?? 'blueprint', style = props.gridStyle ?? 'dotted';
+    const colors = THEMES[theme];
+    r.renderer.setClearColor(colors.ground);
+    for (const mesh of [r.ground, r.grid]) {
+      const uniforms = (mesh.material as THREE.ShaderMaterial).uniforms;
+      uniforms.uBase.value.set(colors.ground);
+      uniforms.uDot.value.set(theme === 'white' ? '#445770' : '#ffffff');
+      uniforms.uLined.value = style === 'lined' ? 1 : 0;
+      uniforms.uGain.value = style === 'off' || (mesh === r.ground && gridElevation !== 0) ? 0 : colors.dots;
+    }
+    r.grid.visible = gridElevation !== 0 && style !== 'off';
+    r.grid.position.y = gridElevation + 0.001;
+    r.dirty = true;
+  }, [props.theme, props.gridStyle, gridElevation, library]);
+
   const finishCuts = useMemo(() => slabCutouts(props.doc?.slabs ?? []), [props.doc?.slabs]);
   // ── Geometry ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -804,11 +826,6 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       if (below(floorId)) { m.color.multiplyScalar(0.3); m.emissive.set('#000000'); }
       return m;
     };
-    const elevation = viewed?.elevationM ?? 0;
-    r.grid.visible = elevation > 0;
-    r.grid.position.y = elevation + 0.001;
-    const dots = THEMES[props.theme ?? 'blueprint'].dots;
-    (r.ground.material as THREE.ShaderMaterial).uniforms.uGain.value = elevation > 0 ? 0 : dots;
 
     const byWall = new Map(doc.walls.map(w => [w.id, w]));
     const groups = new Map<string, THREE.Group>();
@@ -914,7 +931,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     for (const note of props.notes ?? []) { const at = entityAnchor.get(note.entityId); if (at) anchors.set(note.key, at); }
     r.anchors = anchors;
     if (framedProject.current !== doc.projectId) { framedProject.current = doc.projectId; r.frame(latest.current.editing ? 'top' : 'iso', false); }
-  }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, props.theme, library, finishCuts]);
+  }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, library, finishCuts]);
 
   // Geometry above is ready before framing. Acknowledge the camera only after its final frame is drawn.
   useEffect(() => {
