@@ -419,6 +419,30 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Without a key it degrades to deterministic.
 - The side-by-side comparison shows where behavior differs and why, in the model's own one-line reasons.
 
+### K. Collaborative modes (Pass 13, a headline for `STABLE-V2`)
+
+**Goal.** Everyone on a project works from the same state, whichever mode they're in.
+
+- **Edit:** everyone edits at once (already the case). Server-confirmed optimistic edits; conflicts resolve by order.
+- **Simulate:** one **shared live simulation per project**.
+  - When anyone starts a run, everyone on the Simulate screen follows the same run. The frames are already persisted in SpacetimeDB (`replay_chunks`) and stream to every subscriber in real time.
+  - People joining late catch up from the stored frames.
+  - **While a run is in progress the layout is locked:** the server refuses edits. The presence chip turns red with a lock and says why, and the Edit tools are disabled until the run ends or is stopped.
+  - Each person keeps their own playhead and speed.
+- **Analysis:** shared. Agent jobs, steps and proposals are per project (already true). The open proposal and Accept/Reject are seen by everyone; the first decision wins.
+- **Presence by mode:** the chip's hover list shows who is where (Edit / Simulate / Analysis).
+
+**Backend** (additive)
+- `project_live` (projectId → current run id, set by `request_simulation` and cleared when the run ends or is cancelled), with the edit lock enforced in `apply_edit`.
+- `presence_state` (identity → project and mode, via `set_mode`, cleared on disconnect).
+
+*Done when:*
+- Two browsers on one project: B sees A's run start in Simulate without doing anything, at the same LIVE edge.
+- A's edit attempt during the run is refused with a clear message, and the chip shows the lock.
+- When the run ends, editing unlocks for both.
+- Both see the same agent proposal and the same accept.
+- e2e-multiuser covers it.
+
 ### S. Security review (before the `STABLE-V2` tag)
 
 **Threat model:**
@@ -464,14 +488,15 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 |---|---|---|
 | 6 ✅ | **T: one central `.env`, `npm run db` wrapper.** Small, and first. *Done 2026-11-08 and verified on Cody's machine against Maincloud; the second-machine check is still open.* | T done-when list |
 | 7 ✅ | A (display, including the steady LIVE badge) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists. *Done 2026-11-08 on `stable-forward`; the module changes (`my_project_stats`, `preview_project`, `preview_entities`) need `npm run db:publish` to `egress-dev` before `main` moves. Playhead-accurate readout rows are deferred.* |
-| 8 | C: the desktop serving the website and runner through the tunnel, sharing and presence | C done-when list from a phone on cellular data |
-| 9 | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated |
-| 10 | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron |
-| 11 | E: room labels and escape plans | E done-when list |
+| 8 ✅ | C: sharing and presence (permanent links, viewer joins, owner roles, presence chip). *Code done 2026-11-08; the desktop serving the site and runner is Cody's setup (SELF_HOSTING.md).* | C done-when list from a phone on cellular data |
+| 9 ✅ | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated. *Done: no mass switching (1–2 per tick vs 21–38), times equal or within ~2%.* |
+| 10 ✅ | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron. *Done; combining several winners into one proposal is deferred.* |
+| 11 ✅ | E: room labels (Nemotron + rules + user overrides) and escape plans | E done-when list. *Done; Nemotron labels the Courtyard as Office Suite / Conference Room / Main Corridor.* |
 | 12 | F: slabs and materials, then floors and stairs (core, then sim, then UI), plus population painting | F done-when list |
-| 13 | S: security review and fixes | S done-when list |
-| 14 | Harden, final review and docs; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
-| 15+ | I: agentic evacuation mode; then G: airflow, smoke, fire; tag `STABLE-V3` | I and G done-when lists |
+| 13 | **K: collaborative modes** (§3 K): one shared live simulation per project, edits locked while it runs, presence by mode, shared analysis. Then **at least 3 example saves** that differ in size and layout. | K done-when list |
+| 14 | S: security review and fixes, then a **global naming check**: no "ExitCraft" left anywhere; it is Egress | S done-when list; `git grep -i exitcraft` is empty |
+| 15 | Harden, final review and docs; publish the module to `egress-dev`; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
+| 16+ | I: agentic evacuation mode; then G: airflow, smoke, fire; tag `STABLE-V3` | I and G done-when lists |
 
 - Pass 8 can start alongside 7 (it's mostly setup on the desktop). It needs B's JSON import before moving projects off Maincloud.
 - Pass 9 comes before the agent work because agent proposals are only as good as the crowd model they measure.
@@ -618,3 +643,5 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D86 | 11-08 | **`Plan.md` renamed to `PLAN.md`.** References were repointed: architecture sections to `docs/ARCHITECTURE.md`, workstreams and decisions to `PLAN.md`, old passes to the archive. |
 | D87 | 11-08 | **`STABLE-V1.1` and `stable-forward`.** `STABLE-V1.1` tags the verified team setup (`6593cd9`). Passes 7–13 run on `stable-forward`. CV floor-plan scanning is the partner's area; we only keep its seams stable (`buildingToDocument`, the importer entry points, `importProject`) and expect manual merges. |
 | D88 | 11-08 | **Placeable rotation.** Floor-placed placeables (furniture) rotate about the vertical axis only (`rotationDeg`, yaw); wall-attached placeables follow their wall. The furniture contract adds this when the furniture pass lands. |
+| D89 | 11-08 | **Collaboration is a V2 headline (Pass 13).** One shared live simulation per project that everyone in Simulate follows; edits are locked server-side while it runs and the presence chip shows the lock; presence includes each person's mode; analysis is shared. |
+| D90 | 11-08 | **Security review moves to Pass 14, followed by a global naming check** (no "ExitCraft" left; the product is Egress). At least three varied example saves ship with Pass 13. |
