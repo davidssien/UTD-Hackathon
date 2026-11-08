@@ -9,7 +9,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  deriveLayout, floorsByLevel, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
+  ACTOR_EXITED, ACTOR_QUEUED, ACTOR_TRANSITIONING, deriveLayout, floorsByLevel, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
   type Vec2, type WallMaterial,
 } from '@egress/core';
 import type { PlaybackController } from '@egress/client';
@@ -210,6 +210,7 @@ interface Runtime {
   anchors: Map<string, THREE.Vector3>;
   dirty: boolean;
   geometryChanged: boolean;
+  viewedFloor: number;
   afterFrame?: () => void;
   bounds: { center: THREE.Vector3; extent: number };
   frame(view: 'top' | 'iso' | 'fit', animate?: boolean): void;
@@ -326,8 +327,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     let anchor: Vec2 | null = null, chainStart: Vec2 | null = null;
     let down: { at: Vec2 | null; px: Vec2; button: number } | null = null;
     let stroke: Vec2[] | null = null;
-    /** The floor the pointer works on: the viewed floor in Edit, the ground when painting. */
-    const workFloor = () => (latest.current.editing ? floorOf(latest.current.doc, latest.current.floorId) : floorOf(latest.current.doc, null));
+    const workFloor = () => floorOf(latest.current.doc, latest.current.floorId);
     const workHeight = () => workFloor()?.elevationM ?? 0;
     let roomCache: { doc: EgressDocument; rooms: ReturnType<typeof deriveLayout>['topology']['rooms'] } | null = null;
     const roomAt = (p: Vec2, floorId: string) => {
@@ -339,7 +339,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     const r: Runtime = {
-      camera, controls, renderer, scene, walls, floors, grid, ground, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true,
+      camera, controls, renderer, scene, walls, floors, grid, ground, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true, viewedFloor: 0,
       cancel() { r.dirty = true; anchor = null; chainStart = null; stroke = null; disposeChildren(preview); if (dim.current) dim.current.hidden = true; },
       frame(view, animate = true) {
         r.cancel();
@@ -450,7 +450,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         ring.visible = false;
         const at = groundAt(e); if (!at) return;
         const radius = state.paint!.radiusM;
-        brush.visible = true; brush.scale.setScalar(radius); brush.position.set(at.x, 0.08, -at.y);
+        brush.visible = true; brush.scale.setScalar(radius); brush.position.set(at.x, workHeight() + 0.08, -at.y);
         (brush.material as THREE.MeshBasicMaterial).color.set(state.paint!.mode === 'increase' ? '#ffc65c' : state.paint!.mode === 'decrease' ? '#6fc3ff' : '#ffffff');
         if (stroke) {
           const last = stroke[stroke.length - 1];
@@ -603,6 +603,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     let raf = 0, lastHatch = 0;
     const hatchOrientation = new THREE.Quaternion();
     let lastEditing: boolean | null = null;
+    let lastActorFloor = -1;
     let lastPlayback: PlaybackController | null = null;
     let lastActorState: ReturnType<PlaybackController['state']['get']> | undefined;
     const loop = (now: number) => {
@@ -662,7 +663,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       const playback = state.playback;
       const discrete = state.layer.people === 'discrete' ? playback ?? null : null;
       const actorState = discrete?.state.get();
-      if (discrete !== lastPlayback || actorState !== lastActorState) {
+      if (discrete !== lastPlayback || actorState !== lastActorState || r.viewedFloor !== lastActorFloor) {
+        lastActorFloor = r.viewedFloor;
         lastPlayback = discrete;
         lastActorState = actorState;
         r.dirty = true;
@@ -670,11 +672,13 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         people.count = actors ? Math.min(actors.actorFlags.length, 4000) : 0;
         if (actors) {
           for (let i = 0; i < people.count; i++) {
-            const gone = actors.actorFlags[i] === 3;
+            const flag = actors.actorFlags[i], floor = actors.actorFloor?.[i] ?? 0;
+            const onVisibleStair = flag === ACTOR_TRANSITIONING && floor === r.viewedFloor + 1;
+            const gone = flag === ACTOR_EXITED || (floor > r.viewedFloor && !onVisibleStair);
             matrix.makeScale(gone ? 0 : 1, gone ? 0 : 1, gone ? 0 : 1);
-            matrix.setPosition(actors.actorXY[i * 2], 0.2, -actors.actorXY[i * 2 + 1]);
+            matrix.setPosition(actors.actorXY[i * 2], (actors.actorElevation?.[i] ?? 0) + 0.2, -actors.actorXY[i * 2 + 1]);
             people.setMatrixAt(i, matrix);
-            people.setColorAt(i, color.copy(actors.actorFlags[i] === 1 ? queued : amber));
+            people.setColorAt(i, color.copy(flag === ACTOR_QUEUED ? queued : amber));
           }
           people.instanceMatrix.needsUpdate = true;
           if (people.instanceColor) people.instanceColor.needsUpdate = true;
@@ -688,11 +692,11 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       if (now - lastHeat > HEAT_BLEND_MS) {
         lastHeat = now;
         const overlay = state.overlay;
-        const field = overlay?.field ?? (playback && state.layer.people === 'heatmap' ? playback.field(state.layer.field, state.layer.stat) : null);
+        const field = overlay?.field ?? (playback && state.layer.people === 'heatmap' ? playback.field(state.layer.field, state.layer.stat, state.floorId ?? undefined) : null);
         if (heat.visible !== !!field) r.dirty = true;
         heat.visible = !!field;
         if (field) {
-          const g = field.grid, key = `${g.origin.x},${g.origin.y},${g.width},${g.height},${g.cellSizeM}`;
+          const g = field.grid, key = `${g.floorId},${g.origin.x},${g.origin.y},${g.width},${g.height},${g.cellSizeM}`;
           const data = encodeField(field), diverging = overlay?.diverging ?? false;
           const next = new THREE.DataTexture(data, g.width, g.height, THREE.RGFormat, THREE.FloatType);
           next.needsUpdate = true;
@@ -707,7 +711,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           heatUniforms.uDiverging.value = diverging ? 1 : 0;
           if (fresh) {
             heat.scale.set(g.width * g.cellSizeM, g.height * g.cellSizeM, 1);
-            heat.position.set(g.origin.x + g.width * g.cellSizeM / 2, 0.03, -(g.origin.y + g.height * g.cellSizeM / 2));
+            heat.position.set(g.origin.x + g.width * g.cellSizeM / 2, (state.doc?.floors.find(f => f.id === g.floorId)?.elevationM ?? 0) + 0.03, -(g.origin.y + g.height * g.cellSizeM / 2));
             heatKey = key;
           }
         } else heatKey = '';
@@ -792,6 +796,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     // Floors (D75): the viewed floor and those below it; below ones darker and not pickable.
     const viewed = floorOf(doc, props.floorId);
     const level = viewed?.level ?? 0;
+    r.viewedFloor = floorsByLevel(doc).findIndex(f => f.id === viewed?.id);
     const shown = new Map(doc.floors.filter(f => f.level <= level).map(f => [f.id, f]));
     const height = (floorId: string) => shown.get(floorId)?.elevationM ?? 0;
     const below = (floorId: string) => (shown.get(floorId)?.level ?? 0) < level;

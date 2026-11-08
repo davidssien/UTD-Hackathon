@@ -42,7 +42,7 @@ The old `/dev` harness and the ExitCraft-era editor/viewer components were remov
 **Simulate**
 - Pane: people, distribution (Uniform or Painted), seed, then live readout: end state, evacuation time, how far the server has computed, evacuated, still inside, max queue, and people who cannot reach an exit.
 - **Painted:** take out the brush and left-drag on the plan for More / Fewer / Reset; the overlay shows where people will start. The count stays the same.
-- **Shared run:** everyone on the project follows the newest run live. While it runs, editing is locked for everyone: the presence chip turns red with a lock, and Edit shows Watch / Stop. Anyone with edit access can stop it. The simulation covers the ground floor for now.
+- **Shared run:** everyone on the project follows the newest run live. While it runs, editing is locked for everyone: the presence chip turns red with a lock, and Edit shows Watch / Stop. Anyone with edit access can stop it. Occupants on each floor can use a local exterior exit or descend stairs. Switch floors during playback to see each crowd and its density. The result lists starts, exits and stair descents by floor.
 - Toolbar: « 10 s, play/pause, » 10 s (also ←, Space, →), timeline up to the LIVE edge, `LIVE` / `END` badge, playback 1× / 2× / 4×.
 - The server always computes at 4× and runs ahead; pause and scrub are client-side. A run ends only when everyone reachable is out, the flow stops changing for 10 s, or a 15-minute safety cap.
 

@@ -7,11 +7,13 @@ The release baseline is the tested studio at `dd55d3f`. Tag that revision `Stabl
 | Target | Deliverable | Acceptance check |
 | --- | --- | --- |
 | First | Promote the baseline and record both remote refs. | GitHub main contains the tagged revision and the worktree remains on stable-forward. |
-| By 7:00 | Add an opt-in ground-floor fire evacuation to the deterministic model. Use one ignition point, a ventilation field driven by exterior openings, smoke transport, fire spread and explicit casualty accounting. | A sealed partition blocks spread. Identical inputs reproduce identical results. Ordinary evacuations retain their existing behavior. |
-| By 7:15 | Connect the scenario to the existing runner, SpacetimeDB run/replay data and studio. Place the origin with a flame pin and inspect airflow, smoke and fire during playback. | The replay follows the playhead when paused or scrubbed. Exited, remaining and modeled fatalities account for the starting population. |
-| By 7:30 | Exercise one preset in the browser, run regression tests and document reproducible settings and deployment dependencies. | A teammate can run the demo and distinguish a measured result from an untested integration. |
+| By 7:05 | Simulate occupants on each supported floor and route them to a same-floor exit or a descending stair with a reachable exit below. Include the descent and remaining walking distance in the choice. | The two-story clinic evacuates upstairs occupants through its stair. Upstairs exits win where faster. A disconnected upper floor reports stranded occupants. |
+| By 7:20 | Carry floor and height through shared replay. Render the descent, respect the floor selector and preserve playback of existing single-floor runs. | Pause and scrub a clinic replay. The count, floor and height agree before, during and after the descent. |
+| By 7:30 | Run deterministic and real runner/codec tests, exercise the browser and record a handoff. | The team has a tested multi-floor milestone independent of hazard work. |
 
-The model uses simplified ground-floor ventilation and spread. Thresholds represent illustrative simulation outcomes. Reserve multi-floor smoke, HVAC equipment, structural failure and calibrated human exposure for a later model.
+## Next slice · after multi-floor verification
+
+Add an optional fire evacuation with one flame pin. Derive a simplified airflow layer from exterior openings, transport smoke across accessible cells, and report modeled fire and cumulative-smoke fatalities. Keep ignition, route choices and exposure on fixed simulation ticks. Begin this slice only with enough time to verify it independently.
 
 ## Proposed Claude handoff · next four hours
 
@@ -20,3 +22,12 @@ The model uses simplified ground-floor ventilation and spread. Thresholds repres
 - Rehearse one baseline and one changed layout with the same conditions. Record the serving runner version, project, seeds and measured outcomes. Use the Stable-V2 release for rehearsal if the new runner and client have not passed together.
 
 Keep deployment and recording with the team coordinating the demo. Update the handoff below with the implementation and checks actually completed.
+
+## Verified multi-floor handoff
+
+GitHub `main` and the annotated `Stable-V2` tag point to `dd55d3f`. The following work is on `stable-forward`.
+
+- Two-Story Clinic on local SpacetimeDB, 80 people, uniform distribution, seed 1. The authoritative runner placed 45 on the ground floor and 35 upstairs. All 35 descended and all 80 exited on the ground floor in 61.8 simulated seconds. The runner reported 1.23 ms per tick for this run.
+- A separate viewer followed the run, selected the upper floor, and reloaded the saved replay. The upper-floor density field peaked at 3.2 people/m² at the sampled playhead. The decoded descent included intermediate elevations.
+- Deterministic tests cover competing upper exits and stairs, a blocked onward exit, a disconnected floor, and two consecutive descents from a third floor. Multi-floor runs use version 2 frames. Earlier single-floor streams remain playable.
+- For the judging database, publish the module and deploy the matching runner and frontend together. The scratch database used for this verification was `egress-stairs-sprint-1108a` on localhost.

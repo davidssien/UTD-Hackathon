@@ -5,7 +5,7 @@
  * touches the server; the runner keeps simulating to completion.
  */
 import {
-  ACTOR_EXITED, TICK_RATE_HZ, type ActorFrame, type Aggregation, type FieldId, type ID, type RunStatus, type ScalarField,
+  ACTOR_EXITED, floorsByLevel, TICK_RATE_HZ, type ActorFrame, type Aggregation, type FieldId, type ID, type RunStatus, type ScalarField,
   type EgressDocument, type SimulationMetrics,
 } from '@egress/core';
 import { compileFloor, FieldAccumulator, PARAMS } from '@egress/sim';
@@ -144,13 +144,15 @@ export class Playback implements PlaybackController {
     const alpha = t - i0;
     if (!b || alpha <= 0 || a.tick !== i0) return a;
     const xy = new Float32Array(a.actorXY.length);
+    const elevation = a.actorElevation?.slice();
     for (let i = 0; i < a.actorFlags.length; i++) {
       // Exited actors stay where they left; do not slide them toward a stale position.
       const k = a.actorFlags[i] === ACTOR_EXITED ? 0 : alpha;
+      if (elevation && b.actorElevation) elevation[i] += (b.actorElevation[i] - elevation[i]) * k;
       xy[i * 2] = a.actorXY[i * 2] + (b.actorXY[i * 2] - a.actorXY[i * 2]) * k;
       xy[i * 2 + 1] = a.actorXY[i * 2 + 1] + (b.actorXY[i * 2 + 1] - a.actorXY[i * 2 + 1]) * k;
     }
-    return { tick: t, actorXY: xy, actorFlags: a.actorFlags };
+    return { ...a, tick: t, actorXY: xy, actorElevation: elevation };
   }
 
   /** The run's frozen layout; enables heatmaps computed from frames (D15). */
@@ -166,18 +168,21 @@ export class Playback implements PlaybackController {
    * 'timeAverage' and 'perCellPeak' accumulate from the start of the run up to it.
    * Scrubbing backwards recomputes from tick 0 (cheap: ~25 cell updates per person per sample).
    */
-  field(id: FieldId, aggregation: Aggregation): ScalarField | null {
+  field(id: FieldId, aggregation: Aggregation, floorId?: string): ScalarField | null {
     if (!this.layout) return null;
     const every = PARAMS.fieldEvery;
     const target = Math.floor(this.state.get().tick / every) * every;
-    if (!this.accumulator || target < this.accumulatedTo) {
-      this.accumulator = new FieldAccumulator(compileFloor(this.layout));
+    const floors = floorsByLevel(this.layout);
+    const floor = floorId ? floors.findIndex(f => f.id === floorId) : 0;
+    if (floor < 0) return null;
+    if (!this.accumulator || target < this.accumulatedTo || this.accumulator.compiled.floorId !== floors[floor].id) {
+      this.accumulator = new FieldAccumulator(compileFloor(this.layout, floors[floor].id));
       this.accumulatedTo = -every;
     }
     for (let t = this.accumulatedTo + every; t <= target; t += every) {
       const f = this.frames[t];
       if (!f) break;
-      this.accumulator.addFrame(f, this.frames[t - 1] ?? null);
+      this.accumulator.addFrame(f, this.frames[t - 1] ?? null, floor);
       this.accumulatedTo = t;
     }
     return this.accumulator.field(id, aggregation);

@@ -260,8 +260,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     }).catch(fail);
   };
   const paintStroke = (s: PaintStroke) => {
-    if (!floors[0]) return;
-    setStrokes(list => [...list, { id: `b${Date.now().toString(36)}${list.length}`, floorId: floors[0].id, points: s.points, radiusM: s.radiusM, mode: s.mode, weight: s.mode === 'erase' ? 0 : s.mode === 'increase' ? 1.5 : -1, falloff: 'linear' as const }].slice(-500));
+    if (!floor) return;
+    setStrokes(list => [...list, { id: `b${Date.now().toString(36)}${list.length}`, floorId: floor.id, points: s.points, radiusM: s.radiusM, mode: s.mode, weight: s.mode === 'erase' ? 0 : s.mode === 'increase' ? 1.5 : -1, falloff: 'linear' as const }].slice(-500));
   };
 
   // Analysis: preview the newest open proposal on the model.
@@ -293,12 +293,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const paintField = useMemo<ScalarField | null>(() => {
     if (mode !== 'simulate' || distribution !== 'painted' || !brush || !doc) return null;
     try {
-      const compiled = compileFloor(doc), weights = paintWeights(compiled, strokes);
+      const compiled = compileFloor(doc, floor?.id), weights = paintWeights(compiled, strokes);
       const values = new Float32Array(weights.length);
       for (let i = 0; i < weights.length; i++) values[i] = compiled.navigable[i] && compiled.room[i] >= 0 ? weights[i] * 0.9 : NaN;
       return { fieldId: 'people.density', aggregation: 'instant', grid: compiled.grid, units: 'relative', values };
     } catch { return null; }
-  }, [mode, distribution, brush, doc, strokes]);
+  }, [mode, distribution, brush, doc, floor, strokes]);
   const overlay: HeatOverlay | null = paintField ? { field: paintField, diverging: false }
     : mode === 'analysis' && diffMap && comparison?.congestionDiff ? { field: comparison.congestionDiff, diverging: true } : null;
 
@@ -677,11 +677,11 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
         <button className="icon-button" data-tip="New seed" disabled={running} onClick={() => setSeed(Math.floor(Math.random() * 100000))}><ArrowPathIcon /></button>
       </label>
       {!capacity && <p className="note">There is no space to place people in the current layout and distribution.</p>}
-      {playback && <RunReadout playback={playback} />}
+      {playback && <RunReadout playback={playback} doc={doc} />}
       {runFailed && <p className="note error">{runFailed}</p>}
       {!runnerOnline && <p className="note warn">Simulation server offline</p>}
       {running && <p className="note">Everyone on this project sees this run live, and editing is locked until it ends.</p>}
-      {upperFloors && <p className="note">The evacuation covers the ground floor; upper floors and stairs join the simulation in a later pass.</p>}
+      {upperFloors && <p className="note">People start across walkable floors. Use the floor selector to follow them through exits and down stairs.</p>}
     </div>
     <div className="pane-actions">
       {running ? <button className="button danger" disabled={!canRun} onClick={onStop}><StopIcon />Stop</button>
@@ -698,7 +698,7 @@ function endText(m: SimulationMetrics | null): string {
   return 'Time limit reached';
 }
 
-function RunReadout({ playback }: { playback: PlaybackController }) {
+function RunReadout({ playback, doc }: { playback: PlaybackController; doc: EgressDocument | null }) {
   const m = useEgress(playback.metrics), s = useEgress(playback.state);
   const rows: [string, string][] = [
     ['Evacuation time', m?.evacuationTimeSeconds != null ? `${m.evacuationTimeSeconds.toFixed(1)} s` : '—'],
@@ -707,6 +707,13 @@ function RunReadout({ playback }: { playback: PlaybackController }) {
     ['Still inside', m ? String(m.remainingPeople) : '—'],
     ['Max queue', m ? String(m.maxQueueLength) : '—'],
   ];
+  if (m?.perFloor) {
+    for (const f of doc ? floorsByLevel(doc) : []) {
+      const counts = m.perFloor[f.id];
+      if (counts) rows.push([f.name, `${counts.started} started · ${counts.exitedHere} exited here`]);
+    }
+    rows.push(['Stair descents', String(Object.values(m.perFloor).reduce((sum, f) => sum + f.stairDescents, 0))]);
+  }
   if (m?.unreachablePeople) rows.push(['Cannot reach an exit', String(m.unreachablePeople)]);
   if (m?.exitSwitches !== undefined) rows.push(['Exit changes', m.exitReversals ? `${m.exitSwitches} (${m.exitReversals} back)` : String(m.exitSwitches)]);
   return <section className="readout">

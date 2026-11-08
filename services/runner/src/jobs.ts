@@ -4,7 +4,7 @@
  * generated bindings (reducers + runner views) to this interface.
  */
 import {
-  canonicalJson, DomainError, encodeChunk, encodeFieldBundle, FIELDS_ENCODING, FRAME_ENCODING, parseDocumentJson, parseScenarioJson,
+  canonicalJson, DomainError, encodeChunk, encodeFieldBundle, FIELDS_ENCODING, frameEncoding, parseDocumentJson, parseScenarioJson,
   TICK_RATE_HZ, type AgentContext, type AgentStepKind, type EditCommand, type EgressDocument, type ID, type Pace, type ProposalNotes,
   type SimulationMetrics,
 } from '@egress/core';
@@ -96,7 +96,7 @@ export async function processRun(
       const chunk = next.value;
       if (options.streamChunks !== false) {
         const bytes = encodeChunk(chunk, origin);
-        await backend.appendChunk(run.runId, outcome.chunks, chunk.firstTick, chunk.frames[chunk.frames.length - 1].tick, FRAME_ENCODING, bytes);
+        await backend.appendChunk(run.runId, outcome.chunks, chunk.firstTick, chunk.frames[chunk.frames.length - 1].tick, frameEncoding(chunk.frames[0]), bytes);
         outcome.bytes += bytes.length;
       }
       outcome.chunks++;

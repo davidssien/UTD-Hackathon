@@ -15,7 +15,7 @@ import { connect, SpacetimeBackend } from './spacetime.ts';
 
 /** Clients treat a runner as online if its last heartbeat is newer than ~4 beats. */
 export const HEARTBEAT_MS = 5000;
-const RUNNER_VERSION = 'egress-runner 0.2';
+const RUNNER_VERSION = 'egress-runner 0.3';
 
 export interface RunnerHandle {
   backend: SpacetimeBackend;

@@ -11,7 +11,7 @@ import { schema, SenderError, t, table, type InferSchema, type ReducerCtx } from
 import { Timestamp, type Identity } from 'spacetimedb';
 import {
   applyEdit, canonicalJson, DomainError, emptyDocument, entitiesToDocument, documentToEntities, layoutHash, LOCKED_MESSAGE, locksEditing,
-  parseDocumentJson, parseEditRequestJson, parseScenarioJson, parseWith, PaceSchema, PRESENCE_MODES, RoleSchema, sha256Hex, EditCommandSchema,
+  MULTIFLOOR_MODEL_VERSION, parseDocumentJson, parseEditRequestJson, parseScenarioJson, parseWith, PaceSchema, PRESENCE_MODES, RoleSchema, sha256Hex, EditCommandSchema,
   type EgressDocument, type Entity, type Role,
 } from '@egress/core';
 
@@ -708,7 +708,7 @@ export const request_simulation = spacetimedb.reducer(
     const hash = freezeSnapshot(ctx, doc);
     ctx.db.sim_runs.insert({
       id: runId, projectId: s.projectId, status: 'queued', layoutHash: hash, layoutRevision: BigInt(doc.revision),
-      scenario: canonicalJson(s), seed: s.population.seed, modelId: MODEL_ID, modelVersion: MODEL_VERSION, pace: parsedPace,
+      scenario: canonicalJson(s), seed: s.population.seed, modelId: MODEL_ID, modelVersion: doc.floors.length > 1 ? MULTIFLOOR_MODEL_VERSION : MODEL_VERSION, pace: parsedPace,
       agentJobId: '', requestedBy: ctx.sender, claimedBy: '', progressTick: 0, chunkCount: 0, errorCode: '', errorMessage: '',
       createdAt: ctx.timestamp, updatedAt: ctx.timestamp,
     });
@@ -781,7 +781,7 @@ export const start_agent_run = spacetimedb.reducer(
     const hash = freezeSnapshot(ctx, doc);
     ctx.db.sim_runs.insert({
       id: runId, projectId: job!.projectId, status: 'running', layoutHash: hash, layoutRevision: BigInt(doc.revision),
-      scenario: canonicalJson({ ...s, projectId: job!.projectId }), seed: s.population.seed, modelId: MODEL_ID, modelVersion: MODEL_VERSION,
+      scenario: canonicalJson({ ...s, projectId: job!.projectId }), seed: s.population.seed, modelId: MODEL_ID, modelVersion: doc.floors.length > 1 ? MULTIFLOOR_MODEL_VERSION : MODEL_VERSION,
       pace: 'unpaced', agentJobId: jobId, requestedBy: job!.requestedBy, claimedBy: ctx.sender.toHexString(), progressTick: 0, chunkCount: 0,
       errorCode: '', errorMessage: '', createdAt: ctx.timestamp, updatedAt: ctx.timestamp,
     });
