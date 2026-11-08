@@ -1,5 +1,7 @@
 # Egress — Master Plan
 
+[Final hackathon sprint and handoff](docs/final-sprint/plan.md)
+
 **Owner:** Cody (backend + integration) with Claude · **Frontend:** davidssien · **Rebuilt:** Sun 2026-11-08, after `STABLE-V1`
 
 This file holds **priorities, the work ahead and decisions**. Reference material lives elsewhere:
