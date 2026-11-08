@@ -145,16 +145,14 @@ export interface SimState {
 
 // ── initialize ──────────────────────────────────────────────────────────────
 
-export function initialize(input: FrozenSimulationInput): SimState {
-  const compiled = compileFloor(input.document);
-  const { scenario } = input;
-  const n = scenario.population.count;
-  const rng = createRng(scenario.population.seed);
+function spawnPopulation(compiled: CompiledFloor, population: SimulationScenario['population'], initialActors?: InitialActors) {
+  const n = population.count;
+  const rng = createRng(population.seed);
   const { grid, walkable } = compiled;
 
   // Spawn cells: walkable interior, weighted by free fraction × painted relative density (spec §4.1).
-  const painted = scenario.population.distribution === 'painted' && scenario.population.strokes.length > 0;
-  const weights = painted ? paintWeights(compiled, scenario.population.strokes) : null;
+  const painted = population.distribution === 'painted' && population.strokes.length > 0;
+  const weights = painted ? paintWeights(compiled, population.strokes) : null;
   const cells: number[] = [];
   const cdf: number[] = [];
   let total = 0;
@@ -175,7 +173,7 @@ export function initialize(input: FrozenSimulationInput): SimState {
   const x = new Float64Array(n), y = new Float64Array(n), r = new Float64Array(n), vPref = new Float64Array(n);
   const placed = new Map<number, number[]>();
   const key = (px: number, py: number) => Math.floor(px) * 100_003 + Math.floor(py);
-  const given = input.initialActors && input.initialActors.x.length === n ? input.initialActors : null;
+  const given = initialActors?.x.length === n ? initialActors : null;
   let respawned = 0;
   const fits = (a: number, px: number, py: number) => {
     if (!clearOfWalls(compiled, px, py, r[a] + 0.02)) return false;
@@ -219,6 +217,25 @@ export function initialize(input: FrozenSimulationInput): SimState {
     }
   }
 
+  return { x, y, r, vPref, respawned };
+}
+
+/** The largest crowd this seed and paint distribution can place, up to the control's limit. */
+export function populationCapacity(doc: EgressDocument, population: SimulationScenario['population']): number {
+  try {
+    spawnPopulation(compileFloor(doc), population);
+    return population.count;
+  } catch (e) {
+    if (e instanceof DomainError && e.code === 'POPULATION_INFEASIBLE') return Number(e.details?.placed ?? 0);
+    throw e;
+  }
+}
+
+export function initialize(input: FrozenSimulationInput): SimState {
+  const compiled = compileFloor(input.document);
+  const { scenario } = input;
+  const n = scenario.population.count;
+  const { x, y, r, vPref, respawned } = spawnPopulation(compiled, scenario.population, input.initialActors);
   const blocked = new Set(scenario.goal.blockedExitIds);
   const allowedExit = new Uint8Array(compiled.exits.length);
   compiled.exits.forEach((e, i) => { allowedExit[i] = blocked.has(e.openingId) ? 0 : 1; });
@@ -250,7 +267,7 @@ export function initialize(input: FrozenSimulationInput): SimState {
     }),
     tokens: new Float64Array(compiled.portals.length).fill(1), portalOpen, allowedExit,
     throughput: new Int32Array(compiled.exits.length), queueAtExit: new Int32Array(compiled.exits.length),
-    hash: new ActorHash(grid, n), fields: new FieldAccumulator(compiled),
+    hash: new ActorHash(compiled.grid, n), fields: new FieldAccumulator(compiled),
     maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, lastProgressTick: 0, exited: 0, unreachable: 0,
     initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref) },
     respawned,

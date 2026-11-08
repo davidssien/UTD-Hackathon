@@ -19,7 +19,7 @@ import {
   describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
   type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
 } from '@egress/core';
-import { compileFloor, paintWeights } from '@egress/sim';
+import { compileFloor, paintWeights, populationCapacity } from '@egress/sim';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import type { HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
@@ -381,9 +381,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
         {mode === 'edit' && slab && <SlabInspector slab={slab} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [slab.id] }]); setSelected(null); }} />}
         {mode === 'edit' && stair && doc && <StairInspector stair={stair} doc={doc} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [stair.id] }]); setSelected(null); }} />}
-        {mode === 'simulate' && <SimulatePane client={client} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }} hasDoc={!!doc}
+        {mode === 'simulate' && <SimulatePane doc={doc} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }}
           distribution={distribution} onDistribution={d => { setDistribution(d); setBrush(d === 'painted' ? { radiusM: 2, mode: 'increase' } : null); }}
-          brush={brush} onBrush={setBrush} strokes={strokes.length} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent}
+          brush={brush} onBrush={setBrush} strokes={strokes} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent}
           canRun={canEdit} />}
         {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} locked={locked} onError={fail} />}
       </aside>}
@@ -587,20 +587,22 @@ function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
 
 // ── Simulate ────────────────────────────────────────────────────────────────
 
-function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasDoc, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun }: {
-  client: EgressClient; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; hasDoc: boolean; canRun: boolean;
+function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun }: {
+  doc: EgressDocument | null; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; canRun: boolean;
   onRun(people: number, seed: number): void; onStop(): void;
   distribution: 'uniform' | 'painted'; onDistribution(d: 'uniform' | 'painted'): void;
-  brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: number; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
+  brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: PopulationBrushStroke[]; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
 }) {
-  const [people, setPeople] = useState(150), [seed, setSeed] = useState(1);
-  void client;
+  const [requested, setPeople] = useState(150), [seed, setSeed] = useState(1);
+  const capacity = useMemo(() => doc ? populationCapacity(doc, { count: 2000, seed, distribution, strokes }) : 0,
+    [doc, seed, distribution, strokes]);
+  const people = Math.min(requested, capacity);
   return <>
     <header className="pane-head"><h2>Population</h2></header>
     <div className="pane-body">
       <label className="field"><span>People</span>
-        <input type="range" min={10} max={1000} step={10} value={people} disabled={running} onChange={e => setPeople(Number(e.target.value))} />
-        <input type="number" className="narrow" min={1} max={2000} value={people} disabled={running} onChange={e => setPeople(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))} />
+        <input type="range" aria-label="Population" min={capacity ? 1 : 0} max={capacity} step={1} value={people} disabled={running || !capacity} onChange={e => setPeople(Number(e.target.value))} />
+        <input type="number" className="narrow" aria-label="Population count" min={capacity ? 1 : 0} max={capacity} value={people} disabled={running || !capacity} onChange={e => setPeople(Math.max(1, Math.min(capacity, Math.trunc(Number(e.target.value)) || 1)))} />
       </label>
       <div className="field"><span>Distribution</span><Segmented value={distribution} options={[{ id: 'uniform', name: 'Uniform' }, { id: 'painted', name: 'Painted' }]} onChange={onDistribution} disabled={running} /></div>
       {distribution === 'painted' && <div className="paint-box">
@@ -612,9 +614,9 @@ function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasD
           <input type="range" min={0.5} max={8} step={0.25} value={brush?.radiusM ?? 2} disabled={running || !brush} onChange={e => brush && onBrush({ ...brush, radiusM: Number(e.target.value) })} />
           <em>{(brush?.radiusM ?? 2).toFixed(2)} m</em>
         </label>
-        <div className="field"><span>{strokes} stroke{strokes === 1 ? '' : 's'}</span>
-          <button className="button" disabled={!strokes || running} onClick={onUndoStroke}><ArrowUturnLeftIcon />Undo</button>
-          <button className="button" disabled={!strokes || running} onClick={onClearStrokes}><XMarkIcon />Clear</button>
+        <div className="field"><span>{strokes.length} stroke{strokes.length === 1 ? '' : 's'}</span>
+          <button className="button" disabled={!strokes.length || running} onClick={onUndoStroke}><ArrowUturnLeftIcon />Undo</button>
+          <button className="button" disabled={!strokes.length || running} onClick={onClearStrokes}><XMarkIcon />Clear</button>
         </div>
         <p className="fine">Painting changes where people start, not how many. Left-drag on the plan while the brush is out.</p>
       </div>}
@@ -622,6 +624,7 @@ function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasD
         <input type="number" className="narrow" min={0} value={seed} disabled={running} onChange={e => setSeed(Math.max(0, Number(e.target.value) || 0))} />
         <button className="icon-button" data-tip="New seed" disabled={running} onClick={() => setSeed(Math.floor(Math.random() * 100000))}><ArrowPathIcon /></button>
       </label>
+      {!capacity && <p className="note">There is no space to place people in the current layout and distribution.</p>}
       {playback && <RunReadout playback={playback} />}
       {runFailed && <p className="note error">{runFailed}</p>}
       {!runnerOnline && <p className="note warn">Simulation server offline</p>}
@@ -630,7 +633,7 @@ function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasD
     </div>
     <div className="pane-actions">
       {running ? <button className="button danger" disabled={!canRun} onClick={onStop}><StopIcon />Stop</button>
-        : <button className="button primary" disabled={!hasDoc || !canRun} onClick={() => onRun(people, seed)}><PlayIcon />{playback ? 'Run again' : 'Run evacuation'}</button>}
+        : <button className="button primary" disabled={!capacity || !canRun} onClick={() => onRun(people, seed)}><PlayIcon />{playback ? 'Run again' : 'Run evacuation'}</button>}
     </div>
   </>;
 }

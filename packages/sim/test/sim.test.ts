@@ -5,12 +5,26 @@ import { test } from 'node:test';
 import {
   ACTOR_EXITED, applyEditOrThrow, parseDocument, sha256Hex, type EgressDocument, type SimulationScenario,
 } from '@egress/core';
-import { compileFloor, initialize, isComplete, metrics, runSimulation, step } from '@egress/sim';
+import { compileFloor, initialize, populationCapacity, isComplete, metrics, runSimulation, step } from '@egress/sim';
 
 const fixture = (name: string) => parseDocument(JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '..', 'content', 'scenes', name), 'utf8')));
 const scenario = (doc: EgressDocument, count: number, seed = 1, blockedExitIds: string[] = []): SimulationScenario => ({
   scenarioVersion: 1, id: 's', projectId: doc.projectId, name: 'Evacuate', durationSeconds: 600,
   population: { count, distribution: 'uniform', strokes: [], seed }, goal: { kind: 'evacuate', blockedExitIds },
+});
+
+test('population controls use the same seeded placement limit as the runner', () => {
+  const document = fixture('one-room.json');
+  const input = scenario(document, 2000, 3);
+  const capacity = populationCapacity(document, input.population);
+  assert.ok(capacity > 0 && capacity < 2000);
+  const place = (count: number) => initialize({ runId: 'capacity', document, scenario: scenario(document, count, 3) });
+  assert.equal(place(capacity).n, capacity);
+  assert.throws(() => place(capacity + 1), /minimum spacing/);
+  assert.equal(populationCapacity({ ...document, walls: [], openings: [] }, input.population), 0);
+  assert.equal(populationCapacity(document, { ...input.population, distribution: 'painted', strokes: [{
+    id: 'zero', floorId: document.floors[0].id, points: [{ x: 0, y: 0 }], radiusM: 100, falloff: 'flat', weight: 0, mode: 'set',
+  }] }), 0);
 });
 
 test('nobody is ever inside a wall (3 seeds, every tick)', () => {
