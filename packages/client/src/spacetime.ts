@@ -40,6 +40,10 @@ const uuid = () => globalThis.crypto.randomUUID();
 const shareCode = () => btoa(String.fromCharCode(...globalThis.crypto.getRandomValues(new Uint8Array(16)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const ms = (t: { toMillis(): bigint }) => Number(t.toMillis());
 const parse = <T>(text: string, fallback: T): T => { try { return JSON.parse(text) as T; } catch { return fallback; } };
+/** A server running an older module rejects edit kinds it has never heard of; say so plainly. */
+const outdatedModule = (error: DomainErrorData): DomainErrorData => (/Invalid discriminator value/.test(error.message)
+  ? { code: error.code, message: 'This database runs an older Egress module that does not know this edit yet. Publish the current module (npm run db:publish) and reload.' }
+  : error);
 const wireError = (e: unknown): DomainErrorData => (e instanceof DomainError ? e.toJSON() : DomainError.fromWire(e instanceof Error ? e.message : String(e)).toJSON());
 
 function browserTokenStore(db: string) {
@@ -450,7 +454,7 @@ class SpacetimeEgressClient implements EgressClient {
       await this.call(c => c.reducers.applyEdit({ request: canonicalJson({ projectId, ...local.request }) }));
       return { ok: true, createdIds: local.created };
     } catch (e) {
-      const error = wireError(e);
+      const error = outdatedModule(wireError(e));
       this.od.reject(requestId, error);
       this.publishDocument();
       return { ok: false, error };
