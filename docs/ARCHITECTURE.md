@@ -67,16 +67,23 @@ interface Opening { kind: 'opening'; id: ID; floorId: ID; wallId: ID;
                     offsetM: number;                  // center, measured along the wall from its start vertex
                     widthM: number; sillHeightM: number; openingHeightM: number;
                     state: 'open' | 'closed' }
-type Entity = Floor | Vertex | Wall | Opening;        // furniture joins later
+interface Slab    { kind: 'slab'; id: ID; floorId: ID; polygon: Vec2[];          // floor surface (D74), 3–128 points
+                    material: 'wood' | 'basic' | 'tile' }
+interface Stair   { kind: 'stair'; id: ID; floorId: ID; toFloorId: ID;           // straight stair to the floor directly above (D75)
+                    min: Vec2; max: Vec2; upEdge: 'n' | 'e' | 's' | 'w' }        // upEdge = the side at the top
+type Entity = Floor | Vertex | Wall | Opening | Slab | Stair;   // furniture joins later
 
 interface EgressDocument {
   docVersion: 1;
   projectId: ID;
   revision: number;
   floors: Floor[]; vertices: Vertex[]; walls: Wall[]; openings: Opening[];
+  slabs: Slab[]; stairs: Stair[];                     // default [] when parsing older documents
   furniture: [];                                      // reserved until the furniture pass
 }
 ```
+
+**Floors stack by `level`** (`floorsByLevel`, `groundFloorId`). A new floor sits on the top floor at its elevation plus its floor-to-floor height (`ceilingHeightM`); changing a height restacks every floor above; deleting a floor removes what is on it and every stair touching it, and lowers the floors above. A building always keeps one floor. A stair must be at least 0.8 × 0.8 m and connect a floor to the one directly above. Room hashes on upper floors are salted with the floor id, so stacked identical rooms keep separate labels; ground-floor hashes are unchanged.
 
 **Invariants enforced by `applyEdit`.** The stored wall graph is always planar.
 - A new wall endpoint within 1 mm (after snapping) of an existing vertex reuses that vertex.
@@ -116,6 +123,12 @@ type EditCommand =
       sillHeightM?: number; openingHeightM?: number; state?: Opening['state'] }
   | { kind: 'updateOpening'; openingId: ID; patch: Partial<Pick<Opening, 'offsetM' | 'widthM' | 'state' | 'openingKind'>> }
   | { kind: 'deleteEntities'; ids: ID[] }
+  | { kind: 'createSlab'; floorId: ID; polygon: Vec2[]; material: Slab['material'] }
+  | { kind: 'updateSlab'; slabId: ID; patch: { material?; polygon? } }
+  | { kind: 'createFloor'; name: string; ceilingHeightM?: number }     // on top of the highest floor
+  | { kind: 'updateFloor'; floorId: ID; patch: { name?; ceilingHeightM? } } // restacks the floors above
+  | { kind: 'createStair'; floorId: ID; min: Vec2; max: Vec2; upEdge: Stair['upEdge'] } // to the next floor up
+  | { kind: 'updateStair'; stairId: ID; patch: { upEdge?; min?; max? } }
   | { kind: 'applyPatch'; put: Entity[]; remove: ID[] };              // undo/redo, imports, agent proposals
 
 interface EditRequest { projectId: ID; requestId: ID; baseRevision: number; commands: EditCommand[] } // atomic batch
@@ -144,7 +157,7 @@ interface SimulationScenario {
 }
 ```
 
-`DomainErrorCode` uses the reference contract's list plus `NOT_IMPLEMENTED` and `STALE_EDIT`.
+`DomainErrorCode` uses the reference contract's list plus `NOT_IMPLEMENTED`, `STALE_EDIT` and `PROJECT_LOCKED` (an edit, accept or second run while the project's shared run is live, D89).
 
 ### Frame codec `egress-frames-v1`
 
@@ -205,6 +218,8 @@ Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `p
 | `agent_jobs` | pk id · idx projectId · idx status | requestedBy, prompt, context JSON, status, budget JSON |
 | `agent_steps` | pk autoinc · idx jobId | seq, kind (`thought` / `tool_call` / `tool_result` / `message` / `error`), toolName, payload JSON |
 | `proposals` | pk id · idx projectId | jobId, baseRevision, commands JSON, notes JSON (command index → why), baselineRunId, candidateRunId, delta JSON, status |
+| `online_connections` | pk identity | connection count while connected (presence) |
+| `presence_modes` | pk identity | projectId, mode (`edit` / `simulate` / `analysis`), updatedAt; cleared on disconnect (D89) |
 
 ### Views
 
@@ -217,6 +232,7 @@ Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `p
 | `active_runs` | that project's runs |
 | `active_replay`, `active_result` | chunks and result of `sessions.activeRunId`, if the caller is a member of its project |
 | `active_agent_jobs`, `active_agent_steps`, `active_proposals` | the active project's agent data |
+| `active_presence`, `active_presence_modes` | who of the active project's members is online with it open, and in which mode |
 | `runner_queue`, `runner_inputs` | **runner identity only:** queued runs and agent jobs, plus the frozen inputs of runs it has claimed |
 
 ### Reducers
@@ -235,6 +251,8 @@ Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `p
 - **Session:**
   - `openProject(projectId)`.
   - `openRun(runId)`.
+  - `setMode(projectId, mode)`: presence by mode; `''` clears it.
+- **Shared live simulation (D89):** a user run that is `queued` or `running` and has progressed in the last 2 minutes (`RUN_LOCK_STALE_MS`) locks its project. While it does, `applyEdit`, `acceptProposal` and a second `requestSimulation` fail with `PROJECT_LOCKED`. Agent runs never lock. The rule (`locksEditing`) lives in `@egress/core`, so both clients refuse locally with the same answer.
 - **Editing:** `applyEdit(requestJson)`, editor role or higher:
   1. Load the project's entities into a document.
   2. Run `core.applyEdit`.

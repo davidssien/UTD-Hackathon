@@ -29,7 +29,10 @@ The old `/dev` harness and the ExitCraft-era editor/viewer components were remov
 ## Modes
 
 **Edit** (top-down, locked)
-- Select (V), Wall (W), Room (R), Door (D), Window (N), Exit (E), Erase (X), Undo / Redo (Ctrl+Z / Ctrl+Shift+Z).
+- Select (V), Wall (W), Room (R), Floor (G), Stair (T), Door (D), Window (N), Exit (E), Erase (X), Undo / Redo (Ctrl+Z / Ctrl+Shift+Z).
+- **Floor tool:** click a room to fill it, click a surface to refinish it, or drag a rectangle. Right-click the Floor button for Wood / Basic / Tile.
+- **Stair tool:** drag a rectangle toward the top of the stair; it climbs to the floor above (add one first). The inspector changes its top side.
+- **Floors:** the bottom-left switcher (‹ name ›, PgUp / PgDn) picks the floor you see and draw on; `+` adds a floor on top. Click the name for its name, floor-to-floor height and delete. Floors below draw darker; floors above are hidden.
 - **Right-click the Wall button** for the wall type (Normal / Reinforced / Glass). Right-click a wall on the canvas to change its type or delete it.
 - Walls chain click-to-click; Esc or right-click ends the chain; clicking the start point closes it. Drag draws one segment. Axis-locked by default; hold Shift for any angle. Snaps to existing vertices (0.3 m), otherwise to the 0.25 m dots. A live dimension follows the cursor.
 - Doors, windows and exits preview on the nearest wall before you click.
@@ -37,7 +40,9 @@ The old `/dev` harness and the ExitCraft-era editor/viewer components were remov
 - Selecting a wall or opening opens the inspector (type, thickness, height / kind, width, open/closed).
 
 **Simulate**
-- Pane: people, distribution (Uniform; Painted comes later), seed, then live readout: end state, evacuation time, how far the server has computed, evacuated, still inside, max queue, and people who cannot reach an exit.
+- Pane: people, distribution (Uniform or Painted), seed, then live readout: end state, evacuation time, how far the server has computed, evacuated, still inside, max queue, and people who cannot reach an exit.
+- **Painted:** take out the brush and left-drag on the plan for More / Fewer / Reset; the overlay shows where people will start. The count stays the same.
+- **Shared run:** everyone on the project follows the newest run live. While it runs, editing is locked for everyone: the presence chip turns red with a lock, and Edit shows Watch / Stop. Anyone with edit access can stop it. The simulation covers the ground floor for now.
 - Toolbar: « 10 s, play/pause, » 10 s (also ←, Space, →), timeline up to the LIVE edge, `LIVE` / `END` badge, playback 1× / 2× / 4×.
 - The server always computes at 4× and runs ahead; pause and scrub are client-side. A run ends only when everyone reachable is out, the flow stops changing for 10 s, or a 15-minute safety cap.
 

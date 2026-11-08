@@ -18,6 +18,12 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 **Since `STABLE-V1`:** Pass 6 (§3 T) is done. One root `.env` and `npm run db:*` work against Maincloud `egress-dev` without `spacetime login`, and a partner machine has connected with the shared `.env`. The current module is published to `egress-dev`, and a current runner (heartbeats, Lightning) serves it. The database stays on Cody's Maincloud account (D84); the home desktop will serve only the website and runner (D85). `STABLE-V1.1` tags this state.
 
+**On `stable-forward` since `STABLE-V1.1`** (passes 7–13, not yet on `main`; needs the module published to `egress-dev` first):
+- Saves page as the landing page, sharing links, roles and presence; smooth heatmap and a steady LIVE badge; behavior v0.2; an agent that answers the question asked; room labels and escape plans.
+- Floor surfaces (wood, basic, tile), stacked floors with a switcher, stairs, and population painting. The simulation still covers the ground floor only (Pass 12b).
+- One shared live simulation per project: everyone follows it, editing locks while it runs, the presence chip shows the lock, and presence shows each person's mode.
+- Five example saves, from a 16 × 12 m courtyard to a 48 × 20 m school wing and a two-storey clinic.
+
 **Works today**
 - **Edit:** top-down CAD editing on a planar wall graph (walls, rooms, doors, windows, exits, erase, undo/redo, snapping, dimensions, inspector, wall types).
 - **Simulate:** the egress-pedestrian v0.1 model on the server. The run streams with a LIVE edge and plays back at 1×/2×/4×. It ends when everyone reachable is out, the flow stabilizes, or a safety cap is hit.
@@ -321,6 +327,8 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 *Done when:* a two-floor fixture with one stair evacuates fully, with people visibly descending. Switching floors darkens the floor below and raises the grid. Slabs render in all three materials, and upper-floor walkability follows them. Escape plans on floor 2 route via the stairs.
 
+*Status (Pass 12, D91):* surfaces, floors, the switcher and settings, stairs (drawn and rendered) and population painting are done. **Still open, now Pass 12b:** the multi-floor simulation (stairs linking floor grids, people descending, frame codec v2), upper-floor walkability from slabs, the stair opening in the floor above, and escape plans on upper floors. Until then the simulation covers the lowest floor and the Simulate pane says so.
+
 ### G. Hazards: airflow → smoke → fire (`STABLE-V3`)
 
 1. **Airflow layer.** A coarse per-floor 2D flow field driven by openings (doors open or closed, windows) and configurable inflows, solved with a stable-fluids style step on the 0.25–0.5 m grid. Shown as moving particles or streaks under Layers → Airflow, using fields `air.velocity` and `air.flowMagnitude`.
@@ -443,6 +451,8 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Both see the same agent proposal and the same accept.
 - e2e-multiuser covers it.
 
+*Status (Pass 13, D93):* done. e2e-multiuser checks presence by mode, B following A's run, the client and the server refusing B's edit, a second run refused, and the unlock after Stop. Accept is locked like any edit; the first decision on a proposal wins as before.
+
 ### S. Security review (before the `STABLE-V2` tag)
 
 **Threat model:**
@@ -492,8 +502,9 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | 9 ✅ | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated. *Done: no mass switching (1–2 per tick vs 21–38), times equal or within ~2%.* |
 | 10 ✅ | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron. *Done; combining several winners into one proposal is deferred.* |
 | 11 ✅ | E: room labels (Nemotron + rules + user overrides) and escape plans | E done-when list. *Done; Nemotron labels the Courtyard as Office Suite / Conference Room / Main Corridor.* |
-| 12 | F: slabs and materials, then floors and stairs (core, then sim, then UI), plus population painting | F done-when list |
-| 13 | **K: collaborative modes** (§3 K): one shared live simulation per project, edits locked while it runs, presence by mode, shared analysis. Then **at least 3 example saves** that differ in size and layout. | K done-when list |
+| 12 ✅ | F: slabs and materials, then floors and stairs (core, then sim, then UI), plus population painting | F done-when list. *Done 2026-11-08 except the multi-floor simulation, which moved to 12b (D91).* |
+| 12b | F (rest): multi-floor evacuation (stairs link floor grids, people walk down, frame codec v2), upper-floor walkability from slabs, stair openings, upper-floor escape plans | The rest of the F done-when list |
+| 13 ✅ | **K: collaborative modes** (§3 K): one shared live simulation per project, edits locked while it runs, presence by mode, shared analysis. Then **at least 3 example saves** that differ in size and layout. | K done-when list. *Done 2026-11-08 (D93); five example saves (D94).* |
 | 14 | S: security review and fixes, then a **global naming check**: no "ExitCraft" left anywhere; it is Egress | S done-when list; `git grep -i exitcraft` is empty |
 | 15 | Harden, final review and docs; publish the module to `egress-dev`; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
 | 16+ | I: agentic evacuation mode; then G: airflow, smoke, fire; tag `STABLE-V3` | I and G done-when lists |
@@ -645,3 +656,7 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D88 | 11-08 | **Placeable rotation.** Floor-placed placeables (furniture) rotate about the vertical axis only (`rotationDeg`, yaw); wall-attached placeables follow their wall. The furniture contract adds this when the furniture pass lands. |
 | D89 | 11-08 | **Collaboration is a V2 headline (Pass 13).** One shared live simulation per project that everyone in Simulate follows; edits are locked server-side while it runs and the presence chip shows the lock; presence includes each person's mode; analysis is shared. |
 | D90 | 11-08 | **Security review moves to Pass 14, followed by a global naming check** (no "ExitCraft" left; the product is Egress). At least three varied example saves ship with Pass 13. |
+| D91 | 11-08 | **Pass 12 as built.**<br>• `slab` and `stair` are JSON entity rows (no table change), with `createSlab`/`updateSlab`, `createFloor`/`updateFloor` and `createStair`/`updateStair`. Floors order by `level`; a new floor stacks on the top one; a height change restacks the floors above; deleting a floor lowers the ones above and removes stairs touching it; the last floor stays.<br>• A stair's top side comes from the drag direction and can be changed in its inspector (instead of an arrow with the R key).<br>• Upper-floor room hashes are salted with the floor id so stacked rooms keep their own labels.<br>• The module's save path only knew four entity kinds and silently dropped slabs and stairs; it now saves every kind, and e2e-client reads them back.<br>• The simulation compiles the lowest floor; the multi-floor model is Pass 12b. |
+| D92 | 11-08 | **Population painting as built.** Painted distribution in the Simulate pane with a brush (More / Fewer / Reset, 0.5–8 m, linear falloff). Painting takes the left button and a live overlay shows relative start weights. Strokes stay in the studio until a run starts, and the run's scenario keeps them. |
+| D93 | 11-08 | **Shared live simulation as built.** No `project_live` table: the lock is derived from `sim_runs` (a queued or running user run that progressed in the last 2 minutes), so a dead runner can never lock a project for good. It blocks `apply_edit`, `accept_proposal` and a second run (`PROJECT_LOCKED`), and both clients apply the same `locksEditing` rule locally. New: `presence_modes`, `set_mode`, `active_presence_modes`. The studio follows any new shared run, turns the presence chip red with a lock, and shows a Watch / Stop banner in Edit. |
+| D94 | 11-08 | **Example saves** come from `content/examples/generate.mts` (real `applyEdit`): office floor, school wing, event hall and a two-storey clinic, plus the courtyard study. The saves page lists them with size and a suggested crowd and loads them on demand. A sim test checks each evacuates its suggested crowd. |
