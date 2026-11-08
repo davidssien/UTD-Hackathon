@@ -55,7 +55,7 @@ The old `/dev` harness and the ExitCraft-era editor/viewer components were remov
 
 ## Scene
 
-- Blueprint floor with a white dot grid (0.25 m dots, brighter every 1 m and 5 m; small dots fade out when zoomed out). No grid lines.
+- Workspace settings in the bottom right select a blue, white or black background and a dotted, lined or hidden grid. The choice is stored in this browser. The grid follows the viewed floor.
 - Walls hiding the floor are cross-hatched (never in top-down views).
 - Viewcube: drag to orbit; click a face, edge or corner. Locked to Top in Edit.
 - Wall looks come from `frontend/public/assets/walls/manifest.json` (Blender textures; see the README there).
@@ -71,3 +71,7 @@ The old `/dev` harness and the ExitCraft-era editor/viewer components were remov
 - Presence (person icon + count, hover for tokens), permanent share links and role management need the collaboration backend ([PLAN.md](../PLAN.md) §3 C). Share currently creates a 14-day viewer invite.
 - Population painting in Simulate; fire / elements.
 - Compliance-based and multi-edit suggestions (backend follow-ups).
+
+## Airflow
+
+Choose **Layers → Airflow** and the direction the wind comes from. Arrows on the selected floor show flow direction. Shading shows relative magnitude on the same scale across floors and wind choices. Open a window or door in its inspector to change the connected flow paths. A sealed room or a room with a single exterior opening has zero steady through-flow in this model.

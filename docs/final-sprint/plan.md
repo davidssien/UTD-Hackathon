@@ -13,7 +13,7 @@ The release baseline is the tested studio at `dd55d3f`. Tag that revision `Stabl
 
 ## Next slice · after multi-floor verification
 
-Add an optional fire evacuation with one flame pin. Derive a simplified airflow layer from exterior openings, transport smoke across accessible cells, and report modeled fire and cumulative-smoke fatalities. Keep ignition, route choices and exposure on fixed simulation ticks. Begin this slice only with enough time to verify it independently.
+Add an optional fire evacuation with one flame pin. Use the airflow vectors to transport smoke across accessible cells and report modeled fire and cumulative-smoke fatalities. Keep ignition, route choices and exposure on fixed simulation ticks. Begin this slice only with enough time to verify it independently.
 
 ## Proposed Claude handoff · next four hours
 
@@ -31,3 +31,9 @@ GitHub `main` and the annotated `Stable-V2` tag point to `dd55d3f`. The followin
 - A separate viewer followed the run, selected the upper floor, and reloaded the saved replay. The upper-floor density field peaked at 3.2 people/m² at the sampled playhead. The decoded descent included intermediate elevations.
 - Deterministic tests cover competing upper exits and stairs, a blocked onward exit, a disconnected floor, and two consecutive descents from a third floor. Multi-floor runs use version 2 frames. Earlier single-floor streams remain playable.
 - For the judging database, publish the module and deploy the matching runner and frontend together. The scratch database used for this verification was `egress-stairs-sprint-1108a` on localhost.
+
+## Airflow available for the hazard pass
+
+`floorAirflow(document, floorId, windFrom)` in `@egress/sim` returns a scalar magnitude grid and two relative flow components aligned to its grid. It solves steady pressure within each connected floor, using open exterior apertures as wind-pressure boundaries. It treats closed doors and windows as sealed and models no exchange between floors. A smoke transport model will need a documented velocity scale, diffusion and an explicit stair-shaft exchange term.
+
+The studio calculates this layer in a worker on demand. In Event Hall with a west wind, the browser uploaded 13,438 valid cells and a peak relative pressure gradient of 0.328/m. Switching wind and returning to People both worked. The test suite checks wind reversal, a closed partition, an open interior door and windows that pass air while remaining impassable to people.

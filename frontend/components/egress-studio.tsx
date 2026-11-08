@@ -19,8 +19,9 @@ import {
   describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
   type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
 } from '@egress/core';
-import { compileFloor, paintWeights, populationCapacity } from '@egress/sim';
+import { compileFloor, paintWeights, populationCapacity, type WindFrom, type FloorAirflow } from '@egress/sim';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
+import { useFloorAirflow } from '@/lib/use-floor-airflow';
 import type { GridStyle, SceneTheme, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
@@ -122,9 +123,10 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const [modal, setModal] = useState<Modal>(null);
   const [menu, setMenu] = useState<Menu>(null);
   const [typeMenu, setTypeMenu] = useState<{ x: number; y: number } | null>(null);
+  const [wind, setWind] = useState<WindFrom>('west');
   const [layersOpen, setLayersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [layer, setLayer] = useState<SceneLayer>({ people: 'discrete', field: 'people.density', stat: 'instant' });
+  const [layer, setLayer] = useState<SceneLayer>({ family: 'people', people: 'discrete', field: 'people.density', stat: 'instant' });
   const [runId, setRunId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [diffMap, setDiffMap] = useState(false);
@@ -312,7 +314,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       return { fieldId: 'people.density', aggregation: 'instant', grid: compiled.grid, units: 'relative', values };
     } catch { return null; }
   }, [mode, distribution, brush, doc, floor, strokes]);
-  const overlay: HeatOverlay | null = paintField ? { field: paintField, diverging: false }
+  const sceneDoc = ghost?.doc ?? doc;
+  const airflow = useFloorAirflow(screen === 'editor' && layer.family === 'air' ? sceneDoc : null, floor?.id, wind);
+  const overlay: HeatOverlay | null = layer.family === 'air' ? (airflow?.flow ? { field: airflow.flow.magnitude, diverging: false, airflow: airflow.flow } : null) : paintField ? { field: paintField, diverging: false }
     : mode === 'analysis' && diffMap && comparison?.congestionDiff ? { field: comparison.congestionDiff, diverging: true } : null;
 
   // Keyboard: tools, history, modes.
@@ -365,7 +369,6 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     const a = document.createElement('a'); a.href = url; a.download = `${project?.name ?? 'egress-plan'}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const sceneDoc = ghost?.doc ?? doc;
   const tags = mode === 'edit' ? rooms.filter(r => r.floorId === floor?.id).map(r => ({ key: r.roomHash, text: labelMap.get(r.roomHash)?.name ?? '…', at: r.center, muted: !labelMap.has(r.roomHash) })) : [];
   const wall = doc?.walls.find(w => w.id === selected) ?? null;
   const opening = doc?.openings.find(o => o.id === selected) ?? null;
@@ -438,7 +441,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         </div>}
         <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
       </div>
-      {layersOpen && <LayersPanel layer={layer} onChange={setLayer} />}
+      {layersOpen && <LayersPanel layer={layer} onChange={setLayer} wind={wind} onWind={setWind} flow={airflow?.flow} error={airflow?.error} />}
       {showPane && <aside className="pane" aria-label="Details" aria-hidden={paneCollapsed} inert={paneCollapsed}>
         <button className="pane-collapse" aria-label="Collapse panel" data-tip="Collapse" data-tip-side="left" onClick={() => setPaneCollapsed(true)}><ChevronRightIcon /></button>
         {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
@@ -572,12 +575,20 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: { v
   return <div className="segmented">{options.map(o => <button key={o.id} aria-pressed={value === o.id} disabled={disabled || o.disabled} onClick={() => onChange(o.id)}>{o.name}</button>)}</div>;
 }
 
-function LayersPanel({ layer, onChange }: { layer: SceneLayer; onChange(l: SceneLayer): void }) {
+function LayersPanel({ layer, onChange, wind, onWind, flow, error }: {
+  layer: SceneLayer; onChange(l: SceneLayer): void; wind: WindFrom; onWind(v: WindFrom): void; flow?: FloorAirflow; error?: string;
+}) {
   return <div className="layers-panel" aria-label="Layers">
     <div className="menu-label">Layer</div>
-    <button aria-pressed><CheckIcon />People</button>
-    <button disabled>Airflow</button>
+    <button aria-pressed={layer.family === 'people'} onClick={() => onChange({ ...layer, family: 'people' })}>{layer.family === 'people' && <CheckIcon />}People</button>
+    <button aria-pressed={layer.family === 'air'} onClick={() => onChange({ ...layer, family: 'air' })}>{layer.family === 'air' && <CheckIcon />}Airflow</button>
     <hr />
+    {layer.family === 'air' ? <>
+      <div className="menu-label">Wind from</div>
+      <Segmented value={wind} options={[{ id: 'west', name: 'West' }, { id: 'north', name: 'North' }, { id: 'east', name: 'East' }, { id: 'south', name: 'South' }]} onChange={onWind} />
+      <p className="air-readout" role="status">{error ?? (!flow ? 'Calculating airflow…' : flow.peak < 1e-6 ? 'No through-flow under this wind. Open exterior windows or doors on different sides.' : `${flow.exteriorOpenings} open exterior apertures · relative airflow`)}</p>
+      {flow && flow.peak > 1e-6 && <div className="legend air-legend"><span>Lower</span><i /><span>Higher</span></div>}
+    </> : <>
     <div className="menu-label">View</div>
     <Segmented value={layer.people} options={[{ id: 'discrete', name: 'Discrete' }, { id: 'heatmap', name: 'Heatmap' }]} onChange={people => onChange({ ...layer, people })} />
     {layer.people === 'heatmap' && <>
@@ -586,6 +597,7 @@ function LayersPanel({ layer, onChange }: { layer: SceneLayer; onChange(l: Scene
       <div className="menu-label">Statistic</div>
       <Segmented value={layer.stat} options={[{ id: 'instant', name: 'Current' }, { id: 'timeAverage', name: 'Average' }, { id: 'perCellPeak', name: 'Peak' }]} onChange={stat => onChange({ ...layer, stat })} />
       <div className="legend"><span>0</span><i /><span>{layer.field === 'people.density' ? '3.5 p/m²' : '2.0'}</span></div>
+    </>}
     </>}
   </div>;
 }
@@ -620,7 +632,7 @@ function OpeningInspector({ opening, canEdit, onEdit, onDelete }: { opening: Ope
     <div className="pane-body">
       <div className="field"><span>Kind</span><Segmented value={opening.openingKind} disabled={!canEdit} options={[{ id: 'door', name: 'Door' }, { id: 'window', name: 'Window' }, { id: 'exit', name: 'Exit' }]} onChange={openingKind => patch({ openingKind })} /></div>
       <NumberField label="Width" unit="m" value={opening.widthM} min={0.5} max={20} disabled={!canEdit} onCommit={widthM => patch({ widthM })} />
-      {opening.openingKind !== 'window' && <div className="field"><span>State</span><Segmented value={opening.state} disabled={!canEdit} options={[{ id: 'open', name: 'Open' }, { id: 'closed', name: 'Closed' }]} onChange={state => patch({ state })} /></div>}
+      <div className="field"><span>State</span><Segmented value={opening.state} disabled={!canEdit} options={[{ id: 'open', name: 'Open' }, { id: 'closed', name: 'Closed' }]} onChange={state => patch({ state })} /></div>
     </div>
     <div className="pane-actions"><button className="button danger" disabled={!canEdit} onClick={onDelete}><TrashIcon />Delete</button></div>
   </>;
