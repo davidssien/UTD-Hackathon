@@ -44,6 +44,24 @@ test('tools reject unknown tools, bad arguments, untested proposals, and enforce
   assert.match(JSON.stringify(await tools.call('run_scenario', {})), /Scenario budget/);
 });
 
+test('proposals reject a non-improving candidate and evidence from a different baseline', async () => {
+  const { document, env, tools } = setup('one-room.json', 30);
+  const base = await tools.call('run_scenario', {}) as { runId: string };
+  const exit = document.openings.find(o => o.openingKind === 'exit')!;
+  const candidate = await tools.call('test_edit_batch', {
+    baselineRunId: base.runId,
+    commands: [{ kind: 'updateOpening', openingId: exit.id, patch: { widthM: exit.widthM } }],
+  }) as { runId: string; delta: Record<string, number> };
+  assert.equal(candidate.delta.effectiveTimeSeconds, 0, 'unchanged geometry has no measured benefit');
+  assert.match(JSON.stringify(await tools.call('submit_proposal', {
+    baselineRunId: base.runId, candidateRunId: candidate.runId, summary: 'An unchanged exit.',
+  })), /does not measurably improve/);
+  assert.match(JSON.stringify(await tools.call('submit_proposal', {
+    baselineRunId: 'another-baseline', candidateRunId: candidate.runId, summary: 'Unrelated evidence.',
+  })), /baseline this candidate was tested against/);
+  assert.equal(env.proposals.length, 0);
+});
+
 test('LLM loop executes the model\'s tool calls in order and returns its final answer', async () => {
   const { env, tools } = setup('one-room.json', 60);
   let baselineId = '', candidateId = '';

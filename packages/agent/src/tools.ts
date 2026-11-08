@@ -157,8 +157,12 @@ export class ToolBox {
       case 'submit_proposal': {
         const candidate = this.candidates.get(args.candidateRunId as string);
         if (!candidate) throw new DomainError('NOT_FOUND', 'Only candidates tested with test_edit_batch can be proposed.');
+        if (candidate.baselineRunId !== args.baselineRunId) throw new DomainError('INVALID_INPUT', 'Use the baseline this candidate was tested against.');
         const baseline = await this.run(args.baselineRunId as string);
         const d = delta(baseline.metrics, candidate.run.metrics);
+        if ((d.effectiveTimeSeconds ?? 0) + 0.1 * (d.maxQueueLength ?? 0) >= -0.5) {
+          throw new DomainError('INVALID_INPUT', 'This candidate does not measurably improve the modeled outcome. Test another suggestion or explain that no improvement was found.');
+        }
         const why = candidate.suggestion
           ? `${candidate.suggestion.rationale} Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.`
           : `Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.`;

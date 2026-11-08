@@ -81,6 +81,8 @@ Rules:
 - Every number you state must come from a tool result in this conversation. Say "modeled", never claim real-world safety or code compliance.
 - Work in steps: inspect_layout, get a baseline (inspect_run if a run id is given, else run_scenario), get_hotspots, then test_edit_batch on the most promising suggestionIds (same people, same seed), then submit_proposal for the best tested candidate if it measurably helps.
 - Budgets: 12 tool calls, 2 scenarios, 3 candidates. Do not repeat identical calls.
+- If the first candidate does not improve the measured outcome, test another suggestion within the budget. Never submit a worse or unchanged candidate.
+- When a tested candidate helps, you MUST call submit_proposal before your final summary. Describing an edit does not save a proposal. Only say a proposal was saved after submit_proposal succeeds.
 - Proposals are applied only if a human accepts them.
 - Finish with a short plain-language summary (3 sentences max) citing the measured before/after numbers.`;
 
