@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { stairSteps, upEdgeOf } from '../lib/stairs.ts';
+import { floorSurface, stairSteps, upEdgeOf } from '../lib/stairs.ts';
 
 test('upEdgeOf follows the drag along the longer side', () => {
   assert.equal(upEdgeOf({ x: 0, y: 0 }, { x: 1, y: 4 }), 'n');
@@ -12,6 +12,7 @@ test('upEdgeOf follows the drag along the longer side', () => {
 test('stairSteps climbs toward the up edge and reaches the floor above', () => {
   const stair = { min: { x: 0, y: 0 }, max: { x: 1.2, y: 4 }, upEdge: 'n' as const };
   const steps = stairSteps(stair, 3);
+  assert.ok(steps.at(-1)!.max.y - steps.at(-1)!.min.y >= 0.6, 'the landing fits a discrete person');
   assert.equal(steps.length, 17, '3 m at about 18 cm risers');
   assert.equal(steps[0].min.y, 0, 'the bottom step is at the far side from the up edge');
   assert.ok(Math.abs(steps.at(-1)!.max.y - 4) < 1e-9);
@@ -22,4 +23,19 @@ test('stairSteps climbs toward the up edge and reaches the floor above', () => {
   const west = stairSteps({ min: { x: 0, y: 0 }, max: { x: 4, y: 1.2 }, upEdge: 'w' }, 0.3);
   assert.equal(west.length, 3, 'at least three steps');
   assert.ok(Math.abs(west.at(-1)!.min.x) < 1e-9);
+});
+
+test('a shaft cuts across adjoining slabs and overlapping shafts are only cut once', () => {
+  const shaft = { min: { x: 1, y: 1 }, max: { x: 3, y: 3 } };
+  for (const start of [0, 2]) {
+    const surface = floorSurface([{ x: start, y: 0 }, { x: start + 2, y: 0 }, { x: start + 2, y: 4 }, { x: start, y: 4 }], [shaft, shaft]);
+    const pos = surface.getAttribute('position');
+    let area = 0;
+    for (let i = 0; i < pos.count; i += 3) {
+      const x = pos.getX(i), y = pos.getY(i);
+      area += ((pos.getX(i + 1) - x) * (pos.getY(i + 2) - y) - (pos.getY(i + 1) - y) * (pos.getX(i + 2) - x)) / 2;
+    }
+    assert.ok(Math.abs(area - 6) < 1e-6);
+    surface.dispose();
+  }
 });

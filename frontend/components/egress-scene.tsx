@@ -15,7 +15,7 @@ import {
 import type { PlaybackController } from '@egress/client';
 import { WallLibrary } from '@/lib/wall-textures';
 import { encodeField, fieldScale } from '@/lib/heatmap';
-import { stairSteps, upEdgeOf } from '@/lib/stairs';
+import { floorSurface, stairSteps, upEdgeOf } from '@/lib/stairs';
 import { ViewCube } from './scene/viewcube';
 
 export type SceneTool = 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'slab' | 'stair';
@@ -850,8 +850,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     }
     for (const room of derived.topology.rooms) {
       if (!shown.has(room.floorId)) continue;
-      const shape = new THREE.Shape(room.polygon.map(p => new THREE.Vector2(p.x, p.y)));
-      const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: below(room.floorId) ? 0.03 : 0.07, depthWrite: false }));
+      const surface = floorSurface(room.polygon, doc.stairs.filter(s => s.toFloorId === room.floorId));
+      const mesh = new THREE.Mesh(surface, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: below(room.floorId) ? 0.03 : 0.07, depthWrite: false }));
       mesh.rotation.x = -Math.PI / 2; mesh.position.y = height(room.floorId) + 0.004; r.floors.add(mesh);
     }
     // Floor surfaces (D74).
@@ -859,7 +859,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       if (!shown.has(slab.floorId)) continue;
       const m = dimmed(style(r.library.floorMaterial(slab.material), [slab.id]), slab.floorId);
       m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1;
-      const mesh = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(slab.polygon.map(p => new THREE.Vector2(p.x, p.y)))), m);
+      const mesh = new THREE.Mesh(floorSurface(slab.polygon, doc.stairs.filter(s => s.toFloorId === slab.floorId)), m);
       mesh.rotation.x = -Math.PI / 2; mesh.position.y = height(slab.floorId) + 0.008; mesh.receiveShadow = true;
       mesh.userData = { slabId: slab.id, floorId: slab.floorId, below: below(slab.floorId) };
       r.floors.add(mesh);
