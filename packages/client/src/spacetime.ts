@@ -222,6 +222,7 @@ class SpacetimeEgressClient implements EgressClient {
       return {
         id: r.id, projectId: r.projectId, status: r.status as RunSummary['status'], pace: r.pace as Pace, seed: r.seed,
         scenarioName: scenario.name ?? 'Run', population: scenario.population?.count ?? 0, layoutRevision: Number(r.layoutRevision),
+        elements: scenario.elements, windFrom: scenario.windFrom,
         progressTick: r.progressTick, agentJobId: r.agentJobId || null, createdAt: ms(r.createdAt), updatedAt: ms(r.updatedAt),
         error: r.errorCode ? { code: r.errorCode as DomainErrorData['code'], message: r.errorMessage } : null,
       };

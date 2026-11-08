@@ -9,7 +9,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  ACTOR_EXITED, ACTOR_QUEUED, ACTOR_TRANSITIONING, deriveLayout, floorsByLevel, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
+  ACTOR_DOWN, ACTOR_EXITED, ACTOR_QUEUED, ACTOR_TRANSITIONING, deriveLayout, floorsByLevel, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
   type Vec2, type WallMaterial,
 } from '@egress/core';
 import type { FloorAirflow } from '@egress/sim';
@@ -27,9 +27,11 @@ export interface PaintStroke { points: Vec2[]; radiusM: number; mode: PaintBrush
 export type PeopleView = 'discrete' | 'heatmap';
 export type HeatField = 'people.density' | 'people.congestion';
 export type HeatStat = 'instant' | 'timeAverage' | 'perCellPeak';
-export interface SceneLayer { family: 'people' | 'air'; people: PeopleView; field: HeatField; stat: HeatStat }
+export interface SceneLayer { family: 'people' | 'air' | 'smoke'; people: PeopleView; field: HeatField; stat: HeatStat }
 /** An explicit heatmap, e.g. a before/after difference map (diverging palette). */
-export interface HeatOverlay { field: ScalarField; diverging: boolean; airflow?: FloorAirflow }
+export interface HazardPin { position: Vec2; floorId: string; radiusM: number }
+export interface HazardPins { fire: HazardPin | null; vents: HazardPin[]; fireRadiusM?: number | null }
+export interface HeatOverlay { field: ScalarField; diverging: boolean; airflow?: FloorAirflow; /** Colour-scale maximum (defaults to the layer's). */ max?: number }
 export interface SceneNote { key: string; text: string; entityId: string }
 export interface SceneHit { wallId?: string; openingId?: string; slabId?: string; stairId?: string }
 export interface SceneTag { key: string; text: string; at: Vec2; muted?: boolean }
@@ -51,6 +53,11 @@ interface Props {
   /** When set outside Edit, left-drag paints population weights instead of orbiting. */
   paint?: PaintBrush | null;
   onPaint?(stroke: PaintStroke): void;
+  /** Hazard placement outside Edit: a click on the viewed floor places a flame or an HVAC vent. */
+  place?: 'fire' | 'vent' | null;
+  onPlace?(at: Vec2): void;
+  /** Placed hazard pins, and the fire radius at the playhead (m) when a run is playing. */
+  hazardPins?: HazardPins | null;
   selected: string | null;
   /** Entity ids drawn in suggestion blue (created or changed by a proposal). */
   highlight?: ReadonlySet<string>;
@@ -228,6 +235,7 @@ interface Runtime {
   floors: THREE.Group;
   /** Dots-only grid raised to the viewed floor; the ground then renders only the background. */
   grid: THREE.Mesh;
+  pins: THREE.Group;
   ground: THREE.Mesh;
   library: WallLibrary;
   cube: ViewCube;
@@ -289,8 +297,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     shadowCatcher.rotation.x = -Math.PI / 2; shadowCatcher.position.y = -0.005; shadowCatcher.receiveShadow = true;
     const grid = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMaterial(theme, true));
     grid.rotation.x = -Math.PI / 2; grid.visible = false; grid.renderOrder = 1;
-    const walls = new THREE.Group(), floors = new THREE.Group(), preview = new THREE.Group();
-    scene.add(ground, shadowCatcher, grid, floors, walls, preview);
+    const walls = new THREE.Group(), floors = new THREE.Group(), preview = new THREE.Group(), pins = new THREE.Group();
+    scene.add(ground, shadowCatcher, grid, floors, walls, preview, pins);
     const brush = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 64), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, depthTest: false }));
     brush.rotation.x = -Math.PI / 2; brush.renderOrder = 10; brush.visible = false; scene.add(brush);
 
@@ -366,7 +374,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     const r: Runtime = {
-      camera, controls, renderer, scene, walls, floors, grid, ground, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true, viewedFloor: 0,
+      camera, controls, renderer, scene, walls, floors, grid, ground, pins, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true, viewedFloor: 0,
       cancel() { r.dirty = true; anchor = null; chainStart = null; stroke = null; disposeChildren(preview); if (dim.current) dim.current.hidden = true; },
       frame(view, animate = true) {
         r.cancel();
@@ -459,8 +467,13 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     };
 
     const painting = () => !latest.current.editing && !!latest.current.paint;
+    const placing = () => !latest.current.editing && !!latest.current.place;
     const onDown = (e: PointerEvent) => {
       r.dirty = true;
+      if (placing() && e.button === 0 && !transition) {
+        const at = groundAt(e); if (at) latest.current.onPlace?.(at);
+        return;
+      }
       if (painting() && e.button === 0 && !transition) {
         const at = groundAt(e); if (!at) return;
         stroke = [at]; renderer.domElement.setPointerCapture(e.pointerId); return;
@@ -473,6 +486,13 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const onMove = (e: PointerEvent) => {
       r.dirty = true;
       const state = latest.current;
+      if (placing()) {
+        ring.visible = false;
+        const at = groundAt(e); if (!at) return;
+        brush.visible = true; brush.scale.setScalar(state.place === 'fire' ? 1 : 0.6); brush.position.set(at.x, workHeight() + 0.08, -at.y);
+        (brush.material as THREE.MeshBasicMaterial).color.set(state.place === 'fire' ? '#ff6a2b' : '#6fc3ff');
+        return;
+      }
       if (painting()) {
         ring.visible = false;
         const at = groundAt(e); if (!at) return;
@@ -626,7 +646,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     resize.observe(node);
 
     const matrix = new THREE.Matrix4(), color = new THREE.Color(), screen = new THREE.Vector3();
-    const amber = new THREE.Color('#ffc65c'), queued = new THREE.Color('#ff6a3d');
+    const amber = new THREE.Color('#ffc65c'), queued = new THREE.Color('#ff6a3d'), fallen = new THREE.Color('#7a1010');
     let raf = 0, lastHatch = 0;
     const hatchOrientation = new THREE.Quaternion();
     let lastEditing: boolean | null = null;
@@ -688,7 +708,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
 
       // People layer.
       const playback = state.playback;
-      const discrete = state.layer.family === 'air' || state.layer.people === 'discrete' ? playback ?? null : null;
+      const discrete = state.layer.family !== 'people' || state.layer.people === 'discrete' ? playback ?? null : null;
       const actorState = discrete?.state.get();
       if (discrete !== lastPlayback || actorState !== lastActorState || r.viewedFloor !== lastActorFloor) {
         lastActorFloor = r.viewedFloor;
@@ -702,10 +722,11 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
             const flag = actors.actorFlags[i], floor = actors.actorFloor?.[i] ?? 0;
             const onVisibleStair = flag === ACTOR_TRANSITIONING && floor === r.viewedFloor + 1;
             const gone = flag === ACTOR_EXITED || (floor > r.viewedFloor && !onVisibleStair);
-            matrix.makeScale(gone ? 0 : 1, gone ? 0 : 1, gone ? 0 : 1);
+            const down = flag === ACTOR_DOWN; // overcome by fire or smoke: flattened and dark red
+            matrix.makeScale(gone ? 0 : 1, gone ? 0 : down ? 0.3 : 1, gone ? 0 : 1);
             matrix.setPosition(actors.actorXY[i * 2], (actors.actorElevation?.[i] ?? 0) + 0.2, -actors.actorXY[i * 2 + 1]);
             people.setMatrixAt(i, matrix);
-            people.setColorAt(i, color.copy(flag === ACTOR_QUEUED ? queued : amber));
+            people.setColorAt(i, color.copy(down ? fallen : flag === ACTOR_QUEUED ? queued : amber));
           }
           people.instanceMatrix.needsUpdate = true;
           if (people.instanceColor) people.instanceColor.needsUpdate = true;
@@ -737,7 +758,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           heatUniforms.uPrev.value = fresh ? next : current;
           heatUniforms.uNext.value = next;
           heatUniforms.uSize.value.set(g.width, g.height);
-          heatUniforms.uScale.value = overlay?.airflow ? 0.25 : fieldScale(field, !!overlay?.diverging, HEAT_MAX[state.layer.field] ?? 2);
+          heatUniforms.uScale.value = overlay?.airflow ? 0.25 : fieldScale(field, !!overlay?.diverging, overlay?.max ?? HEAT_MAX[state.layer.field] ?? 2);
           heatUniforms.uDiverging.value = overlay?.diverging ? 1 : 0;
           heatUniforms.uAir.value = overlay?.airflow ? 1 : 0;
           lastHeat = fresh ? -Infinity : now;
@@ -790,7 +811,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointerleave', onLeave); el.removeEventListener('contextmenu', noMenu);
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', restorePointer);
-      disposeChildren(walls); disposeChildren(floors); disposeChildren(preview);
+      disposeChildren(walls); disposeChildren(floors); disposeChildren(preview); disposeChildren(pins);
       for (const m of [ground, shadowCatcher, grid, brush, ring, people, heat, arrows]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
       for (const k of ['uPrev', 'uNext']) ((heat.material as THREE.ShaderMaterial).uniforms[k].value as THREE.Texture).dispose();
       library.dispose(); renderer.dispose(); el.remove();
@@ -815,8 +836,43 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const r = runtime.current; if (!r || !props.editing) return;
     r.controls.mouseButtons.LEFT = props.tool === 'pan' ? THREE.MOUSE.PAN : null as unknown as THREE.MOUSE;
   }, [props.tool, props.editing, library]);
-  // Painting (outside Edit) takes the left button; orbit returns when the brush is put away.
-  const painting = !props.editing && !!props.paint;
+  // Painting or placing a hazard (outside Edit) takes the left button; orbit returns afterwards.
+  const painting = !props.editing && (!!props.paint || !!props.place);
+
+  // Hazard pins: a flame (with the fire's current extent during playback) and floor-to-ceiling HVAC supply columns.
+  useEffect(() => {
+    const r = runtime.current; if (!r) return;
+    disposeChildren(r.pins);
+    const pins = props.hazardPins, doc = props.doc;
+    if (!pins || !doc) { r.dirty = true; return; }
+    const viewed = floorOf(doc, props.floorId);
+    const floorOfPin = (id: string) => doc.floors.find(f => f.id === id);
+    const shown = (p: HazardPin) => { const f = floorOfPin(p.floorId); return !!f && !!viewed && f.level <= viewed.level ? f : null; };
+    if (pins.fire) {
+      const f = shown(pins.fire);
+      if (f) {
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 16), new THREE.MeshBasicMaterial({ color: '#ff6a2b' }));
+        flame.position.set(pins.fire.position.x, f.elevationM + 0.45, -pins.fire.position.y);
+        r.pins.add(flame);
+        const radius = pins.fireRadiusM ?? pins.fire.radiusM;
+        if (radius > 0) {
+          const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), new THREE.MeshBasicMaterial({ color: '#ff4a1c', transparent: true, opacity: 0.35, depthWrite: false }));
+          disc.rotation.x = -Math.PI / 2; disc.position.set(pins.fire.position.x, f.elevationM + 0.05, -pins.fire.position.y); disc.renderOrder = 3;
+          r.pins.add(disc);
+        }
+      }
+    }
+    for (const v of pins.vents) {
+      const f = shown(v); if (!f) continue;
+      const column = new THREE.Mesh(new THREE.CylinderGeometry(v.radiusM, v.radiusM, f.ceilingHeightM, 24, 1, true),
+        new THREE.MeshBasicMaterial({ color: '#6fc3ff', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }));
+      column.position.set(v.position.x, f.elevationM + f.ceilingHeightM / 2, -v.position.y);
+      const cap = new THREE.Mesh(new THREE.CircleGeometry(v.radiusM, 24), new THREE.MeshBasicMaterial({ color: '#6fc3ff', transparent: true, opacity: 0.6, depthWrite: false }));
+      cap.rotation.x = -Math.PI / 2; cap.position.set(v.position.x, f.elevationM + 0.06, -v.position.y);
+      r.pins.add(column, cap);
+    }
+    r.dirty = true;
+  }, [props.hazardPins, props.doc, props.floorId, library]);
   useEffect(() => {
     const r = runtime.current; if (!r || props.editing) return;
     r.controls.mouseButtons = { LEFT: painting ? (null as unknown as THREE.MOUSE) : THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };

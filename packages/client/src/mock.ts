@@ -297,6 +297,7 @@ class MockEgressClient implements EgressClient {
     const summary: RunSummary = {
       id: runId, projectId: project.summary.id, status: 'running', pace, seed: scenario.population.seed, scenarioName: scenario.name,
       population: scenario.population.count, layoutRevision: project.doc.revision, progressTick: 0, agentJobId: null, createdAt: Date.now(), updatedAt: Date.now(), error: null,
+      elements: scenario.elements, windFrom: scenario.windFrom,
     };
     this.runs.update(list => [summary, ...list]);
     this.lastScenario.set(project.summary.id, scenario);

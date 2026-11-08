@@ -95,6 +95,9 @@ export interface RunSummary {
   createdAt: number;
   /** Last progress (ms). A queued or running user run locks editing until it goes stale (D89). */
   updatedAt: number;
+  /** Hazard pins and wind the run was started with (fire, HVAC vents). */
+  elements?: SimulationScenario['elements'];
+  windFrom?: SimulationScenario['windFrom'];
   error: DomainErrorData | null;
 }
 
@@ -118,6 +121,8 @@ export interface PlaybackState {
 export interface PlaybackController {
   readonly state: Store<PlaybackState>;
   readonly metrics: Store<SimulationMetrics | null>;
+  /** The layout the run actually simulated (its frozen snapshot), once known. */
+  runLayout(): EgressDocument | null;
   play(): void;
   pause(): void;
   toggle(): void;
