@@ -18,7 +18,7 @@ import {
 /** sha256 of the runner's EGRESS_SERVICE_SECRET (services/runner/.env). Safe to commit. */
 const SERVICE_SECRET_SHA256 = 'c9380efe6069912a7e937d0b3c6a93997c2b09f324ab9f65ad704dafe4634f91';
 const MODEL_ID = 'egress-pedestrian';
-const MODEL_VERSION = '0.1.0';
+const MODEL_VERSION = '0.2.0';
 
 // ── Tables ──────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-# People-flow model: `egress-pedestrian` v0.1
+# People-flow model: `egress-pedestrian` v0.2
 
 This file records every modelling and math decision behind the people-flow simulation, so the numbers can be defended, tuned, and rebuilt. The code lives in `packages/sim/src/` (`compile.ts`, `nav.ts`, `model.ts`, `fields.ts`, `structural.ts`, `paint.ts`). The constants come from `PARAMS` in `model.ts` and the named constants in those files.
 
@@ -123,12 +123,41 @@ Each tick:
    ```
    1.3 persons/m/s is the usual planning value for door flow capacity. The bucket holds at most half a second of flow (at least 1 token), so short bursts are allowed but sustained flow is capped.
 
-2. **Exit choice**, every 20 ticks (2 s). Each person picks the allowed exit minimizing:
+2. **Exit choice (v0.2, PLAN.md D79).** People know the whole layout and can reach any exit. The per-exit distance fields `D_e` are exact shortest paths, so A* would add nothing.
+
+   *Why v0.1 failed:* everyone re-chose on the same tick every 2 s, using the queue standing at each door. When one door queued, everyone saw the other as empty and switched together, then switched back once the queue moved: a crowd shimmying between doors.
+
+   **Per-person traits.** These are drawn once from the run seed on a separate random stream from spawning, so positions are unchanged and the same person keeps the same traits in before/after comparisons:
+   - Attention span `τ_i`: lognormal, median 6 s, σ = 0.5, clamped to [2, 15] s.
+   - Waiting weight `κ_i`: uniform [1.2, 1.8]. Waiting feels longer than walking.
+   - Patience `P_i`: `6·τ_i` plus noise (±5 s), clamped to [20, 90] s.
+
+   **Expected wait counts the people ahead, not the crowd at the door.** Once per second, each exit's assigned people are sorted by their distance to it. Then
    ```
-   cost_e = D_e(x)/v₀ + Q_e / max(0.1, cap_e)
+   W_e(i) = |{ j ≠ i : exit_j = e, D_e(x_j) < D_e(x_i) }| / cap_e
    ```
-   `Q_e` is the number of people queued near exit `e`: slower than 0.3 m/s within 3 m of it.
-   - Hysteresis: a person switches only if the best cost is below 0.9 × the current exit's cost. This stops dithering.
+   is a binary search. Demand that has committed to a door is visible before it arrives.
+
+   **Perceived cost:**
+   ```
+   C_e(i) = D_e(x_i)/v_i + κ_i · W_e(i) · (1 + min(1, w_i/P_i) if e is i's current exit, else 1)
+   ```
+   `w_i` is how long `i` has waited: seconds spent slower than 0.3 m/s in the same room as their chosen exit, since their last switch. Being held at an inner door doesn't count, because changing exits wouldn't help. The current queue feels worse the longer you stand in it.
+
+   **When people re-decide.** Each person re-evaluates every `τ_i` seconds, with a random first phase. They switch to the cheapest exit only if:
+   ```
+   C_cur − C_best > max(3 s, 0.15·C_cur) · (1 − min(1, w_i/P_i))
+   ```
+   - They never switch within 4 m of their current exit.
+   - They don't switch again for `2τ_i` after a switch.
+   - At `w_i ≥ P_i` they re-evaluate at once with half the margin, then `w_i` resets, so another switch needs fresh patience.
+   - Going back to the exit they just left always needs the full margin `max(3 s, 0.15·C_cur)`, impatient or not. After going back once, a person commits to that exit for good, so nobody cycles.
+
+   **Start:** first the nearest exit by `D_e/v_i`, then one round of the full rule without thresholds, so the opening split already accounts for everyone else.
+
+   **Reported:** `exitSwitches` (total switches) and `exitReversals` (A→B→A). Flip-flopping shows up in the numbers.
+
+   *Calibration:* these are plausible modelling choices from the evacuation-behaviour literature's qualitative findings: people commit to a route, waiting feels long, and patience runs out. They are not yet calibrated against drill data. Section 10 lists them as tuning knobs.
 
 3. **Desired direction**, in priority order:
    - Inside the exit gap: the outward normal `n̂_out`.

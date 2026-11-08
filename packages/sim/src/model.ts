@@ -16,7 +16,7 @@ import { isSpawnable, paintWeights } from './paint.ts';
 import { ActorHash, closestOnSegment, segmentsIntersect } from './spatial.ts';
 
 export const MODEL_ID = 'egress-pedestrian';
-export const MODEL_VERSION = '0.1.0';
+export const MODEL_VERSION = '0.2.0';
 
 /** Starting people, reusable across layouts for controlled before/after comparisons. */
 export interface InitialActors {
@@ -60,8 +60,24 @@ export const PARAMS = {
   squeezeTicks: 60,
   squeezeRadius: 0.13,
   speedCapFactor: 1.4,
-  replanTicks: 20,
-  hysteresis: 0.9,
+  // Exit choice v0.2 (PEOPLE_FLOW_MODEL §4.2, PLAN.md D79).
+  attentionMedianS: 6,
+  attentionSigma: 0.5,
+  attentionMinS: 2,
+  attentionMaxS: 15,
+  waitWeightMin: 1.2,
+  waitWeightMax: 1.8,
+  patiencePerAttention: 6,
+  patienceNoiseS: 5,
+  patienceMinS: 20,
+  patienceMaxS: 90,
+  switchAbsS: 3,
+  switchRel: 0.15,
+  /** Share of the switching margin still required when patience has run out. */
+  impatientMargin: 0.5,
+  commitRadiusM: 4,
+  /** How often the per-exit "people ahead" tables are rebuilt (ticks). */
+  waitTableTicks: 10,
   /** Actors slower than this near a portal count as queued (m/s). */
   queueSpeed: 0.3,
   queueRadius: 3,
@@ -92,6 +108,21 @@ export interface SimState {
   /** Ticks left of turning sideways to squeeze past a jam. */
   readonly squeeze: Uint16Array;
   readonly reachable: Uint8Array;
+  /** Exit choice v0.2: per-person attention span (ticks), waiting weight, patience (s), time waited (s). */
+  readonly attentionTicks: Int32Array;
+  readonly waitWeight: Float64Array;
+  readonly patience: Float64Array;
+  readonly waited: Float64Array;
+  readonly nextReplan: Int32Array;
+  readonly cooldownUntil: Int32Array;
+  /** The exit before the last switch, to count reversals (A→B→A). */
+  readonly prevExit: Int32Array;
+  /** Per exit: distances of the people heading there, sorted (rebuilt every waitTableTicks). */
+  waitTables: Float64Array[];
+  /** Per exit: the room just inside it. Waiting only counts in that room, i.e. queuing for the exit, not for an inner door. */
+  readonly exitRoom: Int32Array;
+  switches: number;
+  reversals: number;
   readonly tokens: Float64Array;
   readonly portalOpen: Uint8Array;
   readonly allowedExit: Uint8Array;
@@ -194,10 +225,29 @@ export function initialize(input: FrozenSimulationInput): SimState {
   const portalOpen = new Uint8Array(compiled.portals.length);
   compiled.portals.forEach((p, i) => { portalOpen[i] = p.kind === 'exit' && blocked.has(p.openingId) ? 0 : 1; });
 
+  // Behaviour traits on their own random stream, so spawn positions match v0.1 and the same
+  // person (same index, same seed) keeps the same traits across before/after comparisons.
+  const traits = createRng((scenario.population.seed ^ 0x5bd1e995) >>> 0);
+  const attentionTicks = new Int32Array(n), waitWeight = new Float64Array(n), patience = new Float64Array(n), nextReplan = new Int32Array(n);
+  for (let a = 0; a < n; a++) {
+    const attention = Math.min(PARAMS.attentionMaxS, Math.max(PARAMS.attentionMinS,
+      Math.exp(Math.log(PARAMS.attentionMedianS) + PARAMS.attentionSigma * traits.normal(0, 1))));
+    attentionTicks[a] = Math.round(attention * TICK_RATE_HZ);
+    waitWeight[a] = traits.range(PARAMS.waitWeightMin, PARAMS.waitWeightMax);
+    patience[a] = Math.min(PARAMS.patienceMaxS, Math.max(PARAMS.patienceMinS, PARAMS.patiencePerAttention * attention + traits.range(-PARAMS.patienceNoiseS, PARAMS.patienceNoiseS)));
+    nextReplan[a] = Math.floor(traits.next() * attentionTicks[a]) + 1;
+  }
+
   const state: SimState = {
     runId: input.runId, compiled, scenario, tick: 0, n, x, y,
     vx: new Float64Array(n), vy: new Float64Array(n), r, vPref,
     exit: new Int32Array(n).fill(-1), flag: new Uint8Array(n), stuck: new Uint16Array(n), squeeze: new Uint16Array(n), reachable: new Uint8Array(n),
+    attentionTicks, waitWeight, patience, waited: new Float64Array(n), nextReplan, cooldownUntil: new Int32Array(n), prevExit: new Int32Array(n).fill(-1),
+    waitTables: compiled.exits.map(() => new Float64Array(0)), switches: 0, reversals: 0,
+    exitRoom: Int32Array.from(compiled.exits, e => {
+      const cell = compiled.nav.cellAt(e.center.x - e.normal.x * 0.4, e.center.y - e.normal.y * 0.4);
+      return cell >= 0 ? compiled.room[cell] : -1;
+    }),
     tokens: new Float64Array(compiled.portals.length).fill(1), portalOpen, allowedExit,
     throughput: new Int32Array(compiled.exits.length), queueAtExit: new Int32Array(compiled.exits.length),
     hash: new ActorHash(grid, n), fields: new FieldAccumulator(compiled),
@@ -205,13 +255,37 @@ export function initialize(input: FrozenSimulationInput): SimState {
     initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref) },
     respawned,
   };
+  // Start: nearest exit, then one round of the full rule so the split accounts for everyone else.
   for (let a = 0; a < n; a++) {
-    chooseExit(state, a, true);
+    chooseExit(state, a, 'initial');
     state.reachable[a] = state.exit[a] >= 0 ? 1 : 0;
     if (!state.reachable[a]) state.unreachable++;
   }
+  rebuildWaitTables(state);
+  for (let a = 0; a < n; a++) if (state.reachable[a]) chooseExit(state, a, 'initial');
+  rebuildWaitTables(state);
   sampleFields(state);
   return state;
+}
+
+/** Per exit, the sorted distances of the people heading there (for "people ahead of me"). */
+function rebuildWaitTables(state: SimState) {
+  const { nav, exits } = state.compiled;
+  const lists: number[][] = exits.map(() => []);
+  for (let a = 0; a < state.n; a++) {
+    const e = state.exit[a];
+    if (e < 0 || state.flag[a] === ACTOR_EXITED) continue;
+    const d = nav.distanceAt(e, state.x[a], state.y[a]);
+    if (Number.isFinite(d)) lists[e].push(d);
+  }
+  state.waitTables = lists.map(l => Float64Array.from(l).sort());
+}
+
+/** How many people heading to exit `e` are closer to it than distance `d` (binary search). */
+function peopleAhead(table: Float64Array, d: number): number {
+  let lo = 0, hi = table.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (table[mid] < d) lo = mid + 1; else hi = mid; }
+  return lo;
 }
 
 function clearOfWalls(compiled: CompiledFloor, px: number, py: number, clearance: number): boolean {
@@ -222,18 +296,42 @@ function clearOfWalls(compiled: CompiledFloor, px: number, py: number, clearance
   return true;
 }
 
-function chooseExit(state: SimState, a: number, initial: boolean) {
+/**
+ * Exit choice v0.2 (PEOPLE_FLOW_MODEL §4.2). 'initial' takes the cheapest exit outright;
+ * 'replan' applies the commitment thresholds; 'impatient' (patience used up) switches to
+ * anything cheaper.
+ */
+function chooseExit(state: SimState, a: number, mode: 'initial' | 'replan' | 'impatient') {
   const { nav, exits } = state.compiled;
-  let best = -1, bestCost = Infinity, currentCost = Infinity;
+  const current = state.exit[a];
+  const frustration = Math.min(1, state.waited[a] / state.patience[a]);
+  let best = -1, bestCost = Infinity, currentCost = Infinity, currentDistance = Infinity;
   for (let e = 0; e < exits.length; e++) {
     if (!state.allowedExit[e]) continue;
     const d = nav.distanceAt(e, state.x[a], state.y[a]);
     if (!Number.isFinite(d)) continue;
-    const cost = d / state.vPref[a] + state.queueAtExit[e] / Math.max(0.1, exits[e].capacity);
-    if (e === state.exit[a]) currentCost = cost;
+    const wait = peopleAhead(state.waitTables[e] ?? new Float64Array(0), d) / Math.max(0.1, exits[e].capacity);
+    const cost = d / state.vPref[a] + state.waitWeight[a] * wait * (e === current ? 1 + frustration : 1);
+    if (e === current) { currentCost = cost; currentDistance = d; }
     if (cost < bestCost || (cost === bestCost && e < best)) { bestCost = cost; best = e; }
   }
-  if (initial || state.exit[a] < 0 || bestCost < currentCost * PARAMS.hysteresis || !Number.isFinite(currentCost)) state.exit[a] = best;
+  if (mode === 'initial' || current < 0 || !Number.isFinite(currentCost)) { state.exit[a] = best; return; }
+  if (best === current || best < 0 || currentDistance < PARAMS.commitRadiusM || state.cooldownUntil[a] === 0x7fffffff) return;
+  if (mode === 'replan' && state.tick < state.cooldownUntil[a]) return;
+  // Going back to the exit you just left always needs the full margin; impatience halves it otherwise.
+  const margin = Math.max(PARAMS.switchAbsS, PARAMS.switchRel * currentCost);
+  const goingBack = best === state.prevExit[a];
+  const threshold = goingBack ? margin : mode === 'impatient' ? margin * PARAMS.impatientMargin : margin * (1 - frustration);
+  if (currentCost - bestCost <= threshold) return;
+  if (goingBack) {
+    state.reversals++;
+    state.cooldownUntil[a] = 0x7fffffff; // after going back once, a person commits for good
+  }
+  state.prevExit[a] = current;
+  state.exit[a] = best;
+  state.switches++;
+  state.waited[a] = 0;
+  if (!goingBack) state.cooldownUntil[a] = state.tick + 2 * state.attentionTicks[a];
 }
 
 // ── step ────────────────────────────────────────────────────────────────────
@@ -248,7 +346,19 @@ export function step(state: SimState): void {
     const cap = state.portalOpen[p] ? portals[p].capacity : 0;
     state.tokens[p] = Math.min(Math.max(1, cap * 0.5), state.tokens[p] + cap * dt);
   }
-  if (state.tick % PARAMS.replanTicks === 0) for (let a = 0; a < n; a++) if (flag[a] !== ACTOR_EXITED && state.reachable[a]) chooseExit(state, a, false);
+  // Exit choice v0.2: each person re-decides on their own attention clock; impatience forces a look.
+  if (state.tick % PARAMS.waitTableTicks === 0) rebuildWaitTables(state);
+  for (let a = 0; a < n; a++) {
+    if (flag[a] === ACTOR_EXITED || !state.reachable[a]) continue;
+    if (state.waited[a] >= state.patience[a]) {
+      chooseExit(state, a, 'impatient');
+      state.waited[a] = 0;
+      state.nextReplan[a] = state.tick + state.attentionTicks[a];
+    } else if (state.tick >= state.nextReplan[a]) {
+      chooseExit(state, a, 'replan');
+      state.nextReplan[a] = state.tick + state.attentionTicks[a];
+    }
+  }
   state.queueAtExit.fill(0);
 
   for (let a = 0; a < n; a++) {
@@ -366,6 +476,11 @@ export function step(state: SimState): void {
       continue;
     }
     const slow = Math.hypot(vx[a], vy[a]) < PARAMS.queueSpeed;
+    // Patience runs down only while queuing for the chosen exit (same room), not while held at an inner door.
+    if (slow && e >= 0) {
+      const cell = nav.cellAt(nx, ny), room = state.exitRoom[e];
+      if (room < 0 || (cell >= 0 && compiled.room[cell] === room)) state.waited[a] += dt;
+    }
     if (e >= 0 && (queued || slow) && Math.hypot(nx - exits[e].center.x, ny - exits[e].center.y) < PARAMS.queueRadius) state.queueAtExit[e]++;
     state.stuck[a] = slow && !queued ? Math.min(60000, state.stuck[a] + 1) : 0;
     flag[a] = queued || (slow && nearPortal(portals, nx, ny)) ? ACTOR_QUEUED : ACTOR_MOVING;
@@ -509,6 +624,8 @@ export function metrics(state: SimState): SimulationMetrics {
     perExitThroughput: Object.fromEntries(exits.map((e, i) => [e.openingId, state.throughput[i]])),
     bottlenecks,
     endReason: endReason(state) ?? undefined,
+    exitSwitches: state.switches,
+    exitReversals: state.reversals,
     complete,
   };
 }

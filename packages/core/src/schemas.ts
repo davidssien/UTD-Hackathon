@@ -233,6 +233,9 @@ export const SimulationMetricsSchema = z.object({
   complete: z.boolean(),
   /** all-out: every reachable person left; stabilized: nothing changed for 10 s (people trapped or stalled); timeout: safety cap. */
   endReason: z.enum(['all-out', 'stabilized', 'timeout']).optional(),
+  /** Exit choice v0.2: total exit switches, and switches back to an exit the person had left (A→B→A). */
+  exitSwitches: z.number().int().nonnegative().optional(),
+  exitReversals: z.number().int().nonnegative().optional(),
 });
 
 // ── Agent ───────────────────────────────────────────────────────────────────

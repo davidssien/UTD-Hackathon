@@ -459,6 +459,7 @@ function RunReadout({ playback }: { playback: PlaybackController }) {
     ['Max queue', m ? String(m.maxQueueLength) : '—'],
   ];
   if (m?.unreachablePeople) rows.push(['Cannot reach an exit', String(m.unreachablePeople)]);
+  if (m?.exitSwitches !== undefined) rows.push(['Exit changes', m.exitReversals ? `${m.exitSwitches} (${m.exitReversals} back)` : String(m.exitSwitches)]);
   return <section className="readout">
     <div className={`run-state ${m?.complete ? 'done' : 'live'}`}>{endText(m)}</div>
     <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
