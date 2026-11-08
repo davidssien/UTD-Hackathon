@@ -11,6 +11,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { deriveLayout, projectOnSegment, type EditCommand, type EgressDocument, type ScalarField, type Vec2, type WallMaterial } from '@egress/core';
 import type { PlaybackController } from '@egress/client';
 import { WallLibrary } from '@/lib/wall-textures';
+import { encodeField, fieldScale } from '@/lib/heatmap';
 import { ViewCube } from './scene/viewcube';
 
 export type SceneTool = 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit';
@@ -51,6 +52,7 @@ const WALL_STYLE: Record<WallMaterial, { thicknessM: number }> = { normal: { thi
 const OPENING_WIDTH = { door: 0.9, window: 1.2, exit: 1.2 } as const;
 const MAX_POLAR = Math.PI * 0.44;
 const HEAT_MAX: Record<HeatField, number> = { 'people.density': 3.5, 'people.congestion': 2 };
+const HEAT_BLEND_MS = 250;
 
 const toWorld = (p: Vec2, h = 0) => new THREE.Vector3(p.x, h, -p.y);
 
@@ -115,22 +117,47 @@ function groundMaterial(theme: SceneTheme) {
   });
 }
 
-/** Sequential palette for density/congestion; diverging (cyan = relieved, red = worse) for difference maps. */
-function paint(field: ScalarField, diverging: boolean, max: number): Uint8Array {
-  const v = field.values, out = new Uint8Array(v.length * 4);
-  let scale = max;
-  if (diverging) { scale = 1e-6; for (const x of v) if (Number.isFinite(x)) scale = Math.max(scale, Math.abs(x)); }
-  for (let i = 0; i < v.length; i++) {
-    const x = v[i];
-    if (!Number.isFinite(x) || Math.abs(x) < 1e-4) continue;
-    const t = Math.min(1, Math.abs(x) / scale);
-    let r: number, g: number, b: number;
-    if (diverging) [r, g, b] = x < 0 ? [70, 220, 255] : [255, 84, 64];
-    else if (t < 0.5) { const k = t / 0.5; r = 255; g = Math.round(225 - 85 * k); b = Math.round(110 - 70 * k); }
-    else { const k = (t - 0.5) / 0.5; r = Math.round(255 - 30 * k); g = Math.round(140 - 110 * k); b = 40; }
-    out[i * 4] = r; out[i * 4 + 1] = g; out[i * 4 + 2] = b; out[i * 4 + 3] = Math.round(70 + 170 * Math.sqrt(t));
-  }
-  return out;
+/**
+ * Smooth heatmap (D71): cubic B-spline sampling over walkable cells only (walls never bleed),
+ * a blend from the previous sample to the next over `uMix`, and the palette applied after
+ * interpolation, so heat reads as smooth curves rather than 0.25 m squares.
+ */
+function heatMaterial() {
+  const texture = () => { const t = new THREE.DataTexture(new Float32Array(2), 1, 1, THREE.RGFormat, THREE.FloatType); t.needsUpdate = true; return t; };
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false,
+    uniforms: {
+      uPrev: { value: texture() }, uNext: { value: texture() }, uMix: { value: 1 }, uScale: { value: 1 },
+      uDiverging: { value: 0 }, uSize: { value: new THREE.Vector2(1, 1) },
+    },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `precision highp float;
+      uniform sampler2D uPrev; uniform sampler2D uNext; uniform float uMix; uniform float uScale; uniform float uDiverging; uniform vec2 uSize;
+      varying vec2 vUv;
+      float bspline(float x) { x = abs(x); if (x < 1.0) return (4.0 - 6.0 * x * x + 3.0 * x * x * x) / 6.0; if (x < 2.0) { float t = 2.0 - x; return t * t * t / 6.0; } return 0.0; }
+      float smoothSample(sampler2D tex, vec2 uv) {
+        vec2 p = uv * uSize - 0.5; vec2 i = floor(p); vec2 f = p - i;
+        float sum = 0.0, weights = 0.0;
+        for (int y = -1; y <= 2; y++) for (int x = -1; x <= 2; x++) {
+          ivec2 c = clamp(ivec2(i) + ivec2(x, y), ivec2(0), ivec2(uSize) - 1);
+          vec2 cell = texelFetch(tex, c, 0).rg;
+          float w = bspline(float(x) - f.x) * bspline(float(y) - f.y) * cell.g;
+          sum += cell.r * w; weights += w;
+        }
+        return weights > 0.0 ? sum / weights : 0.0;
+      }
+      void main() {
+        if (texelFetch(uNext, ivec2(floor(vUv * uSize)), 0).g < 0.5) discard;
+        float v = mix(smoothSample(uPrev, vUv), smoothSample(uNext, vUv), uMix);
+        float t = clamp(abs(v) / uScale, 0.0, 1.0);
+        if (t < 0.004) discard;
+        vec3 c;
+        if (uDiverging > 0.5) c = v < 0.0 ? vec3(0.27, 0.86, 1.0) : vec3(1.0, 0.33, 0.25);
+        else if (t < 0.5) c = mix(vec3(1.0, 0.88, 0.43), vec3(1.0, 0.55, 0.16), t / 0.5);
+        else c = mix(vec3(1.0, 0.55, 0.16), vec3(0.88, 0.12, 0.16), (t - 0.5) / 0.5);
+        gl_FragColor = vec4(c, (70.0 + 170.0 * sqrt(t)) / 255.0);
+      }`,
+  });
 }
 
 interface Runtime {
@@ -201,9 +228,9 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
 
     const people = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 12, 8), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.6 }), 4000);
     people.count = 0; people.frustumCulled = false; scene.add(people);
-    const heat = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+    const heat = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), heatMaterial());
     heat.rotation.x = -Math.PI / 2; heat.position.y = 0.03; heat.visible = false; heat.renderOrder = 2; scene.add(heat);
-    let heatTexture: THREE.DataTexture | null = null, heatKey = '', lastHeat = 0;
+    let heatKey = '', lastHeat = 0;
 
     const camera = new THREE.OrthographicCamera(-15, 15, 15, -15, 0.05, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -499,26 +526,35 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         if (people.instanceColor) people.instanceColor.needsUpdate = true;
       } else if (playback && state.layer.people === 'heatmap') playback.actorsNow(); // keeps the playhead moving
 
-      // Heatmap layer (or an explicit overlay such as a difference map).
-      if (now - lastHeat > 250) {
+      // Heatmap layer (or an explicit overlay such as a difference map): a new sample every
+      // 250 ms, blended in from the previous one over the same 250 ms (D71).
+      const heatUniforms = (heat.material as THREE.ShaderMaterial).uniforms;
+      heatUniforms.uMix.value = Math.min(1, (now - lastHeat) / HEAT_BLEND_MS);
+      if (now - lastHeat > HEAT_BLEND_MS) {
         lastHeat = now;
         const overlay = state.overlay;
         const field = overlay?.field ?? (playback && state.layer.people === 'heatmap' ? playback.field(state.layer.field, state.layer.stat) : null);
         heat.visible = !!field;
         if (field) {
           const g = field.grid, key = `${g.origin.x},${g.origin.y},${g.width},${g.height},${g.cellSizeM}`;
-          const pixels = paint(field, overlay?.diverging ?? false, HEAT_MAX[state.layer.field] ?? 2);
-          if (key !== heatKey || !heatTexture) {
-            heatTexture?.dispose();
-            heatTexture = new THREE.DataTexture(pixels, g.width, g.height, THREE.RGBAFormat);
-            heatTexture.magFilter = THREE.LinearFilter; heatTexture.minFilter = THREE.LinearFilter;
-            (heat.material as THREE.MeshBasicMaterial).map = heatTexture; (heat.material as THREE.MeshBasicMaterial).needsUpdate = true;
+          const data = encodeField(field), diverging = overlay?.diverging ?? false;
+          const next = new THREE.DataTexture(data, g.width, g.height, THREE.RGFormat, THREE.FloatType);
+          next.needsUpdate = true;
+          const fresh = key !== heatKey;
+          (heatUniforms.uPrev.value as THREE.Texture).dispose();
+          heatUniforms.uPrev.value = fresh ? next : heatUniforms.uNext.value;
+          if (fresh) (heatUniforms.uNext.value as THREE.Texture).dispose();
+          heatUniforms.uNext.value = next;
+          heatUniforms.uMix.value = fresh ? 1 : 0;
+          heatUniforms.uSize.value.set(g.width, g.height);
+          heatUniforms.uScale.value = fieldScale(field, diverging, HEAT_MAX[state.layer.field] ?? 2);
+          heatUniforms.uDiverging.value = diverging ? 1 : 0;
+          if (fresh) {
             heat.scale.set(g.width * g.cellSizeM, g.height * g.cellSizeM, 1);
             heat.position.set(g.origin.x + g.width * g.cellSizeM / 2, 0.03, -(g.origin.y + g.height * g.cellSizeM / 2));
             heatKey = key;
-          } else { (heatTexture.image.data as Uint8Array).set(pixels); }
-          heatTexture.needsUpdate = true;
-        }
+          }
+        } else heatKey = '';
       }
 
       renderer.render(scene, camera);
@@ -542,7 +578,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup);
       disposeChildren(walls); disposeChildren(floors); disposeChildren(preview);
       for (const m of [ground, shadowCatcher, ring, people, heat]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
-      heatTexture?.dispose(); library.dispose(); renderer.dispose(); el.remove();
+      for (const k of ['uPrev', 'uNext']) ((heat.material as THREE.ShaderMaterial).uniforms[k].value as THREE.Texture).dispose();
+      library.dispose(); renderer.dispose(); el.remove();
       runtime.current = null; framedProject.current = null;
     };
   }, [library]);
