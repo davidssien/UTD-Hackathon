@@ -26,13 +26,25 @@
   - Proposals show as a ghost with a "why" bubble; Accept applies exactly the ghosted edit.
 - **Agent CLI:** `npm run agent:local -w @egress/runner -- hall.json 300` runs the agent from the command line. It uses Nemotron when `NVIDIA_API_KEY` is set, otherwise the measured heuristic planner.
 
-**Blocked on humans:**
-1. Install the SpacetimeDB CLI, then run `spacetime login`. That unlocks:
-   - publishing `egress-dev`
-   - generating bindings
-   - `SpacetimeEgressClient`
-   - the runner's database loop (1.4, 1.5, 2.7, 2.8, 3.3)
-2. Put `NVIDIA_API_KEY` in `services/runner/.env` to switch the agent from the heuristic to Nemotron.
+**SpacetimeDB, verified locally (Sat 19:00):**
+- **Install:** CLI 2.14.1 is installed at `%LOCALAPPDATA%\SpacetimeDB`.
+- **Module:** published to a local server, with bindings generated into `packages/client/src/bindings` using `.ts` imports.
+- **Runner:** `services/runner/src/main.ts` connects, registers with the shared secret, and claims runs and agent jobs.
+- **End-to-end check:** `npm run e2e:local -w @egress/runner` passed every step:
+  - project creation
+  - session-scoped views re-evaluating on project switch
+  - `apply_edit`
+  - a runner-claimed simulation with gzip chunks arriving as `Uint8Array`, plus field results
+  - agent job → measured proposal → `accept_proposal`
+- **Local server workflow:**
+  1. `spacetimedb-cli start --listen-addr 127.0.0.1:3010`
+  2. `npm run publish:local -w @egress/spacetimedb`
+  3. `npm run generate -w @egress/spacetimedb`
+
+**Still open:**
+1. **Cody:** run `spacetime login`, then `npm run publish:dev -w @egress/spacetimedb` to deploy to Maincloud.
+2. **Backend:** `SpacetimeEgressClient`, the browser implementation of `EgressClient`, built from the bindings plus `OptimisticDocument` and `Playback`.
+3. **Cody:** put `NVIDIA_API_KEY` in `services/runner/.env` to switch the agent from the heuristic planner to Nemotron.
 
 **Pitch:** Egress is a collaborative building editor. You draw a floor plan, drop in a crowd, run a pedestrian-flow evacuation, watch congestion build up, and scrub the replay. A Nemotron agent then tests design changes against measured results.
 
@@ -457,6 +469,10 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
 - **Edit is always top-down.** Every layout edit happens in an orthographic plan view, with no orbit or tilt while editing. Free-look 3D is for viewing the result after editing, and it is never an editing surface.
 - **Blueprint look:** the floor is blueprint blue. Walls, and anything added from now on (openings, furniture, guides), are drawn in white lines.
+- **Dot grid, thin walls.**
+  - The plan shows a grid of dots: every grid intersection is a dot, and walls are built along the grid lines between dots.
+  - Walls render with a small thickness.
+  - No contract change: dots are the 0.25 m snap points, and a wall's endpoints become `Vertex` entities when you click them.
 - **Custom wall textures are coming.**
   - Walls carry an optional per-side `finish: { left?, right? }` holding texture IDs from a future finishes registry, where left and right are relative to start→end.
   - Physics never reads `finish`; it uses `material` and geometry only.
@@ -784,4 +800,6 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D29 | 11-07 | **Agent design:**<br>• `get_hotspots` returns validated `suggestionId`s, and the model picks among them rather than authoring geometry.<br>• `test_edit_batch` reruns the baseline's exact people.<br>• Candidates are ranked by effective time: a timed-out run counts 10 s per person still inside.<br>• `runLlmAgent` falls back to the heuristic sequence on model errors. |
 | D30 | 11-07 | **Painting** sets per-cell relative weights in [0, 4]. Strokes apply per cell (no blur through walls), erase restores 1, and N never changes. |
 | D32 | 11-07 | **Editing and textures:** editing is top-down only, with free-look 3D for viewing after editing, in a blueprint style (blue floor, white lines). Walls gain an optional per-side `finish` (texture IDs) for future textures; it is visual only, and older documents stay valid. |
+| D33 | 11-07 | **Dot grid:** the plan view is a grid of dots, with thin walls built along grid lines between dots. Backend unchanged: dots are the 0.25 m snap points. |
+| D34 | 11-07 | **Local SpacetimeDB:** run a local server for development; Maincloud is for the demo. Bindings are generated with `--import-extension ts` so the runner can import them under Node type stripping, and are committed so the frontend lane needs no CLI. |
 | D31 | 11-07 | **Edit-mode estimate:** route demand is the floor area whose shortest route passes through each cell, smoothed within rooms; exit distance is also available. It is labelled a potential-bottleneck estimate, never congestion. |

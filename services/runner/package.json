@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test \"test/**/*.test.ts\"",
-    "agent:local": "node src/agent-local.ts"
+    "agent:local": "node src/agent-local.ts",
+    "e2e:local": "node scripts/e2e-local.ts"
   },
   "dependencies": {
     "@egress/core": "0.1.0",

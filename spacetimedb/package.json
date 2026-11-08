@@ -6,7 +6,8 @@
   "description": "Egress SpacetimeDB 2.x TypeScript module: the system of record (projects, members, entities, runs, replay, agent).",
   "scripts": {
     "publish:dev": "spacetime publish egress-dev --server maincloud",
-    "generate": "spacetime generate --lang typescript --out-dir ../packages/client/src/bindings --module-path ."
+    "generate": "spacetime generate --lang typescript --import-extension ts --out-dir ../packages/client/src/bindings --module-path . --yes",
+    "publish:local": "spacetime publish egress-dev -p . -s http://127.0.0.1:3010 --anonymous --yes=skip-login"
   },
   "dependencies": {
     "@egress/core": "0.1.0",
