@@ -8,7 +8,7 @@
  * Edits are optimistic (OptimisticDocument), replay chunks feed Playback.
  */
 import {
-  ACTOR_EXITED, canonicalJson, decodeChunk, DomainError, entitiesToDocument, sha256Hex, TICK_RATE_HZ,
+  ACTOR_EXITED, canonicalJson, decodeChunk, DomainError, entitiesToDocument, parseDocumentJson, sha256Hex, TICK_RATE_HZ,
   type AgentContext, type DomainErrorData, type EditCommand, type EgressDocument, type Entity, type ID, type Pace, type Role,
   type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
@@ -18,7 +18,7 @@ import { OptimisticDocument } from './optimistic.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunnerStatus, RunSummary,
 } from './types.ts';
 
 export interface SpacetimeClientOptions {
@@ -54,8 +54,11 @@ class SpacetimeEgressClient implements EgressClient {
   readonly agentJobs = writable<AgentJob[]>([]);
   readonly agentSteps = writable<AgentStep[]>([]);
   readonly proposals = writable<ProposalView[]>([]);
+  readonly runner = writable<RunnerStatus>({ online: false, lastSeenMs: null, agentModel: null, activeRuns: 0, activeJobs: 0 });
 
   private readonly ready: Promise<DbConnection>;
+  private readonly runnerTimer: ReturnType<typeof setInterval>;
+  private readonly layouts = new Map<string, EgressDocument>();
   private conn: DbConnection | null = null;
   private readonly od = new OptimisticDocument();
   private readonly playbacks = new Map<ID, Playback>();
@@ -82,12 +85,30 @@ class SpacetimeEgressClient implements EgressClient {
             .subscribe([
               tables.myProfile, tables.mySession, tables.myProjects, tables.myMemberships, tables.activeMembers, tables.activeEntities,
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
-              tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals,
+              tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus,
             ]);
         })
         .onConnectError((_ctx, error) => { this.status.set('error'); reject(error); })
         .onDisconnect(() => this.status.set('disconnected'))
         .build();
+    });
+    // Liveness decays with time even when no rows change.
+    this.runnerTimer = setInterval(() => this.refreshRunner(), 5000);
+  }
+
+  /** A runner counts as online if it sent a heartbeat in the last 20 s (heartbeats every 5 s). */
+  private refreshRunner() {
+    const conn = this.conn;
+    if (!conn) return;
+    const beats = [...conn.db.runnerStatus.iter()].sort((a, b) => ms(b.lastSeen) - ms(a.lastSeen));
+    const newest = beats[0];
+    const online = beats.filter(b => Date.now() - ms(b.lastSeen) < 20_000);
+    this.runner.set({
+      online: online.length > 0,
+      lastSeenMs: newest ? ms(newest.lastSeen) : null,
+      agentModel: (online[0] ?? newest)?.agentModel ?? null,
+      activeRuns: online.reduce((s, b) => s + b.activeRuns, 0),
+      activeJobs: online.reduce((s, b) => s + b.activeJobs, 0),
     });
   }
 
@@ -98,6 +119,7 @@ class SpacetimeEgressClient implements EgressClient {
     const handles = [
       conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
+      conn.db.activeRunLayout, conn.db.runnerStatus,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
@@ -113,6 +135,7 @@ class SpacetimeEgressClient implements EgressClient {
   private refresh() {
     const conn = this.conn;
     if (!conn) return;
+    this.refreshRunner();
     const profile = [...conn.db.myProfile.iter()][0];
     this.me.set(profile ? { identity: profile.identity.toHexString(), displayName: profile.displayName } : null);
     const session = [...conn.db.mySession.iter()][0];
@@ -192,6 +215,13 @@ class SpacetimeEgressClient implements EgressClient {
       playback.pushFrames(decodeChunk(chunk.bytes).frames);
     }
     const run = [...conn.db.activeRuns.iter()].find(r => r.id === runId);
+    // Replays and heatmaps use the geometry the run actually saw, not the current edit state.
+    const snapshot = run && [...conn.db.activeRunLayout.iter()].find(l => l.hash === run.layoutHash);
+    if (snapshot) {
+      let layout = this.layouts.get(snapshot.hash);
+      if (!layout) { layout = parseDocumentJson(snapshot.document); this.layouts.set(snapshot.hash, layout); }
+      playback.setLayout(layout);
+    }
     const result = [...conn.db.activeResult.iter()].find(r => r.runId === runId);
     if (result) playback.setMetrics(parse<SimulationMetrics | null>(result.metrics, null));
     else playback.setMetrics(liveMetrics(runId, playback));
@@ -314,6 +344,7 @@ class SpacetimeEgressClient implements EgressClient {
   }
 
   dispose() {
+    clearInterval(this.runnerTimer);
     for (const p of this.playbacks.values()) p.dispose();
     this.conn?.disconnect();
   }

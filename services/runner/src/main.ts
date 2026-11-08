@@ -12,6 +12,10 @@ import { processAgentJob, processRun } from './jobs.ts';
 import { hasNemotronKey, nemotronChatFn } from './llm.ts';
 import { connect, SpacetimeBackend } from './spacetime.ts';
 
+/** Clients treat a runner as online if its last heartbeat is newer than ~4 beats. */
+export const HEARTBEAT_MS = 5000;
+const RUNNER_VERSION = 'egress-runner 0.2';
+
 export interface RunnerHandle {
   backend: SpacetimeBackend;
   identity: string;
@@ -65,12 +69,26 @@ export async function startRunner(options: { uri?: string; db?: string; token?: 
   const timer = setInterval(pump, 1000); // belt and braces in case an insert callback is missed
   pump();
 
+  // Liveness for the UI ("simulation server offline" instead of an endless "queued").
+  const jobIds = () => new Set([...conn.db.runnerAgentQueue.iter()].map(j => j.id));
+  const beat = () => {
+    if (stopped) return;
+    const jobs = jobIds();
+    const activeJobs = [...busy].filter(id => jobs.has(id)).length;
+    void conn.reducers.runnerHeartbeat({
+      agentModel: chat ? config.nemotronModel : 'heuristic', activeRuns: busy.size - activeJobs, activeJobs, version: RUNNER_VERSION,
+    }).catch(e => log(`[runner] heartbeat failed: ${e instanceof Error ? e.message : String(e)}`));
+  };
+  const heartbeat = setInterval(beat, HEARTBEAT_MS);
+  beat();
+
   return {
     backend,
     identity,
     stop() {
       stopped = true;
       clearInterval(timer);
+      clearInterval(heartbeat);
       conn.disconnect();
     },
   };

@@ -58,6 +58,7 @@ import RenameProjectReducer from "./rename_project_reducer.ts";
 import RequestAgentJobReducer from "./request_agent_job_reducer.ts";
 import RequestSimulationReducer from "./request_simulation_reducer.ts";
 import RevokeInviteReducer from "./revoke_invite_reducer.ts";
+import RunnerHeartbeatReducer from "./runner_heartbeat_reducer.ts";
 import SaveScenarioReducer from "./save_scenario_reducer.ts";
 import SetDisplayNameReducer from "./set_display_name_reducer.ts";
 import SetMemberRoleReducer from "./set_member_role_reducer.ts";
@@ -74,6 +75,7 @@ import ActiveMembersRow from "./active_members_table.ts";
 import ActiveProposalsRow from "./active_proposals_table.ts";
 import ActiveReplayRow from "./active_replay_table.ts";
 import ActiveResultRow from "./active_result_table.ts";
+import ActiveRunLayoutRow from "./active_run_layout_table.ts";
 import ActiveRunsRow from "./active_runs_table.ts";
 import ActiveScenariosRow from "./active_scenarios_table.ts";
 import MyMembershipsRow from "./my_memberships_table.ts";
@@ -83,6 +85,7 @@ import MySessionRow from "./my_session_table.ts";
 import RunnerAgentQueueRow from "./runner_agent_queue_table.ts";
 import RunnerInputsRow from "./runner_inputs_table.ts";
 import RunnerQueueRow from "./runner_queue_table.ts";
+import RunnerStatusRow from "./runner_status_table.ts";
 
 /** Type-only namespace exports for generated type groups. */
 
@@ -144,6 +147,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ActiveResultRow),
+  activeRunLayout: __table({
+    name: 'active_run_layout',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ActiveRunLayoutRow),
   activeRuns: __table({
     name: 'active_runs',
     indexes: [
@@ -207,6 +217,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, RunnerQueueRow),
+  runnerStatus: __table({
+    name: 'runner_status',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, RunnerStatusRow),
 });
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
@@ -235,6 +252,7 @@ const reducersSchema = __reducers(
   __reducerSchema("request_agent_job", RequestAgentJobReducer),
   __reducerSchema("request_simulation", RequestSimulationReducer),
   __reducerSchema("revoke_invite", RevokeInviteReducer),
+  __reducerSchema("runner_heartbeat", RunnerHeartbeatReducer),
   __reducerSchema("save_scenario", SaveScenarioReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
   __reducerSchema("set_member_role", SetMemberRoleReducer),
@@ -263,6 +281,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "active_replay": Omit<typeof tablesSchema.schemaType.tables["activeReplay"], "accessorName"> & { readonly accessorName: "active_replay" };
     /** @deprecated Use `activeResult` instead. This alias will be removed in the next major version. */
     readonly "active_result": Omit<typeof tablesSchema.schemaType.tables["activeResult"], "accessorName"> & { readonly accessorName: "active_result" };
+    /** @deprecated Use `activeRunLayout` instead. This alias will be removed in the next major version. */
+    readonly "active_run_layout": Omit<typeof tablesSchema.schemaType.tables["activeRunLayout"], "accessorName"> & { readonly accessorName: "active_run_layout" };
     /** @deprecated Use `activeRuns` instead. This alias will be removed in the next major version. */
     readonly "active_runs": Omit<typeof tablesSchema.schemaType.tables["activeRuns"], "accessorName"> & { readonly accessorName: "active_runs" };
     /** @deprecated Use `activeScenarios` instead. This alias will be removed in the next major version. */
@@ -281,6 +301,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "runner_inputs": Omit<typeof tablesSchema.schemaType.tables["runnerInputs"], "accessorName"> & { readonly accessorName: "runner_inputs" };
     /** @deprecated Use `runnerQueue` instead. This alias will be removed in the next major version. */
     readonly "runner_queue": Omit<typeof tablesSchema.schemaType.tables["runnerQueue"], "accessorName"> & { readonly accessorName: "runner_queue" };
+    /** @deprecated Use `runnerStatus` instead. This alias will be removed in the next major version. */
+    readonly "runner_status": Omit<typeof tablesSchema.schemaType.tables["runnerStatus"], "accessorName"> & { readonly accessorName: "runner_status" };
   };
 };
 
@@ -307,6 +329,7 @@ const tableAccessorAliases = {
   "active_proposals": "activeProposals",
   "active_replay": "activeReplay",
   "active_result": "activeResult",
+  "active_run_layout": "activeRunLayout",
   "active_runs": "activeRuns",
   "active_scenarios": "activeScenarios",
   "my_memberships": "myMemberships",
@@ -316,6 +339,7 @@ const tableAccessorAliases = {
   "runner_agent_queue": "runnerAgentQueue",
   "runner_inputs": "runnerInputs",
   "runner_queue": "runnerQueue",
+  "runner_status": "runnerStatus",
 } as const;
 
 function __withTableAccessorAliases<T extends object>(target: T, freeze = false): T {
@@ -352,6 +376,8 @@ export type DbView = __DbViewBase & {
   readonly "active_replay": __DbViewBase["activeReplay"];
   /** @deprecated Use `activeResult` instead. This alias will be removed in the next major version. */
   readonly "active_result": __DbViewBase["activeResult"];
+  /** @deprecated Use `activeRunLayout` instead. This alias will be removed in the next major version. */
+  readonly "active_run_layout": __DbViewBase["activeRunLayout"];
   /** @deprecated Use `activeRuns` instead. This alias will be removed in the next major version. */
   readonly "active_runs": __DbViewBase["activeRuns"];
   /** @deprecated Use `activeScenarios` instead. This alias will be removed in the next major version. */
@@ -370,6 +396,8 @@ export type DbView = __DbViewBase & {
   readonly "runner_inputs": __DbViewBase["runnerInputs"];
   /** @deprecated Use `runnerQueue` instead. This alias will be removed in the next major version. */
   readonly "runner_queue": __DbViewBase["runnerQueue"];
+  /** @deprecated Use `runnerStatus` instead. This alias will be removed in the next major version. */
+  readonly "runner_status": __DbViewBase["runnerStatus"];
 };
 
 type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
@@ -390,6 +418,8 @@ export type Tables = __TablesBase & {
   readonly "active_replay": __TablesBase["activeReplay"];
   /** @deprecated Use `activeResult` instead. This alias will be removed in the next major version. */
   readonly "active_result": __TablesBase["activeResult"];
+  /** @deprecated Use `activeRunLayout` instead. This alias will be removed in the next major version. */
+  readonly "active_run_layout": __TablesBase["activeRunLayout"];
   /** @deprecated Use `activeRuns` instead. This alias will be removed in the next major version. */
   readonly "active_runs": __TablesBase["activeRuns"];
   /** @deprecated Use `activeScenarios` instead. This alias will be removed in the next major version. */
@@ -408,6 +438,8 @@ export type Tables = __TablesBase & {
   readonly "runner_inputs": __TablesBase["runnerInputs"];
   /** @deprecated Use `runnerQueue` instead. This alias will be removed in the next major version. */
   readonly "runner_queue": __TablesBase["runnerQueue"];
+  /** @deprecated Use `runnerStatus` instead. This alias will be removed in the next major version. */
+  readonly "runner_status": __TablesBase["runnerStatus"];
 };
 
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */

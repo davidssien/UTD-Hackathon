@@ -16,6 +16,15 @@ export interface Store<T> {
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
 
+/** Whether a simulation/agent runner is alive. Show "simulation server offline" when `online` is false. */
+export interface RunnerStatus {
+  online: boolean;
+  lastSeenMs: number | null;
+  agentModel: string | null;
+  activeRuns: number;
+  activeJobs: number;
+}
+
 export interface Me {
   identity: string;
   displayName: string;
@@ -132,6 +141,7 @@ export interface ProposalView {
 
 export interface EgressClient {
   readonly status: Store<ConnectionStatus>;
+  readonly runner: Store<RunnerStatus>;
   readonly me: Store<Me | null>;
   readonly projects: Store<ProjectSummary[]>;
   readonly document: Store<DocumentView>;

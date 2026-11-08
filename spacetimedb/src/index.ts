@@ -186,9 +186,19 @@ const proposals = table({ name: 'proposals' }, {
   createdAt: t.timestamp(),
 });
 
+/** Liveness of each runner, so the UI can say "simulation server offline" instead of waiting forever. */
+const runner_heartbeats = table({ name: 'runner_heartbeats' }, {
+  identity: t.identity().primaryKey(),
+  agentModel: t.string(),
+  activeRuns: t.u32(),
+  activeJobs: t.u32(),
+  version: t.string(),
+  lastSeen: t.timestamp(),
+});
+
 const spacetimedb = schema({
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
-  layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals,
+  layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats,
 });
 export default spacetimedb;
 
@@ -624,6 +634,17 @@ export const finish_agent_job = spacetimedb.reducer(
   }),
 );
 
+/** Runner liveness ping (every few seconds). */
+export const runner_heartbeat = spacetimedb.reducer(
+  { agentModel: t.string(), activeRuns: t.u32(), activeJobs: t.u32(), version: t.string() },
+  (ctx, args) => guard(() => {
+    requireService(ctx);
+    const row = { identity: ctx.sender, agentModel: args.agentModel.slice(0, 120), activeRuns: args.activeRuns, activeJobs: args.activeJobs, version: args.version.slice(0, 40), lastSeen: ctx.timestamp };
+    if (ctx.db.runner_heartbeats.identity.find(ctx.sender)) ctx.db.runner_heartbeats.identity.update(row);
+    else ctx.db.runner_heartbeats.insert(row);
+  }),
+);
+
 /** Applies the proposal with requestId = proposalId, so ids match the ghost preview (D19). */
 export const accept_proposal = spacetimedb.reducer({ proposalId: t.string() }, (ctx, { proposalId }) => guard(() => {
   const proposal = ctx.db.proposals.id.find(proposalId) ?? fail('NOT_FOUND', `Proposal ${proposalId} does not exist.`);
@@ -695,6 +716,20 @@ export const active_agent_steps = spacetimedb.view({ name: 'active_agent_steps',
 
 export const active_proposals = spacetimedb.view({ name: 'active_proposals', public: true }, t.array(proposals.rowType), ctx =>
   ctx.from.sessions.where(s => s.identity.eq(ctx.sender)).rightSemijoin(ctx.from.proposals, (s, p) => s.activeProjectId.eq(p.projectId)).build());
+
+/** The frozen layout of the caller's active run, so replays and heatmaps use the geometry the run actually saw. */
+export const active_run_layout = spacetimedb.view({ name: 'active_run_layout', public: true }, t.array(layout_snapshots.rowType), ctx => {
+  const session = ctx.db.sessions.identity.find(ctx.sender);
+  if (!session || !session.activeRunId) return [];
+  const run = ctx.db.sim_runs.id.find(session.activeRunId);
+  if (!run) return [];
+  const snapshot = ctx.db.layout_snapshots.hash.find(run.layoutHash);
+  return snapshot ? [snapshot] : [];
+});
+
+/** Runner liveness for every client (no project data). Clients treat a runner as online if seen in the last ~20 s. */
+export const runner_status = spacetimedb.anonymousView({ name: 'runner_status', public: true }, t.array(runner_heartbeats.rowType), ctx =>
+  ctx.from.runner_heartbeats.build());
 
 // ── Views (runner only) ─────────────────────────────────────────────────────
 

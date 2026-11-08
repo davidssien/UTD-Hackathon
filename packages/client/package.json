@@ -10,7 +10,8 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.ts\"",
-    "e2e:local": "node scripts/e2e-client.ts"
+    "e2e:local": "node scripts/e2e-client.ts",
+    "e2e:multiuser": "node scripts/e2e-multiuser.ts"
   },
   "dependencies": {
     "@egress/core": "0.1.0",

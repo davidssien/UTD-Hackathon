@@ -1,0 +1,109 @@
+/**
+ * Multi-user, permission and durability checks against a running SpacetimeDB
+ * (spec §12 persistence/security + rendering/replay). Starts a runner in-process.
+ *
+ *   node packages/client/scripts/e2e-multiuser.ts [ws://127.0.0.1:3010] [egress-backend]
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { layoutHash, parseDocument } from '@egress/core';
+import { createSpacetimeClient, type EgressClient } from '@egress/client';
+import { DbConnection } from '../src/bindings/index.ts';
+import { startRunner } from '../../../services/runner/src/main.ts';
+
+const uri = process.argv[2] ?? 'ws://127.0.0.1:3010';
+const db = process.argv[3] ?? 'egress-backend';
+const doc = parseDocument(JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '..', 'content', 'scenes', 'one-room.json'), 'utf8')));
+const ok = (msg: string) => console.log(`✓ ${msg}`);
+const until = async (check: () => boolean, ms: number, what: string) => {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error(`Timed out: ${what}`);
+    await new Promise(r => setTimeout(r, 50));
+  }
+};
+const expectError = async (p: Promise<unknown>, code: string, what: string) => {
+  try {
+    await p;
+  } catch (e) {
+    if ((e as { code?: string }).code === code || String(e).includes(code)) return ok(`${what} → ${code}`);
+    throw new Error(`${what}: expected ${code}, got ${String(e)}`);
+  }
+  throw new Error(`${what}: expected ${code}, but it succeeded`);
+};
+function makeClient(store: { token?: string }): EgressClient {
+  return createSpacetimeClient({ uri, db, tokenStore: { get: () => store.token, set: t => { store.token = t; } } });
+}
+
+const runner = await startRunner({ uri, db, token: null, log: () => {} });
+const tokenA: { token?: string } = {}, tokenB: { token?: string } = {};
+const a = makeClient(tokenA), b = makeClient(tokenB);
+await until(() => a.status.get() === 'connected' && b.status.get() === 'connected', 10_000, 'connect');
+await until(() => a.runner.get().online, 15_000, 'runner heartbeat');
+ok(`runner online via heartbeat (model: ${a.runner.get().agentModel})`);
+
+// Isolation: a private project is invisible to another guest.
+const projectId = await a.createProject('Multi-user', doc);
+await until(() => a.document.get().doc?.walls.length === 4, 10_000, 'A sees its project');
+await new Promise(r => setTimeout(r, 300));
+if (b.projects.get().some(p => p.id === projectId)) throw new Error('B can see A\'s private project');
+await expectError(b.openProject(projectId), 'UNAUTHORIZED', 'B opens A\'s project without an invite');
+
+// Viewer invite: B can read but not write.
+const viewerCode = await a.createInvite('viewer');
+await b.joinProject(viewerCode);
+await until(() => b.document.get().doc?.walls.length === 4, 10_000, 'B (viewer) sees the project');
+ok('viewer invite: B can read the project');
+const floorId = b.document.get().doc!.floors[0].id;
+const viewerEdit = await b.edit([{ kind: 'createWallChain', floorId, points: [{ x: 2, y: 2 }, { x: 2, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'normal' }]);
+if (viewerEdit.ok) throw new Error('viewer edit was accepted');
+ok(`viewer edit refused by the server (${viewerEdit.error.code}); optimistic change rolled back: ${b.document.get().doc!.walls.length === 4}`);
+
+// Editor invite upgrades B; edits sync between the two clients.
+const editorCode = await a.createInvite('editor');
+await b.joinProject(editorCode);
+await until(() => b.projects.get().find(p => p.id === projectId)?.role === 'editor', 10_000, 'B upgraded to editor');
+const started = Date.now();
+const editorEdit = await b.edit([{ kind: 'createWallChain', floorId, points: [{ x: 2, y: 2 }, { x: 2, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'glass' }]);
+if (!editorEdit.ok) throw new Error(editorEdit.error.message);
+await until(() => (a.document.get().doc?.walls.length ?? 0) === 5, 10_000, 'A receives B\'s edit');
+ok(`editor edit from B reached A in ${Date.now() - started} ms`);
+
+// Service-only reducers reject ordinary clients.
+const raw = await new Promise<DbConnection>((resolve, reject) => {
+  DbConnection.builder().withUri(uri).withDatabaseName(db).onConnect(conn => resolve(conn)).onConnectError((_c, e) => reject(e)).build();
+});
+await expectError(raw.reducers.claimSimulation({ runId: 'anything' }), 'UNAUTHORIZED', 'ordinary client calls claim_simulation');
+await expectError(raw.reducers.runnerHeartbeat({ agentModel: 'x', activeRuns: 0, activeJobs: 0, version: 'x' }), 'UNAUTHORIZED', 'ordinary client calls runner_heartbeat');
+await expectError(raw.reducers.registerService({ secret: 'wrong' }), 'UNAUTHORIZED', 'register_service with a wrong secret');
+raw.disconnect();
+
+// Run, then edit the layout, then reconnect: replay survives and uses the run's frozen layout.
+const runLayout = layoutHash(a.document.get().doc!);
+const runId = await a.startRun({
+  scenarioVersion: 1, id: 's-mu', projectId, name: 'Evacuate', durationSeconds: 300,
+  population: { count: 30, distribution: 'uniform', strokes: [], seed: 5 }, goal: { kind: 'evacuate', blockedExitIds: [] },
+}, 'unpaced');
+await until(() => a.runs.get().find(r => r.id === runId)?.status === 'complete', 60_000, 'run complete');
+await a.edit([{ kind: 'createWallChain', floorId, points: [{ x: 7, y: 5 }, { x: 9, y: 5 }], thicknessM: 0.2, heightM: 2.8, material: 'normal' }]);
+await until(() => a.document.get().pending === 0, 10_000, 'post-run edit confirmed');
+a.dispose();
+
+const a2 = makeClient(tokenA); // same identity, fresh connection ("browser refresh")
+await until(() => a2.status.get() === 'connected', 10_000, 'reconnect');
+await until(() => a2.projects.get().some(p => p.id === projectId), 10_000, 'project list after refresh');
+await a2.openProject(projectId);
+await until(() => a2.runs.get().some(r => r.id === runId), 10_000, 'run list after refresh');
+const playback = a2.playback(runId);
+await until(() => playback.state.get().complete, 30_000, 'replay reloaded');
+playback.seek(playback.state.get().liveTick);
+const field = playback.field('people.congestion', 'timeAverage');
+if (!field) throw new Error('no heatmap on replay');
+const layoutNow = layoutHash(a2.document.get().doc!);
+ok(`replay survives refresh: ${playback.state.get().liveTick} ticks, heatmap ${field.grid.width}×${field.grid.height}; run layout ${runLayout.slice(0, 8)} ≠ current ${layoutNow.slice(0, 8)}: ${runLayout !== layoutNow}`);
+
+a2.dispose();
+b.dispose();
+runner.stop();
+console.log('MULTI-USER E2E OK');
+process.exit(0);

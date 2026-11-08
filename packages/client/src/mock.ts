@@ -14,7 +14,7 @@ import { ghostFor } from './ghost.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunnerStatus, RunSummary,
 } from './types.ts';
 
 type PatchCommand = Extract<EditCommand, { kind: 'applyPatch' }>;
@@ -41,6 +41,8 @@ export function createMockClient(options: MockClientOptions = {}): EgressClient 
 
 class MockEgressClient implements EgressClient {
   readonly status = writable<ConnectionStatus>('connected');
+  /** The mock simulates in the browser, so its "runner" is always available. */
+  readonly runner = writable<RunnerStatus>({ online: true, lastSeenMs: null, agentModel: 'in-browser heuristic', activeRuns: 0, activeJobs: 0 });
   readonly me = writable<Me | null>({ identity: 'mock-identity', displayName: 'Mock user' });
   readonly projects = writable<ProjectSummary[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
