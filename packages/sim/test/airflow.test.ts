@@ -50,3 +50,15 @@ test('sealed, single-opening and disconnected rooms have exactly zero through-fl
   assert.ok(floorAirflow(connected, floorId).peak > 0.1);
 });
 
+test('wind can come from any compass bearing: 270° is west, and in-between bearings blend the sides', () => {
+  const { doc, floorId } = crossVentilation(); // apertures on the west and east walls
+  const close = (a: Float32Array, b: Float32Array) => a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+  const west = floorAirflow(doc, floorId, 'west'), bearing = floorAirflow(doc, floorId, 270);
+  assert.ok(close(west.x, bearing.x) && close(west.y, bearing.y), '270° matches west');
+  const mid = compileFloor(doc, floorId).nav.cellAt(5, 2);
+  // Only the east-west component drives this room: sin(240°) of the westerly strength, reversed for 60°.
+  const wsw = floorAirflow(doc, floorId, 240), ene = floorAirflow(doc, floorId, 60);
+  assert.ok(Math.abs(wsw.x[mid] / (west.x[mid] * Math.sin((240 * Math.PI) / 180) / Math.sin((270 * Math.PI) / 180)) - 1) < 1e-5, 'scales with the east-west component');
+  assert.ok(Math.abs(ene.x[mid] + wsw.x[mid]) < 1e-6, 'opposite bearings reverse the flow');
+});
+

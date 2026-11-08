@@ -9,7 +9,7 @@ import {
   type EditCommand, type EgressDocument, type ID, type SimulationMetrics,
 } from '@egress/core';
 import type { AgentEnvironment, RunRecord } from './environment.ts';
-import { floorAirflow, populationCapacity, type WindFrom } from '@egress/sim';
+import { floorAirflow, populationCapacity, windLabel, type WindFrom } from '@egress/sim';
 import { cornerRooms } from './corner-rooms.ts';
 import { suggestionsFor, type Suggestion } from './candidates.ts';
 import { complianceChecks, describeLayout, resolvePlacement } from './layout.ts';
@@ -35,7 +35,7 @@ export interface ToolSpec {
 const id = z.string().min(1).max(200);
 const ARGS = {
   inspect_layout: z.object({}).strict(),
-  inspect_airflow: z.object({ floorId: id.optional(), windFrom: z.enum(['west', 'north', 'east', 'south']).optional() }).strict(),
+  inspect_airflow: z.object({ floorId: id.optional(), windFrom: z.union([z.enum(['west', 'north', 'east', 'south']), z.number().min(0).max(360)]).optional() }).strict(),
   inspect_run: z.object({ runId: id }).strict(),
   run_scenario: z.object({ people: z.number().int().min(1).max(2000).optional(), blockedExitIds: z.array(id).max(20).optional() }).strict(),
   get_hotspots: z.object({ runId: id, topK: z.number().int().min(1).max(5).optional() }).strict(),
@@ -63,8 +63,8 @@ export const TOOL_SPECS: ToolSpec[] = [
     at: { type: 'string', enum: ['start', 'center', 'end'] }, roomId: { type: 'string' }, farthestFromOpeningId: { type: 'string' },
   }, ['kind']),
   spec('check_compliance', 'Modeled code-style checks (door width, exit count and capacity for the head count, corridor width, travel distance). Failing door widths come back as suggestionIds you can test. Not a code review.', {}),
-  spec('inspect_airflow', 'Measure steady planar airflow on one floor of the current layout. Use the selected floor and wind from the user context unless they specify another. Returns open exterior aperture count and a relative pressure gradient, including a location for the strongest flow. The model excludes smoke, mechanical ventilation and vertical exchange.', {
-    floorId: { type: 'string' }, windFrom: { type: 'string', enum: ['west', 'north', 'east', 'south'] },
+  spec('inspect_airflow', 'Measure steady planar airflow on one floor of the current layout. Use the selected floor and wind from the user context unless they specify another. Returns open exterior aperture count and a relative pressure gradient, including a location for the strongest flow. It includes HVAC supply vents placed in the building and excludes exchange between floors.', {
+    floorId: { type: 'string' }, windFrom: { type: 'number', description: 'Compass bearing the wind blows from, in degrees (0 = north, 90 = east, 270 = west).' },
   }),
   spec('inspect_run', 'Get the scenario and measured metrics of an existing simulation run.', { runId: { type: 'string' } }, ['runId']),
   spec('run_scenario', 'Run an evacuation simulation on the current layout (counts against a budget of 2). Optionally change head count or block exits.', {
@@ -339,7 +339,7 @@ export function inspectAirflow(doc: EgressDocument, floorId: string, windFrom: W
   const { grid, values } = flow.magnitude;
   const i = flow.peak > 0 ? values.indexOf(flow.peak) : -1;
   return {
-    floorId, floorName: floor.name, windFrom, openExteriorApertures: flow.exteriorOpenings,
+    floorId, floorName: floor.name, windFrom, wind: windLabel(windFrom), openExteriorApertures: flow.exteriorOpenings,
     peakRelativeGradient: Number(flow.peak.toPrecision(4)), units: flow.magnitude.units,
     strongestAtM: i < 0 ? null : { x: round(grid.origin.x + (i % grid.width + 0.5) * grid.cellSizeM),
       y: round(grid.origin.y + (Math.floor(i / grid.width) + 0.5) * grid.cellSizeM) },

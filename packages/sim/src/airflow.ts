@@ -7,7 +7,25 @@ import { compileFloor } from './compile.ts';
 export const WIND_FROM = {
   west: { x: 1, y: 0 }, north: { x: 0, y: -1 }, east: { x: -1, y: 0 }, south: { x: 0, y: 1 },
 } satisfies Record<string, Vec2>;
-export type WindFrom = keyof typeof WIND_FROM;
+export type WindSide = keyof typeof WIND_FROM;
+/** Where the wind comes from: a named side, or a compass bearing in degrees (0 = north, 90 = east). */
+export type WindFrom = WindSide | number;
+export const WIND_BEARING: Record<WindSide, number> = { north: 0, east: 90, south: 180, west: 270 };
+
+/** Unit vector the wind blows along (plan coordinates, +y north) for a side or bearing. */
+export function windVector(from: WindFrom): Vec2 {
+  if (typeof from !== 'number') return WIND_FROM[from];
+  const r = (((from % 360) + 360) % 360) * Math.PI / 180;
+  return { x: -Math.sin(r), y: -Math.cos(r) };
+}
+
+const POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+/** "the west", or "245° (WSW)" for a bearing. */
+export function windLabel(from: WindFrom): string {
+  if (typeof from !== 'number') return `the ${from}`;
+  const b = ((Math.round(from) % 360) + 360) % 360;
+  return `${b}° (${POINTS[Math.round(b / 22.5) % 16]})`;
+}
 
 /** An HVAC supply (scenario `vent` element): a small region held at positive pressure. */
 export interface AirVent { position: Vec2; radiusM: number }
@@ -53,7 +71,7 @@ export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, e
   const n = navigable.length;
   const neighbours = new Int32Array(n * 4).fill(-1), degree = new Uint8Array(n);
   const pressure = new Float64Array(n), fixed = new Uint8Array(n);
-  const wind = WIND_FROM[from];
+  const wind = windVector(from);
   for (let e = 0; e < c.exits.length; e++) {
     const normal = c.exits[e].normal;
     for (const i of c.exitSeeds[e]) {

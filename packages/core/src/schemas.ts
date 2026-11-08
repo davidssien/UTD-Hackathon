@@ -292,7 +292,8 @@ export const ProposalStatusSchema = z.enum(['proposed', 'accepted', 'rejected', 
 
 export const AgentContextSchema = z.object({
   floorId: IdSchema.optional(),
-  windFrom: z.enum(['west', 'north', 'east', 'south']).optional(),
+  /** Wind for airflow questions: a named side, or the compass bearing it blows from (degrees, 0 = north). */
+  windFrom: z.union([z.enum(['west', 'north', 'east', 'south']), z.number().min(0).max(360)]).optional(),
   selectedEntityIds: z.array(IdSchema).max(64).optional(),
   runId: IdSchema.optional(),
   tick: z.number().int().nonnegative().optional(),

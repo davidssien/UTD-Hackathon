@@ -66,11 +66,14 @@ export async function runHeuristicAgent(tools: ToolBox, context: AgentContext = 
   if (intent.kind === 'airflow') {
     const doc = tools.env.document();
     const floorId = doc.floors.find(f => prompt.toLowerCase().includes(f.name.toLowerCase()))?.id ?? context.floorId ?? groundFloorId(doc);
-    const windFrom = prompt.toLowerCase().match(/\b(?:from (?:the )?(west|east|north|south)|(west|east|north|south)(?:erly)? wind)\b/)?.slice(1).find(Boolean) ?? context.windFrom ?? 'west';
+    const lower = prompt.toLowerCase();
+    const bearing = lower.match(/\bfrom (\d{1,3}(?:\.\d+)?)\s*(?:°|deg|degrees)/)?.[1];
+    const windFrom = (bearing !== undefined ? Math.min(360, Number(bearing)) : undefined)
+      ?? lower.match(/\b(?:from (?:the )?(west|east|north|south)|(west|east|north|south)(?:erly)? wind)\b/)?.slice(1).find(Boolean) ?? context.windFrom ?? 'west';
     const air = await tools.call('inspect_airflow', { floorId, windFrom }) as ReturnType<typeof inspectAirflow> & { error?: string };
     if (air.error) return finish(tools, 'heuristic', air.error);
     const peak = air.strongestAtM;
-    return finish(tools, 'heuristic', `${air.floorName} has ${air.openExteriorApertures} open exterior apertures. With wind from the ${air.windFrom}, ${peak ? `the peak modeled pressure gradient is ${air.peakRelativeGradient} relative units/m near (${peak.x}, ${peak.y}) m` : 'there is no modeled through-flow'}.`);
+    return finish(tools, 'heuristic', `${air.floorName} has ${air.openExteriorApertures} open exterior apertures. With wind from ${air.wind}, ${peak ? `the peak modeled pressure gradient is ${air.peakRelativeGradient} relative units/m near (${peak.x}, ${peak.y}) m` : 'there is no modeled through-flow'}.`);
   }
   const layout = (await tools.call('inspect_layout', {})) as LayoutResult;
   if (intent.kind === 'corner-room') return planRoom(tools, context, prompt);

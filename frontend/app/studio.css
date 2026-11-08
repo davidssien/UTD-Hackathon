@@ -388,3 +388,16 @@
 .examples-menu .example-note{font-size:11.5px;color:var(--muted)}
 
 .egress-scene.tool-place canvas{cursor:crosshair}
+
+/* Wind compass (Layers → Airflow) */
+.wind-compass{display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 0 4px}
+.wind-compass svg{width:132px;height:132px;cursor:grab;touch-action:none;border-radius:50%}
+.wind-compass svg:active{cursor:grabbing}
+.wind-compass .rim{fill:var(--chrome-2);stroke:var(--line-2);stroke-width:1.5}
+.wind-compass .tick{stroke:var(--muted);stroke-width:1}
+.wind-compass .tick.major{stroke:var(--ink-2);stroke-width:1.6}
+.wind-compass text{font-size:9px;font-weight:650;fill:var(--muted);user-select:none}
+.wind-compass .arrow{stroke:var(--accent);stroke-width:2.5;stroke-linecap:round}
+.wind-compass .arrow-head{fill:var(--accent)}
+.wind-compass .handle{fill:var(--accent);stroke:#fff;stroke-width:2}
+.wind-readout{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}

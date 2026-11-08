@@ -25,6 +25,7 @@ import { useFloorAirflow } from '@/lib/use-floor-airflow';
 import type { GridStyle, SceneTheme, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
+import WindCompass from './wind-compass';
 import EscapePlans from './escape-plans';
 import { buildingToDocument } from '@/lib/import-building';
 
@@ -128,7 +129,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const [modal, setModal] = useState<Modal>(null);
   const [menu, setMenu] = useState<Menu>(null);
   const [typeMenu, setTypeMenu] = useState<{ x: number; y: number } | null>(null);
-  const [wind, setWind] = useState<WindFrom>('west');
+  // Airflow wind: the compass bearing it blows from (270 = west).
+  const [wind, setWind] = useState(270);
   const [layersOpen, setLayersOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [layer, setLayer] = useState<SceneLayer>({ family: 'people', people: 'discrete', field: 'people.density', stat: 'instant' });
@@ -328,7 +330,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   // Keyboard: tools, history, modes.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (entry || screen === 'saves' || (e.target as HTMLElement)?.closest?.('input, textarea, select, dialog')) return;
+      if (entry || screen === 'saves' || (e.target as HTMLElement)?.closest?.('input, textarea, select, dialog, [role="slider"]')) return;
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) {
         if (mode !== 'edit') return;
@@ -599,7 +601,7 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: { v
 }
 
 function LayersPanel({ layer, onChange, wind, onWind, flow, error }: {
-  layer: SceneLayer; onChange(l: SceneLayer): void; wind: WindFrom; onWind(v: WindFrom): void; flow?: FloorAirflow; error?: string;
+  layer: SceneLayer; onChange(l: SceneLayer): void; wind: number; onWind(v: number): void; flow?: FloorAirflow; error?: string;
 }) {
   return <div className="layers-panel" aria-label="Layers">
     <div className="menu-label">Layer</div>
@@ -607,8 +609,8 @@ function LayersPanel({ layer, onChange, wind, onWind, flow, error }: {
     <button aria-pressed={layer.family === 'air'} onClick={() => onChange({ ...layer, family: 'air' })}>{layer.family === 'air' && <CheckIcon />}Airflow</button>
     <hr />
     {layer.family === 'air' ? <>
-      <div className="menu-label">Wind from</div>
-      <Segmented value={wind} options={[{ id: 'west', name: 'West' }, { id: 'north', name: 'North' }, { id: 'east', name: 'East' }, { id: 'south', name: 'South' }]} onChange={onWind} />
+      <div className="menu-label">Wind</div>
+      <WindCompass value={wind} onChange={onWind} />
       <p className="air-readout" role="status">{error ?? (!flow ? 'Calculating airflow…' : flow.peak < 1e-6 ? 'No through-flow under this wind. Open exterior windows or doors on different sides.' : `${flow.exteriorOpenings} open exterior apertures · relative airflow`)}</p>
       {flow && flow.peak > 1e-6 && <div className="legend air-legend"><span>Lower</span><i /><span>Higher</span></div>}
     </> : <>
