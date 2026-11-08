@@ -36,6 +36,10 @@ export interface SceneHandle { view(view: 'top' | 'iso' | 'fit'): void; exportIm
 interface Props {
   doc: EgressDocument | null;
   editing: boolean;
+  inputBlocked: boolean;
+  entryView: 'iso' | 'top' | null;
+  onEntryFrame(view: 'iso' | 'top'): void;
+  onEntryError(message: string): void;
   tool: SceneTool;
   wallType: WallMaterial;
   /** The floor being viewed and edited (D75). Floors below draw darker; floors above are hidden. */
@@ -205,6 +209,7 @@ interface Runtime {
   anchors: Map<string, THREE.Vector3>;
   dirty: boolean;
   geometryChanged: boolean;
+  afterFrame?: () => void;
   bounds: { center: THREE.Vector3; extent: number };
   frame(view: 'top' | 'iso' | 'fit', animate?: boolean): void;
   cancel(): void;
@@ -342,9 +347,11 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           const xs = vs.map(v => v.position.x), ys = vs.map(v => v.position.y);
           bounds.center.set((Math.min(...xs) + Math.max(...xs)) / 2, 0, -(Math.min(...ys) + Math.max(...ys)) / 2);
           bounds.extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 10);
+        } else {
+          bounds.center.set(0, 0, 0); bounds.extent = 16;
         }
         fitFrustum();
-        const top = latest.current.editing || view === 'top';
+        const top = view === 'top' || (view === 'fit' && latest.current.editing);
         const dir = top ? new THREE.Vector3(0, 1, 0) : view === 'iso' || view === 'fit' ? new THREE.Vector3(0.9, 1.05, 1.15) : new THREE.Vector3(0, 1, 0);
         aim(view === 'fit' && !latest.current.editing ? camera.position.clone().sub(controls.target) : dir, { animate, target: bounds.center.clone(), zoom: 1 });
       },
@@ -561,7 +568,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     };
     const onLeave = () => { r.dirty = true; ring.visible = false; brush.visible = false; };
     const keydown = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
+      if (latest.current.inputBlocked || (e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
       if (e.key === 'Escape') r.cancel();
       if (e.code === 'Space' && latest.current.editing && !spaceHeld) { spaceHeld = true; controls.mouseButtons.LEFT = THREE.MOUSE.PAN; renderer.domElement.style.cursor = 'grab'; }
     };
@@ -703,9 +710,14 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         } else heatKey = '';
       }
 
-      if (!r.dirty && !cameraChanged && !transition && !heat.visible) return;
+      if (!r.dirty && !cameraChanged && !transition && !r.afterFrame && !heat.visible) return;
       r.dirty = false;
       renderer.render(scene, camera);
+      if (!transition && r.afterFrame) {
+        const done = r.afterFrame;
+        r.afterFrame = undefined;
+        done();
+      }
 
       // Reason bubbles follow their entities.
       const w = node.clientWidth, h = node.clientHeight;
@@ -894,6 +906,17 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     r.anchors = anchors;
     if (framedProject.current !== doc.projectId) { framedProject.current = doc.projectId; r.frame(latest.current.editing ? 'top' : 'iso', false); }
   }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, props.theme, library]);
+
+  // Geometry above is ready before framing. Acknowledge the camera only after its final frame is drawn.
+  useEffect(() => {
+    const view = props.entryView;
+    if (!view) return;
+    if (error) { latest.current.onEntryError(error); return; }
+    const r = runtime.current; if (!r) return;
+    r.frame(view, view === 'top');
+    r.afterFrame = () => latest.current.onEntryFrame(view);
+    return () => { r.afterFrame = undefined; };
+  }, [props.entryView, library, error]);
 
   return <div className={`egress-scene tool-${props.editing ? props.tool : 'view'}`} ref={host} aria-label="Building model">
     {error && <p className="scene-error" role="alert">{error}</p>}

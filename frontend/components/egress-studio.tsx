@@ -30,6 +30,7 @@ import { buildingToDocument } from '@/lib/import-building';
 const Scene = dynamic(() => import('./egress-scene'), { ssr: false, loading: () => <div className="scene-loading" /> });
 
 type Mode = 'edit' | 'simulate' | 'analysis';
+type ProjectEntry = { projectId: string; phase: 'request' | 'iso' | 'reveal' | 'top' };
 type Modal = 'share' | 'import' | 'plans' | null;
 type Menu = { x: number; y: number; wallId: string | null; openingId: string | null; slabId: string | null; stairId: string | null } | null;
 
@@ -103,6 +104,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     const p = new URLSearchParams(location.search);
     return p.has('project') || p.has('join') || p.has('link') ? 'editor' : 'saves';
   });
+  const [entry, setEntry] = useState<ProjectEntry | null>(null);
+  const savesPage = useRef<HTMLElement>(null);
   const [tool, setTool] = useState<SceneTool>('select');
   const [wallType, setWallType] = useState<WallMaterial>('normal');
   const [slabType, setSlabType] = useState<SlabMaterial>('wood');
@@ -207,11 +210,34 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
 
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const openFromSaves = (projectId: string) => {
+    if (entry) return;
+    const request: ProjectEntry = { projectId, phase: 'request' };
+    setEntry(request);
+    setError('');
     void client.openProject(projectId).then(() => {
-      setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select'); setScreen('editor');
+      setEntry(current => current === request ? { projectId, phase: 'iso' } : current);
+      setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select');
       setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform');
-    }).catch(fail);
+    }).catch(e => { setEntry(null); fail(e); });
   };
+  // Keep the first rendered isometric view in place as the saves page slides away.
+  useEffect(() => {
+    if (entry?.phase !== 'reveal') return;
+    let live = true;
+    const animations = savesPage.current?.getAnimations() ?? [];
+    void Promise.allSettled(animations.map(a => a.finished)).then(() => {
+      if (live) setEntry({ ...entry, phase: 'top' });
+    });
+    return () => { live = false; };
+  }, [entry]);
+  useEffect(() => {
+    if (!entry || (entry.phase !== 'request' && entry.phase !== 'iso')) return;
+    const timer = setTimeout(() => {
+      setEntry(null);
+      setError('Could not load this project. Open it again to retry.');
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [entry]);
   const toSaves = () => { setRail(false); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); setScreen('saves'); };
   const edit = (commands: EditCommand[]) => {
     if (!canEdit) { setError('You have view access to this project.'); return; }
@@ -275,7 +301,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   // Keyboard: tools, history, modes.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (screen === 'saves' || (e.target as HTMLElement)?.closest?.('input, textarea, select, dialog')) return;
+      if (entry || screen === 'saves' || (e.target as HTMLElement)?.closest?.('input, textarea, select, dialog')) return;
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) {
         if (mode !== 'edit') return;
@@ -332,7 +358,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const upperContent = !!doc && floors.length > 1 && doc.walls.some(w => w.floorId !== floors[0].id);
   const saving = view.pending > 0;
 
-  return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || slabMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}
+  return <><main inert={!!entry} aria-busy={!!entry} className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || slabMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}
     onPointerDownCapture={e => {
       const target = e.target as Element;
       if (!target.closest('.rail-anchor')) setExportOpen(false);
@@ -343,6 +369,14 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     }}>
     <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
+      inputBlocked={screen === 'saves' || !!entry}
+      entryView={entry?.projectId === sceneDoc?.projectId && (entry?.phase === 'iso' || entry?.phase === 'top') ? entry.phase : null}
+      onEntryFrame={cameraView => {
+        if (!entry) return;
+        if (cameraView === 'iso') { setScreen('editor'); setEntry({ ...entry, phase: 'reveal' }); }
+        else setEntry(null);
+      }}
+      onEntryError={message => { setEntry(null); setScreen('saves'); setError(message); }}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
       tags={tags} onTag={(hash, at) => { if (canEdit) setTagMenu({ hash, ...at }); }}
@@ -476,7 +510,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
 
     {(error || view.lastError || (status === 'error' && connectionError)) && <div className="toast" role="alert"><span>{error || view.lastError?.message || connectionError}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
 
-    <SavesPage client={client} active={screen === 'saves'} onOpen={openFromSaves} onImportImage={() => setModal('import')}
+    <SavesPage pageRef={savesPage} client={client} active={screen === 'saves'} onOpen={openFromSaves} onImportImage={() => setModal('import')}
       onCreateExample={x => x.load().then(d => client.createProject(x.name, d))} onError={fail} />
 
     {tagMenu && <RoomTagMenu at={tagMenu} label={labelMap.get(tagMenu.hash)} onClose={() => setTagMenu(null)}
@@ -490,7 +524,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         void client.createProject(name, buildingToDocument(building)).then(() => { setSelected(null); setRunId(null); switchMode('edit'); setScreen('editor'); }).catch(fail);
       }} />
     </div></div>}
-  </main>;
+  </main>{entry && <div className="project-entry" role="status"><span>Opening project…</span></div>}</>;
 }
 
 // ── Small pieces ────────────────────────────────────────────────────────────

@@ -180,6 +180,9 @@
 .project-chip[data-tip]:hover::after,.hud-right [data-tip]:hover::after,.mode-switch [data-tip]:hover::after{bottom:auto;top:calc(100% + 8px)}
 
 .toast{position:absolute;top:52px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:7px 8px 7px 12px;border-radius:var(--radius);color:var(--bad);max-width:min(560px,70vw);z-index:25}
+.studio.on-saves .toast{z-index:35}
+.project-entry{position:fixed;inset:0;z-index:40;display:grid;justify-items:center;align-items:end;padding:0 12px 72px;cursor:progress}
+.project-entry span{padding:6px 12px;border-radius:8px;background:#fbfcfd;color:#18212c;box-shadow:0 2px 12px #08182c33;font:13px/1.4 system-ui}
 .toast button{display:grid;place-items:center;color:var(--muted)}
 .toast svg{width:16px;height:16px}
 

@@ -12,6 +12,7 @@ import { deriveLayout, type EgressDocument } from '@egress/core';
 import { EXAMPLES, type ExampleSave } from '@/lib/examples';
 
 interface Props {
+  pageRef: React.Ref<HTMLElement>;
   client: EgressClient;
   active: boolean;
   onOpen(projectId: string): void;
@@ -31,7 +32,7 @@ export function downloadJson(name: string, doc: EgressDocument) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function SavesPage({ client, active, onOpen, onImportImage, onCreateExample, onError }: Props) {
+export default function SavesPage({ pageRef, client, active, onOpen, onImportImage, onCreateExample, onError }: Props) {
   const projects = useEgress(client.projects), stats = useEgress(client.projectStats), view = useEgress(client.document), status = useEgress(client.status);
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ id: string; doc: EgressDocument } | null>(null);
@@ -102,7 +103,7 @@ export default function SavesPage({ client, active, onOpen, onImportImage, onCre
     </td>
   </tr>;
 
-  return <section className={`saves ${active ? 'shown' : 'hidden'}`} aria-label="Saves" aria-hidden={!active} inert={!active}>
+  return <section ref={pageRef} className={`saves ${active ? 'shown' : 'hidden'}`} aria-label="Saves" aria-hidden={!active} inert={!active}>
     <header className="saves-header">
       <div className="brand"><span className="logo-slot" aria-hidden /><strong>Egress</strong></div>
       <div className="saves-actions">
