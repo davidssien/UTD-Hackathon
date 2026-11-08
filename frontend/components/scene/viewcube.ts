@@ -1,5 +1,5 @@
 /**
- * CAD-style viewcube (Plan.md D63): it mirrors the main camera, drags to orbit,
+ * CAD-style viewcube (PLAN.md D63): it mirrors the main camera, drags to orbit,
  * and clicking a face, edge or corner snaps the camera to that direction.
  * Plan axes: east = +x, north = +y (three.js -z), up = three.js +y.
  */

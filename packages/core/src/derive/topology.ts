@@ -1,5 +1,5 @@
 /**
- * Rooms and building boundary derived from the planar wall graph (Plan.md §4).
+ * Rooms and building boundary derived from the planar wall graph (docs/ARCHITECTURE.md §4).
  * Faces are traced by always turning to the next edge clockwise from where we
  * came from, which walks every bounded face counter-clockwise (positive area,
  * a room) and each component's outer face clockwise (the exterior). Same idea

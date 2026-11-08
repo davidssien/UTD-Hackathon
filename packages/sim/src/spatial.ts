@@ -1,6 +1,6 @@
 /**
  * Spatial indexes: static wall geometry buckets and a per-tick actor hash.
- * Bucket size is coarser than the 0.25 m grid on purpose (Plan.md §5.1).
+ * Bucket size is coarser than the 0.25 m grid on purpose (docs/ARCHITECTURE.md §5.1).
  */
 import { pointInPolygon, type GridDefinition, type Vec2 } from '@egress/core';
 

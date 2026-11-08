@@ -1,5 +1,5 @@
 /**
- * @egress/agent — Analysis-mode agent (Plan.md §7). Pure TS over @egress/core
+ * @egress/agent — Analysis-mode agent (docs/ARCHITECTURE.md §7). Pure TS over @egress/core
  * and @egress/sim: runs in the runner (with Nemotron) and in the browser mock
  * (heuristic planner), always through the same validated tools.
  */

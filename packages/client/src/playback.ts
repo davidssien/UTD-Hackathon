@@ -1,5 +1,5 @@
 /**
- * Client-side playback of a run (Plan.md §8, D14). Shared by the mock and the
+ * Client-side playback of a run (docs/ARCHITECTURE.md §8, D14). Shared by the mock and the
  * SpacetimeDB client: they feed decoded frames in with `pushFrames`, and the UI
  * drives play / pause / seek / ±10 s / go-live. Pausing or scrubbing never
  * touches the server; the runner keeps simulating to completion.

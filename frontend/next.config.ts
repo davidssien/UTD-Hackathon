@@ -4,14 +4,14 @@ import { dirname, join } from 'node:path';
 import type { NextConfig } from "next";
 
 /**
- * Reads the team `.env` at the repo root (Plan.md §3 T) without loading it into
+ * Reads the team `.env` at the repo root (PLAN.md §3 T) without loading it into
  * process.env, so secrets such as NVIDIA_API_KEY never enter this process.
  * Only the public SpacetimeDB address and database name reach the browser.
  */
 function repoEnv(): Record<string, string> {
   let dir = process.cwd();
   for (let i = 0; i < 4; i++, dir = dirname(dir)) {
-    if (!existsSync(join(dir, 'Plan.md'))) continue;
+    if (!existsSync(join(dir, 'PLAN.md'))) continue;
     const file = join(dir, '.env');
     if (!existsSync(file)) return {};
     const out: Record<string, string> = {};

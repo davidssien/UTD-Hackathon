@@ -1,6 +1,6 @@
 /**
  * SpacetimeEgressClient: the real EgressClient over the generated bindings.
- * Same interface as the mock (Plan.md §8), so the UI switches with one line:
+ * Same interface as the mock (docs/ARCHITECTURE.md §8), so the UI switches with one line:
  *
  *   const client = createSpacetimeClient({ uri: 'ws://127.0.0.1:3010', db: 'egress-dev' });
  *

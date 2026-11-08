@@ -1,5 +1,5 @@
 /**
- * Two ways to drive the same tools (Plan.md §7):
+ * Two ways to drive the same tools (docs/ARCHITECTURE.md §7):
  *
  * - `runLlmAgent`: Nemotron decides which tools to call (multi-step tool use).
  * - `runHeuristicAgent`: a fixed but real sequence (inspect → baseline →

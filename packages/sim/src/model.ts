@@ -1,5 +1,5 @@
 /**
- * egress-pedestrian v0.1 (Plan.md §6, D13): discrete pedestrians, fixed 0.1 s
+ * egress-pedestrian v0.1 (docs/ARCHITECTURE.md §6, D13): discrete pedestrians, fixed 0.1 s
  * ticks, simplified social force, per-exit distance fields, and token-bucket
  * flow limits at doors and exits. Deterministic: seeded PRNG, stable index
  * order, no wall-clock or Math.random.

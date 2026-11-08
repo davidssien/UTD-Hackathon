@@ -1,5 +1,5 @@
 /**
- * Static structural analysis for Edit mode (Plan.md §5.2 "static geometry
+ * Static structural analysis for Edit mode (docs/ARCHITECTURE.md §5.2 "static geometry
  * analysis"): exit distance and route demand assuming everyone starts
  * uniformly spread out. It is a *potential bottleneck estimate*, not observed
  * congestion — no people are simulated.

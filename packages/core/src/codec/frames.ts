@@ -1,5 +1,5 @@
 /**
- * `egress-frames-v1`: binary replay chunk codec (Plan.md §4).
+ * `egress-frames-v1`: binary replay chunk codec (docs/ARCHITECTURE.md §4).
  *
  * Layout before gzip (little-endian):
  *   0  u32 magic 'EGF1'      4  u16 version = 1   6  u16 reserved

@@ -1,5 +1,5 @@
 /**
- * Egress SpacetimeDB module — the system of record (Plan.md §5).
+ * Egress SpacetimeDB module — the system of record (docs/ARCHITECTURE.md §5).
  *
  * - Every table is private. Clients read through views, write through reducers.
  * - A caller's `sessions` row (active project / run) scopes the `active_*` views.

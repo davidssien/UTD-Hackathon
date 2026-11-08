@@ -1,6 +1,6 @@
 # Egress — Architecture and contracts
 
-Moved out of Plan.md when it was rebuilt after `STABLE-V1` (D64). Sections keep their original numbers (§3–§8), so older references such as "Plan.md §8" now point here. Priorities and decisions stay in [Plan.md](../Plan.md); the people-flow math is in [PEOPLE_FLOW_MODEL.md](PEOPLE_FLOW_MODEL.md).
+Moved out of the master plan when it was rebuilt after `STABLE-V1` (D64). Sections keep their original numbers (§3–§8), so older references such as "Plan.md §8" point here. Priorities and decisions stay in [PLAN.md](../PLAN.md); the people-flow math is in [PEOPLE_FLOW_MODEL.md](PEOPLE_FLOW_MODEL.md).
 
 ## 3. Architecture
 

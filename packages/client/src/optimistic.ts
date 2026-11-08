@@ -1,5 +1,5 @@
 /**
- * Optimistic editing over an authoritative server document (Plan.md §8, D6).
+ * Optimistic editing over an authoritative server document (docs/ARCHITECTURE.md §8, D6).
  * Local edits apply immediately with the same `applyEdit` the reducer runs;
  * when the server's rows change, pending edits are re-applied on top
  * (rebase). An edit leaves the pending queue once its requestId shows up in

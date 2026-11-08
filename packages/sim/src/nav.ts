@@ -1,5 +1,5 @@
 /**
- * Navigation fields (Plan.md §6 "Compile" step 5): one distance-to-exit field
+ * Navigation fields (docs/ARCHITECTURE.md §6 "Compile" step 5): one distance-to-exit field
  * per exit, by Dijkstra over navigable cells. 8-connected, no corner cutting,
  * with a mild penalty next to walls so paths keep off them.
  */

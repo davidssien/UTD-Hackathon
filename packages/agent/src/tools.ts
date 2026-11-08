@@ -1,5 +1,5 @@
 /**
- * The agent's allowlisted tools (Plan.md §7). Every call is schema-validated,
+ * The agent's allowlisted tools (docs/ARCHITECTURE.md §7). Every call is schema-validated,
  * budgeted, and logged as tool_call / tool_result steps. Numbers returned here
  * come from real simulations; the model only chooses what to try.
  */

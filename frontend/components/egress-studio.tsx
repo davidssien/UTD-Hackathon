@@ -1,6 +1,6 @@
 'use client';
 /**
- * Egress studio (Plan.md §8 "UI direction v2"): a full-window scene with a
+ * Egress studio (docs/ARCHITECTURE.md §8 "UI direction v2"): a full-window scene with a
  * compact mode switch, a left pull-tab rail for meta actions, an optional right
  * context pane and a bottom context toolbar. Projects live only on the server
  * (D58); the browser keeps just the SpacetimeDB token.

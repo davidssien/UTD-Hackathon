@@ -1,4 +1,4 @@
-/* Egress studio — CAD chrome over a blueprint scene (Plan.md §8 "UI direction v2"). */
+/* Egress studio — CAD chrome over a blueprint scene (docs/ARCHITECTURE.md §8 "UI direction v2"). */
 .studio{
   --chrome:#fbfcfd;--chrome-2:#f1f4f7;--chrome-3:#e6ebf0;--line:#d3dae2;--line-2:#c2cbd6;
   --ink:#18212c;--ink-2:#3a4655;--muted:#6c7888;--accent:#1f6feb;--accent-2:#e7f0ff;--suggest:#3d9bff;

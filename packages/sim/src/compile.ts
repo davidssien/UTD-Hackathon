@@ -1,5 +1,5 @@
 /**
- * Grid compiler (Plan.md §6 "Compile"). Turns an EgressDocument into the
+ * Grid compiler (docs/ARCHITECTURE.md §6 "Compile"). Turns an EgressDocument into the
  * 0.25 m simulation grid: walkable fractions, room ids, portals, collision
  * geometry and per-exit distance fields. Pure and deterministic; cache by
  * layoutHash.

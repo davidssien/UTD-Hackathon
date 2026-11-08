@@ -1,6 +1,6 @@
 # Egress studio (UI v2)
 
-Branch `backend-passes`. Design source: Plan.md §8 "UI direction v2" and the sketches in `docs/reference/gui/sketches/layout-v2-*.png`.
+Branch `backend-passes`. Design source: ARCHITECTURE.md §8 "UI direction v2" and the sketches in `docs/reference/gui/sketches/layout-v2-*.png`.
 
 ## Open it
 
@@ -63,6 +63,6 @@ Branch `backend-passes`. Design source: Plan.md §8 "UI direction v2" and the sk
 
 ## Not done yet
 
-- Presence (person icon + count, hover for tokens), permanent share links and role management need the collaboration backend (Plan.md §8 follow-ups). Share currently creates a 14-day viewer invite.
+- Presence (person icon + count, hover for tokens), permanent share links and role management need the collaboration backend ([PLAN.md](../PLAN.md) §3 C). Share currently creates a 14-day viewer invite.
 - Population painting in Simulate; fire / elements.
 - Compliance-based and multi-edit suggestions (backend follow-ups).

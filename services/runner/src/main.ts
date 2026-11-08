@@ -1,5 +1,5 @@
 /**
- * Egress runner (Plan.md §7): connects outbound to SpacetimeDB with a
+ * Egress runner (docs/ARCHITECTURE.md §7): connects outbound to SpacetimeDB with a
  * persisted service identity, registers itself with the shared secret, then
  * claims queued simulation runs and agent jobs from the runner views.
  *

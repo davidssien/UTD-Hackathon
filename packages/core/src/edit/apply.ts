@@ -3,7 +3,7 @@
  * in the browser and authoritatively inside the SpacetimeDB `applyEdit`
  * reducer, so it must stay pure and deterministic — no crypto, Date or
  * Math.random. New ids derive from the request id: `${requestId}.${n}`.
- * See Plan.md §4 (invariants) and D6/D19.
+ * See docs/ARCHITECTURE.md §4 (invariants) and D6/D19.
  *
  * Pass 0 scope: chains, boxes, erase, vertex moves, wall/opening updates,
  * deletes and patches. Pass 1 adds T-junction / crossing splits.
@@ -177,7 +177,7 @@ class Working {
   }
 
   /**
-   * Keep the floor's wall graph planar (Plan.md §4): split walls wherever a
+   * Keep the floor's wall graph planar (docs/ARCHITECTURE.md §4): split walls wherever a
    * vertex lies on a wall's interior (T-junction) or two walls cross.
    */
   planarize(floorId: ID): void {

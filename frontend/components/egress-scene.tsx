@@ -1,6 +1,6 @@
 'use client';
 /**
- * The one 3D scene (Plan.md §8 "Scene"). Edit locks it top-down; other modes orbit.
+ * The one 3D scene (docs/ARCHITECTURE.md §8 "Scene"). Edit locks it top-down; other modes orbit.
  * Blueprint ground with a white dot grid, walls from `deriveLayout`, cross-hatched
  * occluders, people and heatmap layers, blue-highlighted agent suggestions with
  * reason bubbles, and a CAD viewcube.

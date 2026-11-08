@@ -1,5 +1,5 @@
 /**
- * @egress/client — the only backend surface the UI uses (Plan.md §8).
+ * @egress/client — the only backend surface the UI uses (docs/ARCHITECTURE.md §8).
  *
  *   const client = createMockClient({ seed: [{ name: 'Two rooms', doc }] });
  *   const view = useEgress(client.document);          // from '@egress/client/react'

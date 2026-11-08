@@ -1,6 +1,6 @@
 # Egress UI references and agreed direction
 
-Recorded 2026-11-07. The user subsequently authorized a simple UI demo on our branch, using the current frontend and these references. See [DEMO_UI.md](DEMO_UI.md) for implementation and verification. This document complements [Plan.md](../Plan.md) and [PARTNER_SYNC.md](PARTNER_SYNC.md).
+Recorded 2026-11-07. The user subsequently authorized a simple UI demo on our branch, using the current frontend and these references. See [DEMO_UI.md](DEMO_UI.md) for implementation and verification. This document complements [PLAN.md](../PLAN.md) and [PARTNER_SYNC.md](PARTNER_SYNC.md).
 
 ## Reference archive
 
@@ -31,15 +31,15 @@ These files are design references, not instructions to execute or a replacement 
 | Navigation | Persistent sliding three-mode control at the top: Design / Simulate / Analysis. | Design maps to existing Edit; Simulate maps to Live. Display labels do not require a type rename. |
 | File menu | Top-left, accessible in every mode; Upload/New and Save floor plan. | Upload/New returns to Design and opens the startup popup. Image recognition and QR upload remain deferred. PNG export is a visual export, not project persistence. |
 | Startup | Open directly into the example or last save in Design. No blocking popup. | The historical optional-upload modal is superseded. Keep future import controls inline. |
-| Workspace | Large unobstructed plan area behind stable controls. | Render the same 3D scene top-down for editing. Existing blueprint-blue floor, white lines, and dot-grid decisions remain recorded in Plan.md; the sketches' white/light-grey line grid is a reference variant to reconcile in frontend polish. |
+| Workspace | Large unobstructed plan area behind stable controls. | Render the same 3D scene top-down for editing. Existing blueprint-blue floor, white lines, and dot-grid decisions remain recorded in PLAN.md; the sketches' white/light-grey line grid is a reference variant to reconcile in frontend polish. |
 | Design dock | Curved bottom dock with draw-line, draw-room/box, erase, and Clear Canvas; drag gestures for drawing/erasing/box sizing. | Use atomic `@egress/client.edit` commands and undo. The prototype's axis-aligned drawing restriction can guide the default gesture; do not remove diagonal geometry support from core. |
 | Navigation hand | Persistent pan button at bottom-right; pan mode separate from editing. | Top-down pan/zoom during Edit; freecam only outside Edit. |
-| Simulate dock | Run changes to Restart; setup tools lock while running. | Existing run/cancel/restart lifecycle, population distribution, pacing and replay. Keep Stop available and retain the LIVE/END scrubber and heatmap controls from Plan.md. |
+| Simulate dock | Run changes to Restart; setup tools lock while running. | Existing run/cancel/restart lifecycle, population distribution, pacing and replay. Keep Stop available and retain the LIVE/END scrubber and heatmap controls from PLAN.md. |
 | Fire | Reference shows a toggled cell icon before a run, locked during a run, cleared on return to Design. | Future scenario element only. v0.1 ignores `scenario.elements`; do not claim fire affects evacuation or add fire physics in this pass. |
 | Analysis | Persistent panel while in Analysis, no close X; leaves when switching modes. Report / Suggestions buttons in the bottom dock, chat on the right with a usable input/send control. | Reports use measured run metrics; Suggestions use real proposals, ghost previews, and Accept/Reject. Chat uses the existing agent interface; never import the prototype's canned messages as results. |
 | Export | White opaque PNG background, no fire icons. | Capture a clean top-down view of the same scene. Export must not mutate saved geometry or the active scenario. |
 
-The reference's trails and dots are a rendering idea for actual replay frames, not a second movement model. Mode changes do not discard saved projects or authoritative runs. Restart/cancellation semantics continue to follow Plan.md.
+The reference's trails and dots are a rendering idea for actual replay frames, not a second movement model. Mode changes do not discard saved projects or authoritative runs. Restart/cancellation semantics continue to follow PLAN.md.
 
 ## Frontend acceptance checklist for later
 

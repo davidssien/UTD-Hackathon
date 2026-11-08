@@ -1,5 +1,5 @@
 /**
- * Population painting (Plan.md Pass 4.3, spec §4). Strokes change the
+ * Population painting (docs/history/PLAN-STABLE-V1.md Pass 4.3, spec §4). Strokes change the
  * relative chance of starting in each cell; they never change the head count N.
  * Weights start at 1 on every spawnable cell and stay within [0, 4]; `erase`
  * restores 1. Strokes apply per cell, so a brush overlapping a wall produces

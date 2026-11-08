@@ -1,7 +1,7 @@
 /**
  * Zod schemas: the single source of truth for every JSON shape that crosses a
  * trust boundary (browser ⇄ SpacetimeDB ⇄ runner ⇄ agent). TypeScript types in
- * `types.ts` are inferred from these. See Plan.md §4.
+ * `types.ts` are inferred from these. See docs/ARCHITECTURE.md §4.
  *
  * Conventions: meters, plan coordinates {x, y} with +y = north, radians CCW.
  */

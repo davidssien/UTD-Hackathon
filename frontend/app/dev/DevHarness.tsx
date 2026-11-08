@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /dev — deliberately plain backend test page (Plan.md §8, Q2 of the planning
+ * /dev — deliberately plain backend test page (docs/ARCHITECTURE.md §8, Q2 of the planning
  * session). Exercises every EgressClient loop: Edit tools, Live playback with
  * the LIVE edge, Analysis chat with ghost previews. The ExitCraft UI replaces
  * it at merge; keep it boring and correct.

@@ -1,5 +1,5 @@
 /**
- * Wall polygons with computed corners (Plan.md §4, D5). No corner assets: at
+ * Wall polygons with computed corners (docs/ARCHITECTURE.md §4, D5). No corner assets: at
  * every vertex the incident walls are sorted by angle and neighbouring edge
  * lines are intersected. Degree 1 → flat cap; degree 2 → miter (bevel when the
  * miter would spike); degree ≥ 3 → miters plus a hub polygon in the middle.

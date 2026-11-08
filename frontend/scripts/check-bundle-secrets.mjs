@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Fails the build if a secret reached the browser (Plan.md §3 T, §3 S).
+ * Fails the build if a secret reached the browser (PLAN.md §3 T, §3 S).
  * Scans the client bundle (.next/static) and prerendered pages for the values
  * of server-only keys from the repo .env or the shell, and the client bundle
  * for their names. Never prints a secret.

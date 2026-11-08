@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The SpacetimeDB CLI for the team, with no `spacetime login` (Plan.md §3 T).
+ * The SpacetimeDB CLI for the team, with no `spacetime login` (PLAN.md §3 T).
  *
  *   npm run db:publish                 publish the module (never deletes data)
  *   npm run db:logs [-- -n 200 -f]     module logs (owner only)

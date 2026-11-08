@@ -1,5 +1,5 @@
 /**
- * Crowd fields (Plan.md §6 "Fields", D15). The same accumulator runs inside
+ * Crowd fields (docs/ARCHITECTURE.md §6 "Fields", D15). The same accumulator runs inside
  * the simulation (authoritative final aggregates) and in the browser over
  * decoded frames (live Current / Average / Peak overlays).
  *

@@ -1,6 +1,6 @@
 /**
  * Minimal OpenAI-compatible chat client for NVIDIA's hosted Nemotron endpoint
- * (Plan.md §7). Plain fetch; tools in OpenAI function-calling format.
+ * (docs/ARCHITECTURE.md §7). Plain fetch; tools in OpenAI function-calling format.
  */
 import { config } from './config.ts';
 

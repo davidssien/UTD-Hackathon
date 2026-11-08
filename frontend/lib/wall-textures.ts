@@ -1,5 +1,5 @@
 /**
- * Wall looks for the 3D scene (Plan.md §8 "Blender wall textures", D62).
+ * Wall looks for the 3D scene (docs/ARCHITECTURE.md §8 "Blender wall textures", D62).
  *
  * `public/assets/walls/manifest.json` maps each wall material, and later each
  * per-side `finish` id, to textures exported from Blender. Every texture is

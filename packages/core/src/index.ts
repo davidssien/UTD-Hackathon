@@ -1,7 +1,7 @@
 /**
  * @egress/core — the Egress domain model. Pure TypeScript: no Next.js, React,
  * three.js, SpacetimeDB, Node or browser APIs. Safe to import from the
- * browser, the runner and the SpacetimeDB module. See Plan.md §4.
+ * browser, the runner and the SpacetimeDB module. See docs/ARCHITECTURE.md §4.
  */
 export * from './schemas.ts';
 export * from './types.ts';

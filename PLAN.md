@@ -14,7 +14,9 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 ---
 
-## Status — `STABLE-V1` (`main` @ `60868ea`, tagged)
+## Status — `STABLE-V1` (`60868ea`, tagged), plus Pass 6 on `main`
+
+**Since the tag:** Pass 6 (§3 T) is done. One root `.env` and `npm run db:*` work against Maincloud `egress-dev` without `spacetime login`, verified on Cody's machine. The database stays on Cody's Maincloud account (D84), and the home desktop will serve only the website and runner (D85).
 
 **Works today**
 - **Edit:** top-down CAD editing on a planar wall graph (walls, rooms, doors, windows, exits, erase, undo/redo, snapping, dimensions, inspector, wall types).
@@ -58,7 +60,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 **`STABLE-V2` gate.**
 - One central `.env`: a fresh clone plus the shared `.env` publishes, runs the runner and runs the site, with no `spacetime login`.
-- https://dontrepeatyourself.dev serves Egress from the home desktop: web, SpacetimeDB and the runner.
+- https://dontrepeatyourself.dev serves Egress from the home desktop (website + runner), with the database on Maincloud `egress-dev`.
 - The deterministic evacuation model (v0.2) no longer flip-flops: people commit to exits by attention span and patience.
 - The security review has passed: the authorization matrix test is green and there are no open high-severity findings.
 - The saves page is the landing page.
@@ -99,9 +101,9 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | `NVIDIA_API_KEY`, `NEMOTRON_MODEL` | runner | Server-side only. |
 | `EGRESS_SERVICE_SECRET` | runner | Its sha256 is compiled into the module. |
 | `SPACETIME_URL` | runner, CLI wrapper, site | The HTTP(S) form, e.g. `https://maincloud.spacetimedb.com` or `http://127.0.0.1:3010`. The runner and browser derive `ws(s)://`. |
-| `SPACETIME_PUBLIC_URL` | site | Optional. What browsers connect to when it differs from `SPACETIME_URL`, e.g. `https://db.dontrepeatyourself.dev` on the home server. |
+| `SPACETIME_PUBLIC_URL` | site | Optional. What browsers connect to when it differs from `SPACETIME_URL`. Unused while the database is on Maincloud. |
 | `SPACETIME_DB` | all | e.g. `egress-dev`, later `egress`. |
-| `SPACETIME_TOKEN` | CLI wrapper | A **team** identity's token, not a personal one (see below). |
+| `SPACETIME_TOKEN` | CLI wrapper | The database owner's CLI token. Only in the publisher's own `.env`; blank in the shared copy (see below). |
 
 **How each piece reads it**
 - **Runner:** `config.ts` loads the root `.env`, then `services/runner/.env` as an optional local override (today's setups keep working).
@@ -113,15 +115,25 @@ This file holds **priorities, the work ahead and decisions**. Reference material
   
   This was verified on 2026-11-08 with a server-issued token against a local server.
 
-**Which token**
-- **Home server:** a server-issued *publisher identity* (`POST /v1/identity`). It is team-owned by design.
-- **Maincloud:** don't share Cody's personal login token, which controls his whole SpacetimeDB account. Make a dedicated team account, or a Maincloud organization (`spacetime publish --organization`), that owns the team database, and put its token in the `.env`. This may mean re-creating `egress-dev` under that identity; dev data may be wiped, or moved via JSON export.
+**Which token (decided 2026-11-08, D84)**
+- `egress-dev` stays on **Cody's personal Maincloud account**. No new database.
+- `SPACETIME_TOKEN` is Cody's CLI token (`spacetime login show --token`) and lives **only in the publisher's own `.env`**. It controls the whole account, so the `.env` shared with others leaves it blank.
+- Only owner actions need it: `db:publish`, `db:logs`, owner `db:sql`.
+  - The website, the runner and visitors never need it.
+  - The runner registers with `EGRESS_SERVICE_SECRET`; browsers get their own identities.
+- **Before the public launch, revisit:**
+  - Option one: a dedicated team account.
+  - Option two: a Maincloud organization. An organization can only be set when a database is created, so this means a new database, with projects moved by JSON export and import (B).
 
 *Done when:*
-- A second machine with only a fresh clone, `npm ci` and the shared `.env` runs `npm run db:publish`, `npm start -w @egress/runner` (Nemotron answers) and `npm run dev` against the team database.
-- No `spacetime login` was used.
-- The bundle check passes.
-- SELF_HOSTING.md is updated to the central `.env`.
+- ✅ Cody's machine: the root `.env` is complete. Checked 2026-11-08:
+  - the token is accepted by Maincloud and owns `egress-dev`
+  - `SPACETIME_DB_IDENTITY` matches
+  - `EGRESS_SERVICE_SECRET` matches the module's hash
+  - `npm run db -- list` and `npm run db:logs` work without `spacetime login`
+- ✅ The bundle check passes and is part of `npm run build`.
+- ✅ SELF_HOSTING.md follows the central `.env`.
+- ⬜ A second machine with only a fresh clone, `npm ci` and the shared `.env` (token blank) runs `npm start -w @egress/runner` (Nemotron answers) and `npm run dev` against `egress-dev`.
 
 ### A. Display fixes
 
@@ -172,29 +184,23 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 ### C. Hosting, secrets and sharing — required for `STABLE-V2`
 
-**Topology** (one Windows desktop). Step-by-step setup is in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
+**Topology** (decided 2026-11-08, D85).
+- **The database stays on Maincloud** (`egress-dev`); it is not self-hosted.
+- **The home desktop serves the website and runs the runner.**
+- Step-by-step setup is in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 
-| Component | Runs as | Listens | Public |
+| Component | Where | Listens | Public |
 |---|---|---|---|
-| SpacetimeDB standalone 2.14.1 | service | `127.0.0.1:3010` | `wss://db.dontrepeatyourself.dev`, client routes only |
-| Runner (sim + Nemotron agent) | service | outbound only | — |
-| Web (Next.js production build) | service | `127.0.0.1:3100` | `https://dontrepeatyourself.dev` |
-| Cloudflare Tunnel (`cloudflared`) | service | outbound only | Provides TLS, hides the home IP, needs no port forwarding |
+| SpacetimeDB | Maincloud | — | `wss://maincloud.spacetimedb.com`, database `egress-dev`; browsers connect directly |
+| Runner (sim + Nemotron agent) | desktop, service | outbound to Maincloud | — |
+| Web (Next.js production build) | desktop, service | `127.0.0.1:3100` | `https://dontrepeatyourself.dev` |
+| Cloudflare Tunnel (`cloudflared`) | desktop, service | outbound only | Provides TLS, hides the home IP, needs no port forwarding |
 
 **Secrets and configuration**
-
-- Everything comes from the **central `.env`** (§3 T). On the desktop, `SPACETIME_URL=http://127.0.0.1:3010` and `SPACETIME_DB=egress`; the public site derives `wss://db.dontrepeatyourself.dev` from a public-URL override.
-- **No interactive `spacetime login`.** The home server issues a *publisher identity* once (`POST /v1/identity`), and its token is the `.env`'s `SPACETIME_TOKEN`.
-  - `npm run db:publish` (T) logs in with it through a repo-local CLI config (`--config-path`), so nobody's personal login changes.
-  - Verified 2026-11-08: a server-issued token published a throwaway database to the local server.
-  - That identity owns the database. Store the token in a password manager: without it, the module can't be updated.
-- **The studio's default backend comes from env.** No more hard-coded Maincloud. `?backend=` stays for development.
-- **Lock down the public SpacetimeDB.** A standalone server lets any identity publish new databases. Expose only the routes the browser uses:
-  - creating an identity (`POST /v1/identity`)
-  - the WebSocket subscribe route for the `egress` database
-  
-  Deny everything else at the edge, with a Cloudflare WAF rule or a small proxy allowlist. Confirm the exact routes from the browser's network panel before locking down.
-- **Moving off Maincloud.** Browser identities differ per server, so ownership doesn't carry over. Owners download JSON from the Maincloud saves page and import it on the new site. Maincloud stays up as a fallback until V2 is tagged.
+- Everything comes from the **central `.env`** (§3 T). The desktop needs `NVIDIA_API_KEY`, `EGRESS_SERVICE_SECRET`, `SPACETIME_URL` and `SPACETIME_DB`; it needs `SPACETIME_TOKEN` only if Cody publishes from it.
+- The site's default backend comes from that `.env` at build time (done in Pass 6). `?backend=` stays for development.
+- Maincloud handles TLS, identities and who may publish, so there is no database lockdown at our edge. Abuse limits on our own reducers are part of the security review (S).
+- **The runner is now the single point for runs and the agent.** Only one runner should serve `egress-dev` in production. The desktop's runner replaces the one on the dev machine once the desktop is live.
 
 **Sharing** (the Plan v2 collaboration follow-ups)
 - One **permanent share link** per project (a `project_links` table) and `join_by_link`. Joining always gives **viewer** access.
@@ -206,8 +212,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 *Done when:*
 - A phone on cellular data opens https://dontrepeatyourself.dev, creates a project, and runs an evacuation on the home runner.
 - A second device opens the share link and joins as a viewer. Presence shows 2. The owner promotes them to editor and their edits sync.
-- A desktop reboot brings everything back with no manual steps.
-- A publish attempt from outside is refused.
+- A desktop reboot brings the website, runner and tunnel back with no manual steps.
 
 ### D. An agent that answers the question
 
@@ -451,9 +456,9 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 | Pass | Contents | Gate |
 |---|---|---|
-| 6 ✅ | **T: one central `.env`, `npm run db` wrapper, team token.** Small, and first. *Code done 2026-11-08; the second-machine check waits on the team token.* | T done-when list on a second machine |
+| 6 ✅ | **T: one central `.env`, `npm run db` wrapper.** Small, and first. *Done 2026-11-08 and verified on Cody's machine against Maincloud; the second-machine check is still open.* | T done-when list |
 | 7 | A (display, including the steady LIVE badge) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists |
-| 8 | C: env-driven endpoints, the home server live with edge lockdown, sharing and presence | C done-when list from a phone on cellular data |
+| 8 | C: the desktop serving the website and runner through the tunnel, sharing and presence | C done-when list from a phone on cellular data |
 | 9 | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated |
 | 10 | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron |
 | 11 | E: room labels and escape plans | E done-when list |
@@ -482,23 +487,23 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | Risk | Mitigation |
 |---|---|
 | Home internet or power goes down during the demo | Keep Maincloud running until after the demo; the runner can serve both. A UPS is worth having. |
-| The public SpacetimeDB is abused (publishing, spam projects) | Edge route allowlist; publisher token offline; per-identity project limits if needed |
-| Losing the publisher token | Password manager plus a sealed backup; document how to republish under a new name |
+| Anonymous visitors spam projects or runs on `egress-dev` | Per-identity limits on projects, runs and agent jobs (S); Maincloud handles publishing rights |
+| Cody's personal `SPACETIME_TOKEN` leaks (it controls his whole SpacetimeDB account) | Only in the publisher's own `.env`, never in the shared copy; move the database to a team account or organization before the public launch (D84) |
 | Nemotron mislabels rooms | Rule fallback, confidence shown, user override |
 | Multi-floor sim takes longer than planned | Ship floor surfaces and floors in the UI first; the sim allows down-only stairs and one stair per pair of floors to start |
 | Smooth heatmap costs too much GPU | One bicubic sample per pixel at playback resolution; fall back to linear filtering |
-| One shared `.env` leaks (every secret in one place) | Shared only through a password manager; team identities, never personal tokens; a rotation runbook (S) |
+| The shared `.env` leaks | Shared only through a password manager and without `SPACETIME_TOKEN`; rotation runbook (S) |
 | Behavior v0.2 makes evacuations slower or less stable | Parameters from the literature; the v0.1 fixtures stay as a regression bar (within 10%) |
 | Agentic mode costs or latency creep | A hard per-run call and token budget, cached situations, decision tapes for replays, deterministic fallback |
 
 ## 7. Human action items (Cody)
 
 - [ ] Confirm where `dontrepeatyourself.dev` is registered. Add it to a free Cloudflare account and switch the nameservers ([SELF_HOSTING.md](docs/SELF_HOSTING.md) §1).
-- [ ] On the desktop: put `NVIDIA_API_KEY` into `services/runner/.env` (from `.env.example`).
-- [ ] Create the publisher token (SELF_HOSTING §4) and keep it in a password manager.
+- [x] Fill in the root `.env` (NVIDIA key, service secret, `SPACETIME_DB_IDENTITY`, token). Verified 2026-11-08.
+- [ ] Switch the main checkout (`C:\Workflows\Work\utd-hackathon`, still on the retired `implement-backend`) to `main` and copy the root `.env` there.
 - [ ] Set the desktop to never sleep, use wired ethernet, and set Windows Update active hours around demos.
 - [ ] Pick black or blueprint after the Pass 7 trial.
-- [ ] **Pass 6:** make the team SpacetimeDB identity, either a dedicated account or an organization for Maincloud (§3 T). Copy `.env.example` to `.env` at the repo root and fill in `NVIDIA_API_KEY`, `EGRESS_SERVICE_SECRET`, `SPACETIME_TOKEN` and `SPACETIME_DB_IDENTITY` (the database identity of `egress-dev`). Share the file through a password manager, then run the second-machine check (§3 T, Done when).
+- [ ] Give your partner a copy of the `.env` **with `SPACETIME_TOKEN` blank**, through a password manager, and have them run the second-machine check (§3 T, Done when).
 
 ## 8. Open questions for Cody
 
@@ -507,7 +512,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 3. **Stairs:** down-only for evacuation? (Assumed yes.) Any outdoor stairs or ramps?
 4. **Upper floors:** should walls placed on floor 2 require a slab underneath, or warn?
 5. **Fire:** realism target. Fire-modeling grade (t² growth, smoke dose) or a believable visual first?
-6. **Team token on Maincloud:** a dedicated team account (simple, but the database may need re-creating under it) or a Maincloud organization? Or move straight to the home server's publisher token and keep Maincloud only as a fallback?
+6. ~~**Team token on Maincloud.**~~ Decided (D84): keep `egress-dev` on Cody's account for now; revisit a team account or organization before the public launch.
 7. **V3 order:** agentic mode (I) before hazards (G), or hazards first so agentic behavior can react to fire and smoke from day one?
 
 ---
@@ -573,7 +578,7 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D52 | 11-07 | ~~**Simple branch demo:**~~ *Superseded by D55.* prioritize top-down editing in the same 3D scene, the transition to freecam and a good viewcube. Keep the top mode selector, switching bottom taskbar and side menu. No modal popups. The left menu collapses through a handle and after every bottom-toolbar action. Styling beyond those patterns remains open. |
 | D53 | 11-07 | ~~**Save slots:**~~ *Superseded by D58: no browser-local project storage.* `/` uses a frontend persistence wrapper around the existing mock client to retain multiple canonical layout documents and the active slot in localStorage. Save opens an inline switcher with named Create new. `/?backend=maincloud` uses existing server projects through the same client interface. No shared schema expansion. |
 | D54 | 11-07 | **Branch boundary:** demo changes and logical commits remain on `implement-backend`; do not push to main or publish yet. Backend gaps for future furniture/GLB work are recorded in `docs/DEMO_UI.md`. |
-| D55 | 11-08 | **UI v2 layout** (Plan.md §8): full-window scene; compact mode switch at top center; presence and Layers at top right; a left pull tab that expands to a meta-action rail; an optional right context pane with a bottom action box; a bottom context toolbar attached to the bottom edge. No taglines; CAD-style tool buttons; modals allowed for Projects, Share and Import. |
+| D55 | 11-08 | **UI v2 layout** (`docs/ARCHITECTURE.md` §8): full-window scene; compact mode switch at top center; presence and Layers at top right; a left pull tab that expands to a meta-action rail; an optional right context pane with a bottom action box; a bottom context toolbar attached to the bottom edge. No taglines; CAD-style tool buttons; modals allowed for Projects, Share and Import. |
 | D56 | 11-08 | **Placeholder icons are Heroicons** (`@heroicons/react`), replacing lucide in the studio. |
 | D57 | 11-08 | **Cross-hatching replaces dithering** for walls that hide the floor. Never in top-down views; evenly spaced in screen space; furniture stays opaque. |
 | D58 | 11-08 | **No browser-local project storage.** Projects live only in SpacetimeDB (Maincloud by default). Browser storage keeps only the SpacetimeDB token that links the browser to its projects. Local save slots are removed. |
@@ -582,7 +587,7 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D61 | 11-08 | **Agent suggestions:** several edits per proposal, highlighted in blue on the model with one short reason bubble each. The agent weighs compliance checks and measured safety. Compliance tooling and multi-edit batching are the next backend pass. |
 | D62 | 11-08 | **Blender wall textures:** a manifest at `frontend/public/assets/walls/manifest.json` maps materials (later `finish` ids) to exported textures with world-scale UVs and a flat-colour fallback. |
 | D63 | 11-08 | **Viewcube behaves like a CAD viewcube:** drag it to orbit; click faces, edges and corners for those views; it mirrors the camera. Edit still locks top-down. |
-| D64 | 11-08 | **Plan rebuilt after `STABLE-V1`.** Plan.md now holds priorities, workstreams and decisions. The contracts (§3–§8, same numbers) moved to `docs/ARCHITECTURE.md`; the old plan is archived unchanged at `docs/history/PLAN-STABLE-V1.md`. |
+| D64 | 11-08 | **Plan rebuilt after `STABLE-V1`.** The plan (now `PLAN.md`) holds priorities, workstreams and decisions. The contracts (§3–§8, same numbers) moved to `docs/ARCHITECTURE.md`; the old plan is archived unchanged at `docs/history/PLAN-STABLE-V1.md`. |
 | D65 | 11-08 | **Trunk and tags.** `main` fast-forwards from the dev branch `backend-passes` at green points; major milestones get `STABLE-Vn` tags (`STABLE-V1` = `60868ea`). `implement-backend` is merged and retired. |
 | D66 | 11-08 | **`STABLE-V2` requires the public site.** https://dontrepeatyourself.dev serves Egress from Cody's home desktop, which also runs SpacetimeDB and the runner. |
 | D67 | 11-08 | **Self-hosting topology:** SpacetimeDB standalone on `127.0.0.1:3010`, the runner, a Next.js production server on `127.0.0.1:3100`, and a Cloudflare Tunnel (TLS, no open ports, home IP hidden). The public SpacetimeDB exposes only the browser's routes; publishing is denied at the edge. |
@@ -602,3 +607,6 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D81 | 11-08 | **Security review before the public tag.** An authorization matrix e2e (every reducer and view × every role × own and foreign ids) plus checks on auth, links, abuse limits, LLM injection, web headers and upload routes, the edge and secrets. Recorded in `docs/SECURITY.md`. |
 | D82 | 11-08 | **A steady LIVE badge.** Following live trails the edge by about one chunk so playback never stalls. The badge debounces: on within 1 s of the edge, off only when more than 4 s behind or after a scrub back. The thumb sits at the front of the timeline with a live-edge marker. |
 | D83 | 11-08 | **Pass 6 as built.**<br>• `.env.example` at the repo root replaces the per-component examples.<br>• The runner loads `services/runner/.env` first, then the root `.env`; `SPACETIME_URL` derives the WebSocket URI.<br>• `scripts/spacetime.mjs` (`npm run db`, `db:publish`, `db:logs`, `db:sql`, `db:generate`) rebuilds `.spacetime/cli.toml` on each call, logs in by token, targets `SPACETIME_DB_IDENTITY` when set, finds the Windows CLI shim, and never prints the token. It was verified end to end on a throwaway local database.<br>• `next.config.ts` parses the root `.env` without loading it into `process.env` and inlines only the public URI and database name.<br>• `npm run build` runs a bundle secret scan, verified to fail on a planted value. |
+| D84 | 11-08 | **The database stays on Cody's account.** `egress-dev` remains on Cody's personal Maincloud account; no new database. `SPACETIME_TOKEN` is his CLI token and lives only in the publisher's own `.env`; the shared copy leaves it blank, since the website, runner and visitors never need it. Before the public launch, revisit a team account or organization, which would mean a new database and a JSON move. |
+| D85 | 11-08 | **Hosting splits:** the database stays on Maincloud; the home desktop runs only the Next.js site, the runner and the Cloudflare Tunnel. This drops the self-hosted SpacetimeDB, its publisher token and the edge lockdown of database routes from the plan. |
+| D86 | 11-08 | **`Plan.md` renamed to `PLAN.md`.** References were repointed: architecture sections to `docs/ARCHITECTURE.md`, workstreams and decisions to `PLAN.md`, old passes to the archive. |

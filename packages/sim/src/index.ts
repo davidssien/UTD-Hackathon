@@ -1,5 +1,5 @@
 /**
- * @egress/sim — pedestrian simulation (Plan.md §6). Pure TS; depends only on
+ * @egress/sim — pedestrian simulation (docs/ARCHITECTURE.md §6). Pure TS; depends only on
  * @egress/core, so it runs in the runner, the browser (mock client, live
  * heatmaps) and tests alike.
  *

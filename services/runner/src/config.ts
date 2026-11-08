@@ -1,5 +1,5 @@
 /**
- * Runner configuration (Plan.md §3 T). Precedence: shell variables, then the
+ * Runner configuration (PLAN.md §3 T). Precedence: shell variables, then the
  * optional local override `services/runner/.env`, then the team file `.env` at
  * the repo root. `process.loadEnvFile` never overwrites a variable that is
  * already set, so the first file loaded wins. The runner's SpacetimeDB token is

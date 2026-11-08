@@ -1,5 +1,5 @@
 /**
- * Runner job processing (Plan.md §7), written against a small RunnerBackend
+ * Runner job processing (docs/ARCHITECTURE.md §7), written against a small RunnerBackend
  * interface so it is testable without SpacetimeDB. `main.ts` adapts the
  * generated bindings (reducers + runner views) to this interface.
  */

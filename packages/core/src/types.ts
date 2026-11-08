@@ -1,6 +1,6 @@
 /**
  * Domain types. JSON shapes are inferred from `schemas.ts`; runtime-only shapes
- * (typed arrays, derived geometry) are declared here. See Plan.md §4.
+ * (typed arrays, derived geometry) are declared here. See docs/ARCHITECTURE.md §4.
  */
 import type { z } from 'zod';
 import type * as S from './schemas.ts';

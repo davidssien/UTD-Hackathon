@@ -1,5 +1,5 @@
 /**
- * Geometry diagnostics (Plan.md §4). The editor saves invalid drafts; the
+ * Geometry diagnostics (docs/ARCHITECTURE.md §4). The editor saves invalid drafts; the
  * simulation reports these instead of crashing.
  */
 import type { EgressDocument, ID } from '../types.ts';

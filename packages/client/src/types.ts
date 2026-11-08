@@ -1,5 +1,5 @@
 /**
- * The EgressClient contract (Plan.md §8). The UI talks to the backend only
+ * The EgressClient contract (docs/ARCHITECTURE.md §8). The UI talks to the backend only
  * through this interface; `createMockClient` and `createSpacetimeClient`
  * implement it identically.
  */

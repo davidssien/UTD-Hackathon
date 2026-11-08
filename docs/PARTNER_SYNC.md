@@ -2,11 +2,11 @@
 
 **For:** davidssien (frontend, ExitCraft UI) · **From:** backend lane (Cody + Claude) · **Status:** to discuss · **Written:** 2026-11-07 17:30 CST
 
-Context: [Plan.md](../Plan.md) is the build plan. We've renamed the product **Egress**.
+Context: [PLAN.md](../PLAN.md) is the build plan. We've renamed the product **Egress**.
 
 ## Latest — 2026-11-08 (branch `backend-passes`)
 
-- **Studio UI v2** is built to Plan.md §8 "UI direction v2"; see [DEMO_UI.md](DEMO_UI.md). CAD chrome, no taglines, Heroicons placeholders, a pull-tab rail, a context pane and a bottom context toolbar per mode.
+- **Studio UI v2** is built to ARCHITECTURE.md §8 "UI direction v2"; see [DEMO_UI.md](DEMO_UI.md). CAD chrome, no taglines, Heroicons placeholders, a pull-tab rail, a context pane and a bottom context toolbar per mode.
 - **Projects are never stored in the browser** (D58). `/` talks to Maincloud; the local save slots are gone.
 - **Wall textures:** drop Blender exports into `frontend/public/assets/walls/` and list them in `manifest.json`; see the README there.
 - `implement-backend` is merged into `backend-passes`; `backend-passes` merges into `main` when the project is done.
@@ -21,7 +21,7 @@ Context: [Plan.md](../Plan.md) is the build plan. We've renamed the product **Eg
 - Maincloud **`egress-dev` is deployed**. The real client E2E passed edit/undo, streamed evacuation, heatmap, proposal ghost and acceptance. Hosted Nemotron also delivered a measured proposal to `/dev?backend=local` without fixed-step fallback, using **`nvidia/nemotron-3.5-lightning-30b-a3b`**. Full evidence and runner lifecycle in [BACKEND_HANDOFF.md](BACKEND_HANDOFF.md).
 - The branch demo connects through `createSpacetimeClient({ uri: 'wss://maincloud.spacetimedb.com', db: 'egress-dev' })` at `/?backend=maincloud`; edit/undo and a 50-person run were verified through its UI. Its public connection settings contain no NVIDIA key. `/dev` supports local/mock selection only. The user approved ongoing Maincloud operation; a background runner is connected and ready with Lightning. The local runner remains active separately. Saved credentials are isolated by database target.
 
-The sections below retain the earlier discussion context; use the latest handoff and Plan.md where they differ.
+The sections below retain the earlier discussion context; use the latest handoff and PLAN.md where they differ.
 
 The backend lives on `implement-backend`. Here's how the two branches stay in sync:
 - After each of your commits, we merge `main` into our branch, so we're always testing against your newest UI.
@@ -115,7 +115,7 @@ const { xy, flags } = playback.actorsAt(tick / 10);         // Float32Array of x
 const heat = playback.field('people.congestion', 'timeAverage');
 ```
 
-The mock and the real client have the same interface. Code against the mock and the switch to SpacetimeDB is one line. Plan.md §8 lists the full interface.
+The mock and the real client have the same interface. Code against the mock and the switch to SpacetimeDB is one line. ARCHITECTURE.md §8 lists the full interface.
 
 ---
 
