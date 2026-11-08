@@ -10,7 +10,7 @@
 import {
   ACTOR_EXITED, canonicalJson, decodeChunk, decodeFieldBundle, DomainError, entitiesToDocument, fieldDifference, metricsDelta, parseDocumentJson,
   sha256Hex, TICK_RATE_HZ, type ScalarField,
-  type AgentContext, type DomainErrorData, type EditCommand, type EgressDocument, type Entity, type ID, type Pace, type Role,
+  type AgentContext, type DomainErrorData, type EditCommand, type EgressDocument, type Entity, type ID, type Pace, type Role, type RoomFacts, type RoomKind, type RoomLabel,
   type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
 import { Identity } from 'spacetimedb';
@@ -57,6 +57,7 @@ class SpacetimeEgressClient implements EgressClient {
   readonly projects = writable<ProjectSummary[]>([]);
   readonly projectStats = writable<ProjectStats[]>([]);
   readonly members = writable<Member[]>([]);
+  readonly roomLabels = writable<RoomLabel[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
   readonly runs = writable<RunSummary[]>([]);
   readonly agentJobs = writable<AgentJob[]>([]);
@@ -99,7 +100,7 @@ class SpacetimeEgressClient implements EgressClient {
               tables.myProfile, tables.mySession, tables.myProjects, tables.myMemberships, tables.activeMembers, tables.activeEntities,
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
               tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus, tables.activeCompareResults,
-              tables.myProjectStats, tables.previewEntities, tables.activeShareLink, tables.activePresence,
+              tables.myProjectStats, tables.previewEntities, tables.activeShareLink, tables.activePresence, tables.activeRoomLabels,
             ]);
         })
         .onConnectError((_ctx, error) => {
@@ -138,7 +139,7 @@ class SpacetimeEgressClient implements EgressClient {
     const handles = [
       conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
-      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities, conn.db.activeShareLink, conn.db.activePresence,
+      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities, conn.db.activeShareLink, conn.db.activePresence, conn.db.activeRoomLabels,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
@@ -177,6 +178,10 @@ class SpacetimeEgressClient implements EgressClient {
       const identity = m.identity.toHexString();
       return { identity, role: m.role as Role, joinedAt: ms(m.joinedAt), online: online.has(identity), me: identity === myIdentity };
     }).sort((a, b) => Number(b.me) - Number(a.me) || Number(b.online) - Number(a.online) || a.joinedAt - b.joinedAt));
+
+    this.roomLabels.set([...conn.db.activeRoomLabels.iter()].filter(l => l.projectId === this.activeProjectId).map(l => ({
+      roomHash: l.roomHash, kind: l.kind as RoomKind, name: l.name, confidence: l.confidence, source: l.source as RoomLabel['source'],
+    })));
 
     // Document: entity rows of the active project, with optimistic edits rebased on top.
     const project = projectRows.find(p => p.id === this.activeProjectId);
@@ -324,6 +329,20 @@ class SpacetimeEgressClient implements EgressClient {
     await this.call(c => c.reducers.joinProject({ code }));
     this.refresh();
     return this.activeProjectId ?? '';
+  }
+
+  // ── room labels (PLAN.md §3 E) ──
+
+  async requestRoomLabels(rooms: RoomFacts[]) {
+    const projectId = this.activeProjectId;
+    if (!projectId || !rooms.length) return;
+    await this.call(c => c.reducers.requestRoomLabels({ projectId, rooms: JSON.stringify(rooms) }));
+  }
+
+  async setRoomLabel(roomHash: string, kind: RoomKind, name: string) {
+    const projectId = this.activeProjectId;
+    if (!projectId) throw new DomainError('NOT_FOUND', 'Open a project first.');
+    await this.call(c => c.reducers.setRoomLabel({ projectId, roomHash, kind, name }));
   }
 
   // ── sharing (PLAN.md §3 C) ──

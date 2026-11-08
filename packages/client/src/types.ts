@@ -5,7 +5,7 @@
  */
 import type {
   ActorFrame, AgentContext, AgentStepKind, Aggregation, DomainErrorData, EditCommand, EgressDocument, FieldId, ID, Pace,
-  ProposalNotes, ProposalStatus, Role, RunStatus, ScalarField, SimulationMetrics, SimulationScenario,
+  ProposalNotes, ProposalStatus, Role, RoomFacts, RoomKind, RoomLabel, RunStatus, ScalarField, SimulationMetrics, SimulationScenario,
 } from '@egress/core';
 
 /** Minimal observable value; plugs straight into React's useSyncExternalStore (see `useEgress`). */
@@ -204,6 +204,13 @@ export interface EgressClient {
   /** Returns the plain invite code to share; only its hash is stored. */
   createInvite(role: Exclude<Role, 'owner'>, ttlHours?: number): Promise<string>;
   joinProject(code: string): Promise<ID>;
+
+  /** Kind and name of each room of the open project, by room outline hash (D73). */
+  readonly roomLabels: Store<RoomLabel[]>;
+  /** Editors: ask the runner (Nemotron, or the rules) to label these rooms. */
+  requestRoomLabels(rooms: RoomFacts[]): Promise<void>;
+  /** Editors: correct a room's kind and name; the model never overwrites it afterwards. */
+  setRoomLabel(roomHash: string, kind: RoomKind, name: string): Promise<void>;
 
   /** Members of the open project, with who is online now (presence). */
   readonly members: Store<Member[]>;

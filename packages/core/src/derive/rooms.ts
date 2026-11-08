@@ -60,6 +60,27 @@ export function roomKindByRules(widthM: number, lengthM: number, areaM2: number,
   return 'room';
 }
 
+/** What the labeller sees: geometry facts only, no outlines (small enough for one Nemotron call). */
+export type RoomFacts = Omit<RoomDescriptor, 'id' | 'polygon' | 'center' | 'wallIds' | 'openingIds'>;
+
+export function roomFacts(room: RoomDescriptor): RoomFacts {
+  const { id: _id, polygon: _polygon, center: _center, wallIds: _walls, openingIds: _openings, ...facts } = room;
+  return facts;
+}
+
+/** Labels from the rules alone: "Hallway", "Room 1" (largest first), "Closet"… The fallback when no model answers. */
+export function ruleLabels(rooms: RoomFacts[]): RoomLabel[] {
+  const counters = new Map<RoomKind, number>();
+  const plural = new Map<RoomKind, number>();
+  for (const r of rooms) plural.set(r.ruleKind, (plural.get(r.ruleKind) ?? 0) + 1);
+  const title = (k: RoomKind) => k[0].toUpperCase() + k.slice(1);
+  return [...rooms].sort((a, b) => b.areaM2 - a.areaM2).map(r => {
+    const n = (counters.get(r.ruleKind) ?? 0) + 1;
+    counters.set(r.ruleKind, n);
+    return { roomHash: r.roomHash, kind: r.ruleKind, name: plural.get(r.ruleKind)! > 1 ? `${title(r.ruleKind)} ${n}` : title(r.ruleKind), confidence: 0.5, source: 'rules' as const };
+  });
+}
+
 export function describeRooms(doc: EgressDocument): RoomDescriptor[] {
   const topo = topology(doc);
   const roomIds = new Set(topo.rooms.map(r => r.id));

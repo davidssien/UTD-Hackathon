@@ -6,7 +6,7 @@
  */
 import {
   applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, metricsDelta,
-  type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type Role, type SimulationScenario,
+  ruleLabels, type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type Role, type RoomFacts, type RoomKind, type RoomLabel, type SimulationScenario,
 } from '@egress/core';
 import { initialize, simulateChunks, type RunChunk, type SimState } from '@egress/sim';
 import { LocalEnvironment, runHeuristicAgent, ToolBox, type RunRecord } from '@egress/agent';
@@ -49,6 +49,8 @@ class MockEgressClient implements EgressClient {
   readonly projects = writable<ProjectSummary[]>([]);
   readonly projectStats = writable<ProjectStats[]>([]);
   readonly members = writable<Member[]>([]);
+  readonly roomLabels = writable<RoomLabel[]>([]);
+  private readonly labels = new Map<ID, Map<string, RoomLabel>>();
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
   readonly runs = writable<RunSummary[]>([]);
   readonly agentJobs = writable<AgentJob[]>([]);
@@ -134,6 +136,7 @@ class MockEgressClient implements EgressClient {
   async openProject(projectId: ID | null) {
     this.active = projectId;
     this.members.set(projectId ? [{ identity: 'mock-identity', role: 'owner', joinedAt: Date.now(), online: true, me: true }] : []);
+    this.roomLabels.set(projectId ? [...(this.labels.get(projectId)?.values() ?? [])] : []);
     this.publishDocument(null);
     this.runs.set([]);
     this.agentJobs.set([]);
@@ -150,6 +153,30 @@ class MockEgressClient implements EgressClient {
     await this.wait();
     if (!this.active) throw new Error('The mock client has no shared projects.');
     return this.active;
+  }
+
+  // ── room labels: the mock labels with the rules at once (the runner may use Nemotron) ──
+
+  private publishLabels() {
+    this.roomLabels.set(this.active ? [...(this.labels.get(this.active)?.values() ?? [])] : []);
+  }
+
+  async requestRoomLabels(rooms: RoomFacts[]) {
+    await this.wait();
+    if (!this.active) return;
+    const map = this.labels.get(this.active) ?? new Map<string, RoomLabel>();
+    for (const label of ruleLabels(rooms)) if (map.get(label.roomHash)?.source !== 'user') map.set(label.roomHash, label);
+    this.labels.set(this.active, map);
+    this.publishLabels();
+  }
+
+  async setRoomLabel(roomHash: string, kind: RoomKind, name: string) {
+    await this.wait();
+    if (!this.active) return;
+    const map = this.labels.get(this.active) ?? new Map<string, RoomLabel>();
+    map.set(roomHash, { roomHash, kind, name: name.trim().slice(0, 60) || kind, confidence: 1, source: 'user' });
+    this.labels.set(this.active, map);
+    this.publishLabels();
   }
 
   // ── sharing: a single local user who owns everything ──

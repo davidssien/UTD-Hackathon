@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import type { Pace } from '@egress/core';
 import { config, loadToken, saveToken } from './config.ts';
 import { processAgentJob, processRun } from './jobs.ts';
+import { processLabelRequest } from './labels.ts';
 import { hasNemotronKey, nemotronChatFn } from './llm.ts';
 import { connect, SpacetimeBackend } from './spacetime.ts';
 
@@ -64,8 +65,20 @@ export async function startRunner(options: { uri?: string; db?: string; token?: 
         .finally(() => busy.delete(job.id));
     }
   };
+  const labelling = () => {
+    if (stopped) return;
+    for (const req of conn.db.runnerLabelQueue.iter()) {
+      const key = `labels:${req.projectId}`;
+      if (req.status !== 'queued' || busy.has(key)) continue;
+      busy.add(key);
+      void processLabelRequest(backend, { projectId: req.projectId, rooms: req.rooms }, log).finally(() => busy.delete(key));
+    }
+  };
   conn.db.runnerQueue.onInsert(() => pump());
   conn.db.runnerAgentQueue.onInsert(() => pump());
+  conn.db.runnerLabelQueue.onInsert(() => labelling());
+  conn.db.runnerLabelQueue.onUpdate(() => labelling());
+  const labelTimer = setInterval(labelling, 1000);
   const timer = setInterval(pump, 1000); // belt and braces in case an insert callback is missed
   pump();
 
@@ -88,6 +101,7 @@ export async function startRunner(options: { uri?: string; db?: string; token?: 
     stop() {
       stopped = true;
       clearInterval(timer);
+      clearInterval(labelTimer);
       clearInterval(heartbeat);
       conn.disconnect();
     },

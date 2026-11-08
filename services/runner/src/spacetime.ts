@@ -60,8 +60,16 @@ export class SpacetimeBackend implements RunnerBackend {
       this.conn.subscriptionBuilder()
         .onApplied(() => resolve())
         .onError(ctx => reject(new Error(`runner subscription failed: ${String((ctx as { event?: unknown }).event ?? 'unknown')}`)))
-        .subscribe([tables.runnerQueue, tables.runnerAgentQueue, tables.runnerInputs]);
+        .subscribe([tables.runnerQueue, tables.runnerAgentQueue, tables.runnerInputs, tables.runnerLabelQueue]);
     });
+  }
+
+  async claimLabelRequest(projectId: string) {
+    await this.conn.reducers.claimLabelRequest({ projectId });
+  }
+
+  async publishRoomLabels(projectId: string, labels: string, source: 'nemotron' | 'rules') {
+    await this.conn.reducers.publishRoomLabels({ projectId, labels, source });
   }
 
   async claimRun(runId: ID) {

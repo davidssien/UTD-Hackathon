@@ -153,6 +153,30 @@ const project_links = table({ name: 'project_links' }, {
   createdAt: t.timestamp(),
 });
 
+/** Room kind and name per room outline hash (PLAN.md §3 E, D73). User labels are never overwritten by the model. */
+const room_labels = table({ name: 'room_labels' }, {
+  /** `${projectId}:${roomHash}` */
+  id: t.string().primaryKey(),
+  projectId: t.string().index(),
+  roomHash: t.string(),
+  kind: t.string(),
+  name: t.string(),
+  confidence: t.f64(),
+  /** nemotron | rules | user */
+  source: t.string(),
+  updatedAt: t.timestamp(),
+});
+
+/** One pending labelling request per project; the runner answers with publish_room_labels. */
+const label_requests = table({ name: 'label_requests' }, {
+  projectId: t.string().primaryKey(),
+  /** JSON array of RoomFacts (no outlines). */
+  rooms: t.string(),
+  status: t.string().index(),
+  claimedBy: t.string(),
+  requestedAt: t.timestamp(),
+});
+
 /** Live connections per identity, for presence. Rows exist only while connected. */
 const online_connections = table({ name: 'online_connections' }, {
   identity: t.identity().primaryKey(),
@@ -245,7 +269,7 @@ const session_compare = table({ name: 'session_compare' }, {
 const spacetimedb = schema({
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
   layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats, session_compare,
-  project_stats, session_preview, project_links, online_connections,
+  project_stats, session_preview, project_links, online_connections, room_labels, label_requests,
 });
 export default spacetimedb;
 
@@ -415,6 +439,8 @@ export const delete_project = spacetimedb.reducer({ projectId: t.string() }, (ct
   for (const s of [...ctx.db.sessions.activeProjectId.filter(projectId)]) ctx.db.sessions.identity.update({ ...s, activeProjectId: '', activeRunId: '' });
   for (const p of [...ctx.db.session_preview.iter()]) if (p.projectId === projectId) ctx.db.session_preview.identity.delete(p.identity);
   if (ctx.db.project_links.projectId.find(projectId)) ctx.db.project_links.projectId.delete(projectId);
+  for (const l of [...ctx.db.room_labels.projectId.filter(projectId)]) ctx.db.room_labels.id.delete(l.id);
+  if (ctx.db.label_requests.projectId.find(projectId)) ctx.db.label_requests.projectId.delete(projectId);
   ctx.db.projects.id.delete(projectId);
 }));
 
@@ -456,6 +482,60 @@ export const join_project = spacetimedb.reducer({ code: t.string() }, (ctx, { co
   }
   setSession(ctx, { activeProjectId: invite!.projectId, activeRunId: '' });
 }));
+
+// ── Room labels (D73) ───────────────────────────────────────────────────────
+
+const ROOM_HASH = /^[0-9a-f]{16}$/;
+const ROOM_KINDS = new Set(['room', 'hallway', 'stair', 'closet', 'lobby', 'other']);
+
+/** Editors ask for labels of the rooms they have; the runner labels them with Nemotron or the rules. */
+export const request_room_labels = spacetimedb.reducer({ projectId: t.string(), rooms: t.string() }, (ctx, { projectId, rooms }) => guard(() => {
+  requireRole(ctx, projectId, 'editor');
+  if (rooms.length > 64_000) fail('INVALID_INPUT', 'Too many rooms to label at once.');
+  const list = JSON.parse(rooms) as unknown;
+  if (!Array.isArray(list) || list.length > 200 || list.some(r => !ROOM_HASH.test(String((r as { roomHash?: unknown })?.roomHash)))) fail('INVALID_INPUT', 'Room facts must be an array of up to 200 rooms with a roomHash.');
+  const row = { projectId, rooms, status: 'queued', claimedBy: '', requestedAt: ctx.timestamp };
+  if (ctx.db.label_requests.projectId.find(projectId)) ctx.db.label_requests.projectId.update(row);
+  else ctx.db.label_requests.insert(row);
+}));
+
+export const claim_label_request = spacetimedb.reducer({ projectId: t.string() }, (ctx, { projectId }) => guard(() => {
+  requireService(ctx);
+  const req = ctx.db.label_requests.projectId.find(projectId) ?? fail('NOT_FOUND', 'No label request.');
+  if (req!.status !== 'queued') fail('INVALID_INPUT', 'Already claimed.');
+  ctx.db.label_requests.projectId.update({ ...req!, status: 'running', claimedBy: ctx.sender.toHexString() });
+}));
+
+function putLabel(ctx: Ctx, projectId: string, label: { roomHash: string; kind: string; name: string; confidence: number }, source: string) {
+  if (!ROOM_HASH.test(label.roomHash) || !ROOM_KINDS.has(label.kind)) fail('INVALID_INPUT', 'Unknown room hash or kind.');
+  const name = cleanName(label.name, 'Room name').slice(0, 60);
+  const id = `${projectId}:${label.roomHash}`;
+  const existing = ctx.db.room_labels.id.find(id);
+  if (existing && existing.source === 'user' && source !== 'user') return; // people's labels win
+  const row = { id, projectId, roomHash: label.roomHash, kind: label.kind, name, confidence: Math.min(1, Math.max(0, label.confidence)), source, updatedAt: ctx.timestamp };
+  if (existing) ctx.db.room_labels.id.update(row);
+  else ctx.db.room_labels.insert(row);
+}
+
+export const publish_room_labels = spacetimedb.reducer({ projectId: t.string(), labels: t.string(), source: t.string() }, (ctx, { projectId, labels, source }) => guard(() => {
+  requireService(ctx);
+  if (!ctx.db.projects.id.find(projectId)) return;
+  if (source !== 'nemotron' && source !== 'rules') fail('INVALID_INPUT', 'Source must be nemotron or rules.');
+  const list = JSON.parse(labels) as { roomHash: string; kind: string; name: string; confidence: number }[];
+  if (!Array.isArray(list) || list.length > 200) fail('INVALID_INPUT', 'Labels must be an array of up to 200.');
+  for (const label of list) putLabel(ctx, projectId, label, source);
+  const req = ctx.db.label_requests.projectId.find(projectId);
+  if (req) ctx.db.label_requests.projectId.update({ ...req, status: 'done' });
+}));
+
+/** Editors can correct a room's kind and name; the model never overwrites it afterwards. */
+export const set_room_label = spacetimedb.reducer(
+  { projectId: t.string(), roomHash: t.string(), kind: t.string(), name: t.string() },
+  (ctx, { projectId, roomHash, kind, name }) => guard(() => {
+    requireRole(ctx, projectId, 'editor');
+    putLabel(ctx, projectId, { roomHash, kind, name, confidence: 1 }, 'user');
+  }),
+);
 
 const LINK_CODE = /^[A-Za-z0-9_-]{22,64}$/;
 
@@ -901,6 +981,9 @@ export const preview_entities = spacetimedb.view({ name: 'preview_entities', pub
   return [...ctx.db.entities.projectId.filter(preview.projectId)];
 });
 
+export const active_room_labels = spacetimedb.view({ name: 'active_room_labels', public: true }, t.array(room_labels.rowType), ctx =>
+  ctx.from.sessions.where(s => s.identity.eq(ctx.sender)).rightSemijoin(ctx.from.room_labels, (s, l) => s.activeProjectId.eq(l.projectId)).build());
+
 /** The permanent share link of the caller's active project (members only). */
 export const active_share_link = spacetimedb.view({ name: 'active_share_link', public: true }, t.array(project_links.rowType), ctx => {
   const session = ctx.db.sessions.identity.find(ctx.sender);
@@ -942,6 +1025,12 @@ export const runner_agent_queue = spacetimedb.view({ name: 'runner_agent_queue',
   if (!isService(ctx)) return [];
   const mine = ctx.sender.toHexString();
   return [...ctx.db.agent_jobs.status.filter('queued'), ...[...ctx.db.agent_jobs.status.filter('running')].filter(j => j.claimedBy === mine)];
+});
+
+export const runner_label_queue = spacetimedb.view({ name: 'runner_label_queue', public: true }, t.array(label_requests.rowType), ctx => {
+  if (!isService(ctx)) return [];
+  const mine = ctx.sender.toHexString();
+  return [...ctx.db.label_requests.status.filter('queued'), ...[...ctx.db.label_requests.status.filter('running')].filter(r => r.claimedBy === mine)];
 });
 
 /** Frozen layouts of every run and agent job this runner has claimed and not finished. */

@@ -40,6 +40,9 @@ export type ActiveReplay = __Infer<typeof ActiveReplay>;
 export const ActiveResult = __t.object("ActiveResult", {});
 export type ActiveResult = __Infer<typeof ActiveResult>;
 
+export const ActiveRoomLabels = __t.object("ActiveRoomLabels", {});
+export type ActiveRoomLabels = __Infer<typeof ActiveRoomLabels>;
+
 export const ActiveRunLayout = __t.object("ActiveRunLayout", {});
 export type ActiveRunLayout = __Infer<typeof ActiveRunLayout>;
 
@@ -99,6 +102,15 @@ export const Entities = __t.object("Entities", {
   rev: __t.u64(),
 });
 export type Entities = __Infer<typeof Entities>;
+
+export const LabelRequests = __t.object("LabelRequests", {
+  projectId: __t.string(),
+  rooms: __t.string(),
+  status: __t.string(),
+  claimedBy: __t.string(),
+  requestedAt: __t.timestamp(),
+});
+export type LabelRequests = __Infer<typeof LabelRequests>;
 
 export const LayoutSnapshots = __t.object("LayoutSnapshots", {
   hash: __t.string(),
@@ -211,6 +223,18 @@ export const ReplayChunks = __t.object("ReplayChunks", {
 });
 export type ReplayChunks = __Infer<typeof ReplayChunks>;
 
+export const RoomLabels = __t.object("RoomLabels", {
+  id: __t.string(),
+  projectId: __t.string(),
+  roomHash: __t.string(),
+  kind: __t.string(),
+  name: __t.string(),
+  confidence: __t.f64(),
+  source: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type RoomLabels = __Infer<typeof RoomLabels>;
+
 export const RunnerAgentQueue = __t.object("RunnerAgentQueue", {});
 export type RunnerAgentQueue = __Infer<typeof RunnerAgentQueue>;
 
@@ -226,6 +250,9 @@ export type RunnerHeartbeats = __Infer<typeof RunnerHeartbeats>;
 
 export const RunnerInputs = __t.object("RunnerInputs", {});
 export type RunnerInputs = __Infer<typeof RunnerInputs>;
+
+export const RunnerLabelQueue = __t.object("RunnerLabelQueue", {});
+export type RunnerLabelQueue = __Infer<typeof RunnerLabelQueue>;
 
 export const RunnerQueue = __t.object("RunnerQueue", {});
 export type RunnerQueue = __Infer<typeof RunnerQueue>;

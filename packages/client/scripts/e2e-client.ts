@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseDocument } from '@egress/core';
+import { describeRooms, parseDocument, roomFacts } from '@egress/core';
 import { createSpacetimeClient } from '@egress/client';
 import { startRunner } from '../../../services/runner/src/main.ts';
 
@@ -67,6 +67,20 @@ if (proposal) {
   await until(() => client.document.get().doc!.revision === rev + 1, 10_000, 'proposal applied');
   ok('proposal accepted and applied');
 }
+
+// Room labels (PLAN.md §3 E): the runner labels the rooms; a user correction survives relabelling.
+const rooms = describeRooms(client.document.get().doc!);
+await client.requestRoomLabels(rooms.map(roomFacts));
+await until(() => client.roomLabels.get().length === rooms.length, 60_000, 'room labels');
+ok(`rooms labelled: ${client.roomLabels.get().map(l => `${l.name} (${l.kind}, ${l.source})`).join(', ')}`);
+const first = rooms[0].roomHash;
+await client.setRoomLabel(first, 'lobby', 'Reception');
+await until(() => client.roomLabels.get().find(l => l.roomHash === first)?.source === 'user', 10_000, 'user label');
+await client.requestRoomLabels(rooms.map(roomFacts));
+await new Promise(r => setTimeout(r, 1500));
+const kept = client.roomLabels.get().find(l => l.roomHash === first);
+if (kept?.name !== 'Reception') throw new Error('relabelling overwrote the user label');
+ok('user label kept after relabelling');
 
 // Saves page (PLAN.md §3 B): stats, preview without opening, rename, JSON round trip, delete.
 await until(() => (client.projectStats.get().find(s => s.projectId === projectId)?.lastEvacuationSeconds ?? null) !== null, 10_000, 'project stats');
