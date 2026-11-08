@@ -54,7 +54,7 @@ interface Props {
   onTag?(key: string, at: { x: number; y: number }): void;
   playback?: PlaybackController | null;
   layer: SceneLayer;
-  /** Scene background: black (default) or the original blueprint blue (D70). */
+  /** Scene background: blueprint blue (default) or black (D70). */
   theme?: SceneTheme;
   overlay?: HeatOverlay | null;
   onSelect(id: string | null): void;
@@ -197,7 +197,7 @@ interface Runtime {
   scene: THREE.Scene;
   walls: THREE.Group;
   floors: THREE.Group;
-  /** Dots-only grid raised to the viewed floor; the ground keeps faint dots at 0. */
+  /** Dots-only grid raised to the viewed floor; the ground then renders only the background. */
   grid: THREE.Mesh;
   ground: THREE.Mesh;
   library: WallLibrary;
@@ -240,7 +240,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     catch { queueMicrotask(() => setError('3D rendering is unavailable in this browser.')); return; }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-    const theme = latest.current.theme ?? 'black';
+    const theme = latest.current.theme ?? 'blueprint';
     renderer.setClearColor(THEMES[theme].ground);
     node.prepend(renderer.domElement);
 
@@ -746,8 +746,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const elevation = viewed?.elevationM ?? 0;
     r.grid.visible = elevation > 0;
     r.grid.position.y = elevation + 0.001;
-    const dots = THEMES[props.theme ?? 'black'].dots;
-    (r.ground.material as THREE.ShaderMaterial).uniforms.uGain.value = elevation > 0 ? dots * 0.25 : dots;
+    const dots = THEMES[props.theme ?? 'blueprint'].dots;
+    (r.ground.material as THREE.ShaderMaterial).uniforms.uGain.value = elevation > 0 ? 0 : dots;
 
     const byWall = new Map(doc.walls.map(w => [w.id, w]));
     const groups = new Map<string, THREE.Group>();

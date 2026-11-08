@@ -32,7 +32,7 @@
 .mode-switch{position:absolute;top:12px;left:50%;transform:translateX(-50%);display:flex;padding:3px;border-radius:9px;gap:2px}
 .mode-switch button{height:26px;padding:0 14px;border-radius:6px;color:var(--ink-2);font-weight:500}
 .mode-switch button:hover{background:var(--chrome-2)}
-.mode-switch button[aria-pressed=true]{background:var(--ink);color:#fff}
+.mode-switch button[aria-pressed=true]{background:#047857;color:#fff}
 
 .right-column{position:absolute;top:12px;right:12px;bottom:84px;width:304px;display:flex;flex-direction:column;gap:8px;pointer-events:none;z-index:6}
 .right-column>*{pointer-events:auto}
@@ -148,7 +148,7 @@
 .badge.end{color:#fff;background:var(--ink)!important;border-color:var(--ink)!important}
 .speeds{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .speeds button{height:28px;padding:0 9px;font-weight:600;color:var(--ink-2);font-variant-numeric:tabular-nums}
-.speeds button[aria-pressed=true]{background:var(--ink);color:#fff}
+.speeds button[aria-pressed=true]{background:#d8dce0;color:#202831}
 
 .chat{display:flex;align-items:center;gap:8px;width:min(620px,58vw)}
 .chat-icon{color:var(--suggest)}
@@ -253,7 +253,7 @@
 .plan-frame svg{width:100%;height:100%;padding:10px}
 .plan-frame svg path{fill:#000}
 .plan-frame svg circle.exit{fill:#fff;stroke:#000;stroke-width:.08}
-.plan-frame .loading{color:var(--muted)}
+.plan-frame .plan-placeholder{color:var(--muted)}
 .saves-detail h2{margin:12px 0 6px;font-size:16px;font-weight:650;overflow-wrap:anywhere}
 .details{margin:0 0 12px}
 .details>div{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--chrome-2)}
@@ -275,10 +275,11 @@
 /* Presence (D59) and the Share modal's member list */
 .presence{position:relative;height:32px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--radius);background:var(--chrome);border:1px solid var(--line);box-shadow:var(--shadow);font-weight:600;font-variant-numeric:tabular-nums;cursor:default}
 .presence svg{width:16px;height:16px}
-.presence-pop{display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:220px;padding:6px;background:var(--chrome);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);z-index:20;font-weight:500}
+.presence-pop{display:none;position:absolute;top:calc(100% + 6px);right:0;width:max-content;min-width:min(262px,65vw);max-width:calc(100vw - 110px);padding:6px;background:var(--chrome);border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);z-index:20;font-weight:500}
 .presence:hover .presence-pop,.presence:focus-within .presence-pop{display:block}
 .presence-pop>div{display:flex;align-items:center;gap:8px;padding:5px 6px}
-.presence-pop span{margin-left:auto;color:var(--muted);text-transform:capitalize}
+.presence-pop code{overflow:hidden;text-overflow:ellipsis}
+.presence-pop span{margin-left:auto;white-space:nowrap;color:var(--muted);text-transform:capitalize}
 .presence-pop em,.member-list em{font-style:normal;font-size:11px;font-weight:600;color:var(--accent)}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--line-2);flex:none}
 .dot.on{background:var(--good)}
@@ -306,7 +307,7 @@
 
 /* Floors (D75): bottom-left switcher and its settings panel */
 .floor-switch{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;align-items:center;gap:2px;height:36px;padding:0 4px;border-radius:10px;background:var(--chrome);border:1px solid var(--line);box-shadow:var(--shadow);transition:transform .45s cubic-bezier(.4,0,.2,1)}
-.floor-switch .floor-name{display:flex;align-items:baseline;gap:6px;height:28px;padding:0 8px;border-radius:6px;font-weight:600;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.floor-switch .floor-name{display:flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:6px;font-weight:600;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .floor-switch .floor-name:hover{background:var(--chrome-2)}
 .floor-switch .floor-name em{font-style:normal;font-weight:500;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .floor-panel{left:0;bottom:calc(100% + 8px);width:260px;padding:4px 10px 10px}
@@ -323,6 +324,22 @@
 .paint-box .icon-button.on{background:var(--ink);color:#fff}
 .paint-box .field .button{height:26px;padding:0 8px;font-weight:500}
 .note:not(.warn):not(.error){background:var(--chrome-2);color:var(--ink-2)}
+
+@media (prefers-reduced-motion:no-preference){
+  .menu,.layers-panel,.presence-pop,.paint-box{animation:studio-flyout .16s ease-out}
+  .pane{animation:studio-pane-in .2s ease-out}
+  .rail{animation:studio-rail-in .2s ease-out}
+  .rail-tab,.pane-tab{transition:transform .45s cubic-bezier(.4,0,.2,1),width .16s ease,opacity .3s}
+  .mode-switch button,.speeds button{transition:background-color .16s,color .16s}
+  @supports (interpolate-size:allow-keywords){
+    .pane,.dock{interpolate-size:allow-keywords}
+    .pane{transition:height .2s ease-out}
+    .dock{transition:width .2s ease-out,transform .45s cubic-bezier(.4,0,.2,1),opacity .3s}
+  }
+}
+@keyframes studio-flyout{from{opacity:0;translate:0 4px}to{opacity:1;translate:0 0}}
+@keyframes studio-pane-in{from{opacity:0;translate:12px 0}to{opacity:1;translate:0 0}}
+@keyframes studio-rail-in{from{opacity:0;translate:-10px 0}to{opacity:1;translate:0 0}}
 
 /* Shared live simulation (D89): the presence chip turns red with a lock, and Edit shows a banner */
 .presence.locked{background:#fdecea;border-color:#f2b8b0;color:var(--bad)}

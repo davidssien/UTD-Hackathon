@@ -138,7 +138,7 @@ export default function SavesPage({ client, active, onOpen, onImportImage, onCre
       </div>
       <aside className="saves-detail" aria-label="Project details">
         {project ? <>
-          <div className="plan-frame">{preview?.id === project.id ? <PlanImage doc={preview.doc} /> : <span className="loading">Loading plan…</span>}</div>
+          <div className="plan-frame">{preview?.id === project.id ? <PlanImage doc={preview.doc} /> : <span className="plan-placeholder">Loading plan…</span>}</div>
           <h2>{project.name}</h2>
           <Details stats={projectStats} project={project} />
           <div className="detail-actions">
@@ -169,7 +169,7 @@ function Details({ stats, project }: { stats: ProjectStats | undefined; project:
 function PlanImage({ doc }: { doc: EgressDocument }) {
   const derived = useMemo(() => deriveLayout(doc), [doc]);
   const points = [...derived.walls.pieces.flatMap(p => p.polygon), ...derived.walls.hubs.flatMap(h => h.polygon)];
-  if (!points.length) return <span className="loading">No walls yet</span>;
+  if (!points.length) return <span className="plan-placeholder">No walls yet</span>;
   const xs = points.map(p => p.x), ys = points.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const pad = Math.max(maxX - minX, maxY - minY) * 0.06 + 0.5;

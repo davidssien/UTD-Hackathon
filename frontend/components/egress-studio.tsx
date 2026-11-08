@@ -135,7 +135,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     try { localStorage.setItem('egress.paneCollapsed', JSON.stringify(next)); } catch { /* storage unavailable */ }
     return next;
   });
-  const theme = useMemo(() => (new URLSearchParams(location.search).get('theme') === 'blueprint' ? 'blueprint' : 'black'), []);
+  const theme = useMemo(() => (new URLSearchParams(location.search).get('theme') === 'black' ? 'black' : 'blueprint'), []);
   const [error, setError] = useState(bootError);
   const scene = useRef<SceneHandle>(null);
 

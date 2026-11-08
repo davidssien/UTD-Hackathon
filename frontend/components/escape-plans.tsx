@@ -75,7 +75,7 @@ function PlanCard({ doc, plan, projectName }: { doc: EgressDocument; plan: Plan;
     </svg>
     <dl className="details">
       <div><dt>Primary route</dt><dd>{plan.primary ? `${plan.primary.distanceM} m · about ${plan.primary.seconds} s` : 'No exit reachable'}</dd></div>
-      <div><dt>Secondary route</dt><dd>{plan.secondary ? `${plan.secondary.distanceM} m · about ${plan.secondary.seconds} s` : 'Only one exit'}</dd></div>
+      <div><dt>Secondary route</dt><dd>{plan.secondary ? `${plan.secondary.distanceM} m · about ${plan.secondary.seconds} s` : '-'}</dd></div>
     </dl>
   </article>;
 }
