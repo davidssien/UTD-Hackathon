@@ -1,25 +1,16 @@
 /**
  * @egress/sim — pedestrian simulation (Plan.md §6). Pure TS; depends only on
- * @egress/core. Implemented in Pass 2; this is the model-agnostic lifecycle
- * every model (pedestrian now, airflow/smoke later) implements.
+ * @egress/core, so it runs in the runner, the browser (mock client, live
+ * heatmaps) and tests alike.
+ *
+ *   const state = initialize({ runId, document, scenario });
+ *   while (!isComplete(state)) step(state);       // fixed 0.1 s ticks
+ *   metrics(state); state.fields.field('people.congestion', 'timeAverage');
  */
-import type { ActorFrame, EgressDocument, GridDefinition, SimulationMetrics, SimulationScenario } from '@egress/core';
-
-export interface FrozenSimulationInput {
-  runId: string;
-  document: EgressDocument;
-  layoutHash: string;
-  scenario: SimulationScenario;
-}
-
-export interface SimulationModel<State> {
-  readonly modelId: string;
-  readonly modelVersion: string;
-  initialize(input: FrozenSimulationInput): State;
-  /** Advances exactly one fixed 0.1 s tick. */
-  step(state: State): void;
-  frame(state: State): ActorFrame;
-  metrics(state: State): SimulationMetrics;
-  isComplete(state: State): boolean;
-  grid(state: State): GridDefinition;
-}
+export { compileFloor, FLOW_PER_METER, forEachCellInGap, blockingDiagnostics, type CompiledFloor, type Portal } from './compile.ts';
+export { buildNavigation, type Navigation } from './nav.ts';
+export { FieldAccumulator, FREE_WALK_SPEED } from './fields.ts';
+export {
+  frame, initialize, isComplete, metrics, MODEL_ID, MODEL_VERSION, PARAMS, step, type FrozenSimulationInput, type SimState,
+} from './model.ts';
+export { runSimulation, simulateChunks, type RunChunk, type RunResult } from './run.ts';

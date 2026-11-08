@@ -33,10 +33,10 @@
     },
     {
       "kind": "vertex",
-      "id": "two-rooms-corridor.s0.2",
+      "id": "two-rooms-corridor.s0.11",
       "floorId": "two-rooms-corridor.floor0",
       "position": {
-        "x": 16,
+        "x": 0,
         "y": 2
       }
     },
@@ -46,12 +46,21 @@
       "floorId": "two-rooms-corridor.floor0",
       "position": {
         "x": 16,
+        "y": 2
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "two-rooms-corridor.s0.5",
+      "floorId": "two-rooms-corridor.floor0",
+      "position": {
+        "x": 16,
         "y": 12
       }
     },
     {
       "kind": "vertex",
-      "id": "two-rooms-corridor.s0.4",
+      "id": "two-rooms-corridor.s0.7",
       "floorId": "two-rooms-corridor.floor0",
       "position": {
         "x": 8,
@@ -60,20 +69,11 @@
     },
     {
       "kind": "vertex",
-      "id": "two-rooms-corridor.s0.5",
+      "id": "two-rooms-corridor.s0.9",
       "floorId": "two-rooms-corridor.floor0",
       "position": {
         "x": 0,
         "y": 12
-      }
-    },
-    {
-      "kind": "vertex",
-      "id": "two-rooms-corridor.s0.6",
-      "floorId": "two-rooms-corridor.floor0",
-      "position": {
-        "x": 0,
-        "y": 2
       }
     },
     {
@@ -91,18 +91,8 @@
       "kind": "wall",
       "id": "two-rooms-corridor.s0.10",
       "floorId": "two-rooms-corridor.floor0",
-      "startVertexId": "two-rooms-corridor.s0.3",
-      "endVertexId": "two-rooms-corridor.s0.4",
-      "thicknessM": 0.2,
-      "heightM": 2.8,
-      "material": "normal"
-    },
-    {
-      "kind": "wall",
-      "id": "two-rooms-corridor.s0.11",
-      "floorId": "two-rooms-corridor.floor0",
-      "startVertexId": "two-rooms-corridor.s0.4",
-      "endVertexId": "two-rooms-corridor.s0.5",
+      "startVertexId": "two-rooms-corridor.s0.7",
+      "endVertexId": "two-rooms-corridor.s0.9",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
@@ -111,8 +101,8 @@
       "kind": "wall",
       "id": "two-rooms-corridor.s0.12",
       "floorId": "two-rooms-corridor.floor0",
-      "startVertexId": "two-rooms-corridor.s0.5",
-      "endVertexId": "two-rooms-corridor.s0.6",
+      "startVertexId": "two-rooms-corridor.s0.9",
+      "endVertexId": "two-rooms-corridor.s0.11",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
@@ -121,7 +111,7 @@
       "kind": "wall",
       "id": "two-rooms-corridor.s0.13",
       "floorId": "two-rooms-corridor.floor0",
-      "startVertexId": "two-rooms-corridor.s0.6",
+      "startVertexId": "two-rooms-corridor.s0.11",
       "endVertexId": "two-rooms-corridor.s0.0",
       "thicknessM": 0.2,
       "heightM": 2.8,
@@ -129,7 +119,7 @@
     },
     {
       "kind": "wall",
-      "id": "two-rooms-corridor.s0.7",
+      "id": "two-rooms-corridor.s0.2",
       "floorId": "two-rooms-corridor.floor0",
       "startVertexId": "two-rooms-corridor.s0.0",
       "endVertexId": "two-rooms-corridor.s0.1",
@@ -139,20 +129,30 @@
     },
     {
       "kind": "wall",
-      "id": "two-rooms-corridor.s0.8",
+      "id": "two-rooms-corridor.s0.4",
       "floorId": "two-rooms-corridor.floor0",
       "startVertexId": "two-rooms-corridor.s0.1",
-      "endVertexId": "two-rooms-corridor.s0.2",
+      "endVertexId": "two-rooms-corridor.s0.3",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
     },
     {
       "kind": "wall",
-      "id": "two-rooms-corridor.s0.9",
+      "id": "two-rooms-corridor.s0.6",
       "floorId": "two-rooms-corridor.floor0",
-      "startVertexId": "two-rooms-corridor.s0.2",
-      "endVertexId": "two-rooms-corridor.s0.3",
+      "startVertexId": "two-rooms-corridor.s0.3",
+      "endVertexId": "two-rooms-corridor.s0.5",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "two-rooms-corridor.s0.8",
+      "floorId": "two-rooms-corridor.floor0",
+      "startVertexId": "two-rooms-corridor.s0.5",
+      "endVertexId": "two-rooms-corridor.s0.7",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
@@ -161,7 +161,7 @@
       "kind": "wall",
       "id": "two-rooms-corridor.s1.1",
       "floorId": "two-rooms-corridor.floor0",
-      "startVertexId": "two-rooms-corridor.s0.6",
+      "startVertexId": "two-rooms-corridor.s0.11",
       "endVertexId": "two-rooms-corridor.s1.0",
       "thicknessM": 0.2,
       "heightM": 2.8,
@@ -172,7 +172,7 @@
       "id": "two-rooms-corridor.s1.2",
       "floorId": "two-rooms-corridor.floor0",
       "startVertexId": "two-rooms-corridor.s1.0",
-      "endVertexId": "two-rooms-corridor.s0.2",
+      "endVertexId": "two-rooms-corridor.s0.3",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
@@ -182,7 +182,7 @@
       "id": "two-rooms-corridor.s1.3",
       "floorId": "two-rooms-corridor.floor0",
       "startVertexId": "two-rooms-corridor.s1.0",
-      "endVertexId": "two-rooms-corridor.s0.4",
+      "endVertexId": "two-rooms-corridor.s0.7",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"

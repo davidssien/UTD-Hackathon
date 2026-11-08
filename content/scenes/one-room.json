@@ -33,7 +33,7 @@
     },
     {
       "kind": "vertex",
-      "id": "one-room.s0.2",
+      "id": "one-room.s0.3",
       "floorId": "one-room.floor0",
       "position": {
         "x": 10,
@@ -42,7 +42,7 @@
     },
     {
       "kind": "vertex",
-      "id": "one-room.s0.3",
+      "id": "one-room.s0.5",
       "floorId": "one-room.floor0",
       "position": {
         "x": 0,
@@ -53,7 +53,7 @@
   "walls": [
     {
       "kind": "wall",
-      "id": "one-room.s0.4",
+      "id": "one-room.s0.2",
       "floorId": "one-room.floor0",
       "startVertexId": "one-room.s0.0",
       "endVertexId": "one-room.s0.1",
@@ -63,10 +63,10 @@
     },
     {
       "kind": "wall",
-      "id": "one-room.s0.5",
+      "id": "one-room.s0.4",
       "floorId": "one-room.floor0",
       "startVertexId": "one-room.s0.1",
-      "endVertexId": "one-room.s0.2",
+      "endVertexId": "one-room.s0.3",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
@@ -75,8 +75,8 @@
       "kind": "wall",
       "id": "one-room.s0.6",
       "floorId": "one-room.floor0",
-      "startVertexId": "one-room.s0.2",
-      "endVertexId": "one-room.s0.3",
+      "startVertexId": "one-room.s0.3",
+      "endVertexId": "one-room.s0.5",
       "thicknessM": 0.2,
       "heightM": 2.8,
       "material": "normal"
@@ -85,7 +85,7 @@
       "kind": "wall",
       "id": "one-room.s0.7",
       "floorId": "one-room.floor0",
-      "startVertexId": "one-room.s0.3",
+      "startVertexId": "one-room.s0.5",
       "endVertexId": "one-room.s0.0",
       "thicknessM": 0.2,
       "heightM": 2.8,
@@ -97,7 +97,7 @@
       "kind": "opening",
       "id": "one-room.s1.0",
       "floorId": "one-room.floor0",
-      "wallId": "one-room.s0.4",
+      "wallId": "one-room.s0.2",
       "openingKind": "exit",
       "offsetM": 5,
       "widthM": 0.9,

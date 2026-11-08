@@ -63,7 +63,24 @@ const twoRooms = build('two-rooms-corridor', [
   },
 ]);
 
-for (const [file, doc] of [['one-room.json', oneRoom], ['two-rooms-corridor.json', twoRooms]] as const) {
+// 30 × 20 m hall split by a partition at x = 20 with one 1.6 m doorway. Main exit
+// (2 m) on the west wall, a narrow 0.9 m exit on the east annex. Sized for 300–500 people.
+const hall = build('hall', [
+  doc => [{ kind: 'createBox', floorId: doc.floors[0].id, min: p(0, 0), max: p(30, 20), ...style }],
+  doc => [{ kind: 'createWallChain', floorId: doc.floors[0].id, points: [p(20, 0), p(20, 20)], ...style }],
+  doc => {
+    const west = wallBetween(doc, p(0, 20), p(0, 0));
+    const partitionLow = wallBetween(doc, p(20, 0), p(20, 20));
+    const eastLow = wallBetween(doc, p(30, 0), p(30, 20));
+    return [
+      { kind: 'createOpening', wallId: west.wall.id, openingKind: 'exit', offsetM: west.fromStart(p(0, 10)), widthM: 2 },
+      { kind: 'createOpening', wallId: partitionLow.wall.id, openingKind: 'door', offsetM: partitionLow.fromStart(p(20, 10)), widthM: 1.6 },
+      { kind: 'createOpening', wallId: eastLow.wall.id, openingKind: 'exit', offsetM: eastLow.fromStart(p(30, 4)), widthM: 0.9 },
+    ];
+  },
+]);
+
+for (const [file, doc] of [['one-room.json', oneRoom], ['two-rooms-corridor.json', twoRooms], ['hall.json', hall]] as const) {
   writeFileSync(join(here, file), JSON.stringify(doc, null, 2) + '\n');
   console.log(`wrote ${file}: ${doc.walls.length} walls, ${doc.openings.length} openings`);
 }
