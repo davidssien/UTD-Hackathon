@@ -29,6 +29,8 @@ export class ViewCube {
   private readonly hover: THREE.Mesh;
   private readonly ray = new THREE.Raycaster();
   private locked = false;
+  private dirty = true;
+  private readonly direction = new THREE.Vector3();
   private drag: { x: number; y: number; moved: boolean } | null = null;
 
   constructor(
@@ -61,8 +63,10 @@ export class ViewCube {
 
   /** Mirror the main camera: same direction from the target, same up vector. */
   sync(camera: THREE.Camera, target: THREE.Vector3): void {
-    const dir = camera.position.clone().sub(target).normalize();
-    this.camera.position.copy(dir.multiplyScalar(4));
+    const position = this.direction.copy(camera.position).sub(target).normalize().multiplyScalar(4);
+    if (!this.dirty && this.camera.position.distanceToSquared(position) < 1e-12 && this.camera.up.equals(camera.up)) return;
+    this.dirty = false;
+    this.camera.position.copy(position);
     this.camera.up.copy(camera.up);
     this.camera.lookAt(0, 0, 0);
     this.camera.zoom = 1.15;
@@ -103,6 +107,7 @@ export class ViewCube {
   };
 
   private readonly move = (e: PointerEvent) => {
+    this.dirty = true;
     if (this.drag) {
       const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
       if (!this.drag.moved && Math.hypot(dx, dy) < 3) return;
@@ -131,5 +136,5 @@ export class ViewCube {
     if (r && r.lengthSq() > 0) this.onView(r);
   };
 
-  private readonly leave = () => { if (!this.drag) this.hover.visible = false; };
+  private readonly leave = () => { if (!this.drag) { this.hover.visible = false; this.dirty = true; } };
 }

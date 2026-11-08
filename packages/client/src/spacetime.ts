@@ -74,6 +74,9 @@ class SpacetimeEgressClient implements EgressClient {
   private readonly loaded = new Map<ID, Set<number>>();
   private readonly parsedEntities = new Map<string, Entity>();
   private refreshQueued = false;
+  private layoutRowsChanged = true;
+  private serverProject: ID | null = null;
+  private serverRevision = -1;
   private activeProjectId: ID | null = null;
   private activeRunId: ID | null = null;
 
@@ -138,11 +141,18 @@ class SpacetimeEgressClient implements EgressClient {
   private listen(conn: DbConnection) {
     const schedule = () => this.scheduleRefresh();
     const handles = [
-      conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
+      conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
       conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities, conn.db.activeShareLink, conn.db.activePresence, conn.db.activeRoomLabels,
       conn.db.activePresenceModes,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
+    // Replay chunks and presence changes must preserve the document object used by the renderer.
+    const layoutChanged = () => { this.layoutRowsChanged = true; schedule(); };
+    for (const table of [conn.db.activeEntities, conn.db.activeEditLog]) {
+      table.onInsert(layoutChanged);
+      table.onDelete(layoutChanged);
+      if ('onUpdate' in table && typeof table.onUpdate === 'function') table.onUpdate(layoutChanged);
+    }
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
   }
@@ -188,20 +198,24 @@ class SpacetimeEgressClient implements EgressClient {
 
     // Document: entity rows of the active project, with optimistic edits rebased on top.
     const project = projectRows.find(p => p.id === this.activeProjectId);
-    if (project) {
+    if (project && (this.layoutRowsChanged || this.serverProject !== project.id || this.serverRevision !== Number(project.revision))) {
       const rows = [...conn.db.activeEntities.iter()].filter(r => r.projectId === project.id);
       const entities = rows.map(r => {
-        const key = `${r.id}@${r.rev}:${r.payload.length}`;
+        const key = `${project.id}/${r.id}@${r.rev}:${r.payload.length}`;
         let e = this.parsedEntities.get(key);
         if (!e) { e = JSON.parse(r.payload) as Entity; this.parsedEntities.set(key, e); }
         return e;
       });
       const doc = entitiesToDocument(project.id, Number(project.revision), entities);
       this.od.setServer(doc, [...conn.db.activeEditLog.iter()].map(l => l.requestId));
-    } else {
+      this.publishDocument();
+    } else if (!project && (this.document.get().projectId !== this.activeProjectId || this.od.view)) {
       this.od.setServer(null);
+      this.publishDocument();
     }
-    this.publishDocument();
+    this.layoutRowsChanged = false;
+    this.serverProject = project?.id ?? null;
+    this.serverRevision = project ? Number(project.revision) : -1;
 
     this.runs.set([...conn.db.activeRuns.iter()].map(r => {
       const scenario = parse<Partial<SimulationScenario>>(r.scenario, {});

@@ -203,6 +203,8 @@ interface Runtime {
   library: WallLibrary;
   cube: ViewCube;
   anchors: Map<string, THREE.Vector3>;
+  dirty: boolean;
+  geometryChanged: boolean;
   bounds: { center: THREE.Vector3; extent: number };
   frame(view: 'top' | 'iso' | 'fit', animate?: boolean): void;
   cancel(): void;
@@ -219,7 +221,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
   const framedProject = useRef<string | null>(null);
   const [error, setError] = useState('');
   const [library, setLibrary] = useState<WallLibrary | null>(null);
-  useEffect(() => { latest.current = props; });
+  useEffect(() => { latest.current = props; if (runtime.current) runtime.current.dirty = true; });
   useEffect(() => { let live = true; void WallLibrary.load().then(l => { if (live) setLibrary(l); }); return () => { live = false; }; }, []);
 
   useImperativeHandle(ref, () => ({
@@ -239,7 +241,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     try { renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); }
     catch { queueMicrotask(() => setError('3D rendering is unavailable in this browser.')); return; }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.enabled = true; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.type = THREE.PCFShadowMap;
     const theme = latest.current.theme ?? 'blueprint';
     renderer.setClearColor(THEMES[theme].ground);
     node.prepend(renderer.domElement);
@@ -331,8 +333,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     const r: Runtime = {
-      camera, controls, renderer, scene, walls, floors, grid, ground, library, cube, anchors: new Map(), bounds,
-      cancel() { anchor = null; chainStart = null; stroke = null; disposeChildren(preview); if (dim.current) dim.current.hidden = true; },
+      camera, controls, renderer, scene, walls, floors, grid, ground, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true,
+      cancel() { r.dirty = true; anchor = null; chainStart = null; stroke = null; disposeChildren(preview); if (dim.current) dim.current.hidden = true; },
       frame(view, animate = true) {
         r.cancel();
         const vs = latest.current.doc?.vertices ?? [];
@@ -347,6 +349,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         aim(view === 'fit' && !latest.current.editing ? camera.position.clone().sub(controls.target) : dir, { animate, target: bounds.center.clone(), zoom: 1 });
       },
     };
+    const invalidate = () => { r.dirty = true; };
+    controls.addEventListener('change', invalidate);
     runtime.current = r;
     r.frame('top', false);
 
@@ -421,6 +425,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
 
     const painting = () => !latest.current.editing && !!latest.current.paint;
     const onDown = (e: PointerEvent) => {
+      r.dirty = true;
       if (painting() && e.button === 0 && !transition) {
         const at = groundAt(e); if (!at) return;
         stroke = [at]; renderer.domElement.setPointerCapture(e.pointerId); return;
@@ -431,6 +436,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       renderer.domElement.setPointerCapture(e.pointerId);
     };
     const onMove = (e: PointerEvent) => {
+      r.dirty = true;
       const state = latest.current;
       if (painting()) {
         ring.visible = false;
@@ -487,6 +493,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       }
     };
     const onUp = (e: PointerEvent) => {
+      r.dirty = true;
       const state = latest.current, start = down;
       down = null;
       if (stroke) {
@@ -552,7 +559,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       disposeChildren(preview);
       if (dim.current && state.tool !== 'wall') dim.current.hidden = true;
     };
-    const onLeave = () => { ring.visible = false; brush.visible = false; };
+    const onLeave = () => { r.dirty = true; ring.visible = false; brush.visible = false; };
     const keydown = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
       if (e.key === 'Escape') r.cancel();
@@ -568,6 +575,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
 
     const resize = new ResizeObserver(() => {
+      r.dirty = true;
       renderer.setSize(node.clientWidth, node.clientHeight);
       const half = camera.top, aspect = node.clientWidth / Math.max(1, node.clientHeight);
       camera.left = -half * aspect; camera.right = half * aspect; camera.updateProjectionMatrix();
@@ -577,6 +585,10 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const matrix = new THREE.Matrix4(), color = new THREE.Color(), screen = new THREE.Vector3();
     const amber = new THREE.Color('#ffc65c'), queued = new THREE.Color('#ff6a3d');
     let raf = 0, lastHatch = 0;
+    const hatchOrientation = new THREE.Quaternion();
+    let lastEditing: boolean | null = null;
+    let lastPlayback: PlaybackController | null = null;
+    let lastActorState: ReturnType<PlaybackController['state']['get']> | undefined;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       const state = latest.current;
@@ -590,11 +602,17 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         camera.zoom = THREE.MathUtils.lerp(transition.zoomFrom, transition.zoomTo, k); camera.updateProjectionMatrix();
         if (t === 1) transition = null;
       }
-      controls.update();
+      const cameraChanged = controls.update();
       cube.sync(camera, controls.target);
 
       // Cross-hatch walls that hide the floor; never in top-down views (D57).
-      if (now - lastHatch > 150) {
+      if (r.geometryChanged || lastEditing !== state.editing || (now - lastHatch > 150 && !hatchOrientation.equals(camera.quaternion))) {
+        r.geometryChanged = false;
+        lastEditing = state.editing;
+        hatchOrientation.copy(camera.quaternion);
+        walls.updateWorldMatrix(true, true);
+        renderer.shadowMap.needsUpdate = true;
+        r.dirty = true;
         lastHatch = now;
         const offset = camera.position.clone().sub(controls.target).normalize();
         const topDown = offset.y > Math.cos(THREE.MathUtils.degToRad(14));
@@ -626,19 +644,26 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
 
       // People layer.
       const playback = state.playback;
-      const actors = playback && state.layer.people === 'discrete' ? playback.actorsNow() : null;
-      people.count = actors ? Math.min(actors.actorFlags.length, 4000) : 0;
-      if (actors) {
-        for (let i = 0; i < people.count; i++) {
-          const gone = actors.actorFlags[i] === 3;
-          matrix.makeScale(gone ? 0 : 1, gone ? 0 : 1, gone ? 0 : 1);
-          matrix.setPosition(actors.actorXY[i * 2], 0.2, -actors.actorXY[i * 2 + 1]);
-          people.setMatrixAt(i, matrix);
-          people.setColorAt(i, color.copy(actors.actorFlags[i] === 1 ? queued : amber));
+      const discrete = state.layer.people === 'discrete' ? playback ?? null : null;
+      const actorState = discrete?.state.get();
+      if (discrete !== lastPlayback || actorState !== lastActorState) {
+        lastPlayback = discrete;
+        lastActorState = actorState;
+        r.dirty = true;
+        const actors = discrete?.actorsNow();
+        people.count = actors ? Math.min(actors.actorFlags.length, 4000) : 0;
+        if (actors) {
+          for (let i = 0; i < people.count; i++) {
+            const gone = actors.actorFlags[i] === 3;
+            matrix.makeScale(gone ? 0 : 1, gone ? 0 : 1, gone ? 0 : 1);
+            matrix.setPosition(actors.actorXY[i * 2], 0.2, -actors.actorXY[i * 2 + 1]);
+            people.setMatrixAt(i, matrix);
+            people.setColorAt(i, color.copy(actors.actorFlags[i] === 1 ? queued : amber));
+          }
+          people.instanceMatrix.needsUpdate = true;
+          if (people.instanceColor) people.instanceColor.needsUpdate = true;
         }
-        people.instanceMatrix.needsUpdate = true;
-        if (people.instanceColor) people.instanceColor.needsUpdate = true;
-      } else if (playback && state.layer.people === 'heatmap') playback.actorsNow(); // keeps the playhead moving
+      }
 
       // Heatmap layer (or an explicit overlay such as a difference map): a new sample every
       // 250 ms, blended in from the previous one over the same 250 ms (D71).
@@ -648,6 +673,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         lastHeat = now;
         const overlay = state.overlay;
         const field = overlay?.field ?? (playback && state.layer.people === 'heatmap' ? playback.field(state.layer.field, state.layer.stat) : null);
+        if (heat.visible !== !!field) r.dirty = true;
         heat.visible = !!field;
         if (field) {
           const g = field.grid, key = `${g.origin.x},${g.origin.y},${g.width},${g.height},${g.cellSizeM}`;
@@ -671,6 +697,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         } else heatKey = '';
       }
 
+      if (!r.dirty && !cameraChanged && !transition && !heat.visible) return;
+      r.dirty = false;
       renderer.render(scene, camera);
 
       // Reason bubbles follow their entities.
@@ -693,6 +721,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     raf = requestAnimationFrame(loop);
 
     return () => {
+      controls.removeEventListener('change', invalidate);
       cancelAnimationFrame(raf); resize.disconnect(); controls.dispose(); cube.dispose();
       el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointerleave', onLeave); el.removeEventListener('contextmenu', noMenu);
@@ -730,6 +759,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
   // ── Geometry ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const r = runtime.current; if (!r) return;
+    r.geometryChanged = true;
     disposeChildren(r.walls); disposeChildren(r.floors);
     const doc = props.doc; if (!doc) return;
     const derived = deriveLayout(doc), highlight = props.highlight ?? new Set<string>();

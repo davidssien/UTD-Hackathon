@@ -80,20 +80,26 @@ export async function processRun(
     if (options.claim !== false) await backend.claimRun(run.runId);
     const document = options.document ?? (await backend.loadSnapshot(run.layoutHash));
     const scenario = parseScenarioJson(run.scenarioJson);
+    const initStart = clock.now();
     const state = initialize({ runId: run.runId, document, scenario, initialActors: options.initialActors });
+    outcome.computeMs = clock.now() - initStart;
     outcome.state = state;
     const origin = state.compiled.grid.origin;
     const factor = PACE_FACTOR[run.pace];
     const started = clock.now();
-    for (const chunk of simulateChunks(state)) {
+    const chunks = simulateChunks(state);
+    for (;;) {
       const t0 = clock.now();
+      const next = chunks.next();
+      outcome.computeMs += clock.now() - t0;
+      if (next.done) break;
+      const chunk = next.value;
       if (options.streamChunks !== false) {
         const bytes = encodeChunk(chunk, origin);
         await backend.appendChunk(run.runId, outcome.chunks, chunk.firstTick, chunk.frames[chunk.frames.length - 1].tick, FRAME_ENCODING, bytes);
         outcome.bytes += bytes.length;
       }
       outcome.chunks++;
-      outcome.computeMs += clock.now() - t0;
       outcome.metrics = chunk.metrics;
       if (backend.isCancelled(run.runId)) {
         log(`[run ${run.runId}] cancelled at tick ${state.tick}`);
