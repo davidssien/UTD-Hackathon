@@ -62,6 +62,24 @@ await client.edit([{ kind: 'deleteEntities', ids: [upper.id] }]);
 await client.edit([{ kind: 'deleteEntities', ids: [fresh.stairs[0].id] }]).catch(() => {});
 await until(() => client.document.get().pending === 0 && client.document.get().doc!.floors.length === 1 && client.document.get().doc!.stairs.length === 0, 10_000, 'floor removed');
 
+// Placeables persist and rotate on the server: a table people walk around, and a ceiling vent.
+const placed = await client.edit([
+  { kind: 'createPlaceable', floorId, item: 'table', position: { x: 7, y: 6 } },
+  { kind: 'createPlaceable', floorId, item: 'vent', position: { x: 5, y: 7 } },
+]);
+if (!placed.ok) throw new Error(placed.error.message);
+await until(() => client.document.get().pending === 0, 10_000, 'placeables confirmed');
+const table = client.document.get().doc!.placeables.find(p => p.item === 'table')!;
+const turned = await client.edit([{ kind: 'updatePlaceable', placeableId: table.id, patch: { rotationDeg: 90 } }]);
+if (!turned.ok) throw new Error(turned.error.message);
+await until(() => client.document.get().pending === 0, 10_000, 'rotation confirmed');
+const withFurniture = await client.previewProject(projectId);
+const rows = withFurniture.placeables.map(p => `${p.item}@${p.rotationDeg}`).sort().join(', ');
+if (rows !== 'table@90, vent@0') throw new Error(`server placeables: ${rows}`);
+ok(`placeables persist on the server: ${rows}`);
+await client.edit([{ kind: 'deleteEntities', ids: withFurniture.placeables.map(p => p.id) }]);
+await until(() => client.document.get().pending === 0 && client.document.get().doc!.placeables.length === 0, 10_000, 'placeables removed');
+
 const runId = await client.startRun({
   scenarioVersion: 1, id: 's-client', projectId, name: 'Evacuate', durationSeconds: 300,
   population: { count: 50, distribution: 'uniform', strokes: [], seed: 2 }, goal: { kind: 'evacuate', blockedExitIds: [] },
