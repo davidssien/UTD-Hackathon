@@ -10,3 +10,4 @@ export { createMockClient, type MockClientOptions } from './mock.ts';
 export { Playback, type PlaybackClock } from './playback.ts';
 export { ghostFor } from './ghost.ts';
 export { writable, WritableStore } from './store.ts';
+export { OptimisticDocument } from './optimistic.ts';
