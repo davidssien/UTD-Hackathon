@@ -1,856 +1,347 @@
-# Egress — Build Plan
+# Egress — Master Plan
 
-> The plan for the 24-hour build, kept up to date as decisions change. It's maintained by the backend lane (Cody + Claude). Whenever a decision changes, update the **Decision log** (§14).
->
-> Source material:
-> - [docs/reference/CONTRA_FINAL_SPEC.md](docs/reference/CONTRA_FINAL_SPEC.md): the original spec. The product has since been renamed Contra → Egress.
-> - [docs/reference/CONTRA_CONTRACTS.ts](docs/reference/CONTRA_CONTRACTS.ts): reference only. Where they differ, this plan wins.
->
-> Partner discussion items are in [docs/PARTNER_SYNC.md](docs/PARTNER_SYNC.md).
-> Current frontend references and camera decisions are in [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md); the Blender workflow is in [docs/3D_ASSET_PLAN.md](docs/3D_ASSET_PLAN.md). Backend verification and deployment evidence are in [docs/BACKEND_HANDOFF.md](docs/BACKEND_HANDOFF.md).
+**Owner:** Cody (backend + integration) with Claude · **Frontend:** davidssien · **Rebuilt:** Sun 2026-11-08, after `STABLE-V1`
 
-**Deadline:** Sun 2026-11-08 12:00 CST · **Written:** Sat 2026-11-07 17:10 CST · **Branch:** `implement-backend`
+This file holds **priorities, the work ahead and decisions**. Reference material lives elsewhere:
 
-## Status — Sat 2026-11-07, backend handoff verified
+| What | Where |
+|---|---|
+| Contracts: architecture, domain model, persistence, simulation, runner/agent, UI contract and `@egress/client` API. Sections keep their old numbers (§3–§8). | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| People-flow math (update in the same commit as any `PARAMS` change) | [docs/PEOPLE_FLOW_MODEL.md](docs/PEOPLE_FLOW_MODEL.md) |
+| Studio controls and URLs as built | [docs/DEMO_UI.md](docs/DEMO_UI.md) |
+| Hosting on the home desktop at `dontrepeatyourself.dev` | [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) |
+| The STABLE-V1 plan, unchanged (timeline, passes 0–5, history) | [docs/history/PLAN-STABLE-V1.md](docs/history/PLAN-STABLE-V1.md) |
 
-**Current focus (Sun 2026-11-08, branch `backend-passes`):** build the goal UI from §8 "UI direction v2" on top of the merged demo, enough to demo every major backend feature that exists today. Backend follow-ups (share links, presence, compliance, multi-edit) come after. `implement-backend` is merged in and will be deleted; `backend-passes` merges into `main` when the project is done.
+---
 
-**Previous branch demo (superseded by UI v2):** current `main` was merged into `implement-backend` (`1c1cd88`), including the move into `frontend/` and sketch/QR import modules. The root page now uses one 3D scene with locked top-down Design, isometric/freecam in other modes, a viewcube, wall-only dithering, a switching bottom taskbar and a collapsible left menu. Save slots and **+ Create new** work without modal popups. `/` persists layout slots locally; `/?backend=maincloud` connects the same interface to the real backend. A real browser edit/undo and 50-person run were verified through that connection. See [docs/DEMO_UI.md](docs/DEMO_UI.md). These demo changes stay on our branch and are not pushed or published.
+## Status — `STABLE-V1` (`main` @ `60868ea`, tagged)
 
-**Working now, on `main`:** open `/dev` (`npm run dev`, then http://localhost:3000/dev). Everything below runs in the browser through the mock client.
-- **Edit:** pen, box, erase and door/exit/window tools on a planar wall graph, with T-junction splitting and boxes that share sides.
-  - Walls draw as polygons with computed corners.
-  - Rooms, diagnostics and the route-demand "potential bottleneck" estimate update as you edit.
-- **Live:** the real pedestrian model, egress-pedestrian v0.1, at 10 Hz.
-  - Paced runs with `« 10` / `⏯` / `» 10` controls and a scrubber up to the LIVE edge (END once the run finishes).
-  - Current, Average and Peak heatmaps; the Average heatmap persists after everyone has left.
-  - Population painting.
-  - Benchmark: 500 people clear the hall in about 142 s simulated, at about 1.5 ms per tick.
-- **Analysis:** the real agent tools run real simulations on the same people.
-  - Example: on the two-rooms fixture it measured "widen the exit to 1.8 m: −40 s (−35%)" and proposed it.
-  - Proposals show as a ghost with a "why" bubble; Accept applies exactly the ghosted edit.
-- **Agent CLI:** `npm run agent:local -w @egress/runner -- hall.json 300` runs the agent from the command line. It uses Nemotron when `NVIDIA_API_KEY` is set, otherwise the measured heuristic planner.
+**Works today**
+- **Edit:** top-down CAD editing on a planar wall graph (walls, rooms, doors, windows, exits, erase, undo/redo, snapping, dimensions, inspector, wall types).
+- **Simulate:** the egress-pedestrian v0.1 model on the server. The run streams with a LIVE edge and plays back at 1×/2×/4×. It ends when everyone reachable is out, the flow stabilizes, or a safety cap is hit.
+- **Analysis:** the agent measures a baseline, tests candidate edits on the same crowd, and re-tests the winner on three crowds. Suggestions glow blue on the model with reason bubbles. Accept applies them.
+- **Layers:** people as dots, or as a heatmap of density or congestion.
+- **Projects:** live on SpacetimeDB (Maincloud `egress-dev`); the browser keeps only its token. A runner with Nemotron (Lightning) serves Maincloud.
+- **Hackathon:** submission uses `STABLE-V1` unless `STABLE-V2` passes its gate first.
 
-**SpacetimeDB, verified locally (Sat 19:00):**
-- **Install:** CLI 2.14.1 is installed at `%LOCALAPPDATA%\SpacetimeDB`.
-- **Module:** published to a local server, with bindings generated into `packages/client/src/bindings` using `.ts` imports.
-- **Runner:** `services/runner/src/main.ts` connects, registers with the shared secret, and claims runs and agent jobs.
-- **End-to-end check:** `npm run e2e:local -w @egress/runner` passed every step:
-  - project creation
-  - session-scoped views re-evaluating on project switch
-  - `apply_edit`
-  - a runner-claimed simulation with gzip chunks arriving as `Uint8Array`, plus field results
-  - agent job → measured proposal → `accept_proposal`
-- **Local server workflow:**
-  1. `spacetimedb-cli start --listen-addr 127.0.0.1:3010`
-  2. `npm run publish:local -w @egress/spacetimedb`
-  3. `npm run generate -w @egress/spacetimedb`
-
-**Real backend in the browser (Sat 20:00):**
-- `createSpacetimeClient({ uri, db })` implements `EgressClient` over the bindings. The client end-to-end check passes: `npm run e2e:local -w @egress/client`.
-- Running against the real local stack:
-  1. `spacetimedb-cli start --listen-addr 127.0.0.1:3010`
-  2. `npm run login:local -w @egress/spacetimedb && npm run publish:local -w @egress/spacetimedb`
-  3. `$env:SPACETIME_URI='ws://127.0.0.1:3010'; $env:SPACETIME_DB='egress-local'; npm start -w @egress/runner`
-  4. Open `http://localhost:3000/dev?backend=local`. Without `?backend=local`, `/dev` uses the in-browser mock.
-
-**NVIDIA hosted agent, verified in `/dev?backend=local`:**
-- `NVIDIA_API_KEY` is accessible to the runner through its environment. Keep it server-side; never put it in browser configuration or committed files.
-- The configured primary is `nvidia/nemotron-3-super-120b-a12b`; it was unavailable during the first live job. The model fallback, `nvidia/nemotron-3.5-lightning-30b-a3b`, returned real tool calls from `https://integrate.api.nvidia.com/v1/chat/completions`. Subsequent verification pinned Lightning with `NEMOTRON_MODEL` in the runner process environment.
-- Final local verification: **LLM mode, 9 tool calls, 1 proposal, no fixed-step fallback**. On the two-rooms fixture with the same 150 people and seed 1, widening the exit from 1.2 m to 1.8 m changed evacuation time **113.8 → 73.7 s (−40.1 s, −35.24%)**, max queue **17 → 6**. The client received the measured proposal and Accept/Reject controls; it remains awaiting review.
-- Verification exposed a missing enforcement check: `submit_proposal` now rejects candidates below the existing improvement threshold and evidence from a different baseline. The model prompt explicitly requires saving an improving proposal. No shared contract changed.
-
-**Maincloud `egress-dev`, deployed and verified:**
-- Login is complete. Published the existing module with `--delete-data=never`; no reset or breaking migration was requested.
-- Dashboard: https://spacetimedb.com/egress-dev. The client E2E passed against `wss://maincloud.spacetimedb.com` / `egress-dev`: edit, undo, 50/50 evacuated, replay and heatmap, an agent proposal ghost, then acceptance.
-- The verification runner stopped after the check. The user then approved ongoing operation, and a background Maincloud runner is now connected, registered and ready with Lightning. Saved-token reconnection retained its identity. The local runner remains active separately.
-
-**Backend passes on `backend-passes` (Claude, worktree; not yet merged or deployed):**
-- **Runner status:** `EgressClient.runner` (online, model, busy counts) comes from runner heartbeats (D47).
-- **Frozen-layout replay:** replays and heatmaps use the layout the run actually saw (D48).
-- **Before/after comparison:** `EgressClient.compareRuns(baseline, candidate)` returns metrics, deltas and a congestion difference map (D49). Measured on the real local DB: −23.7 s and −20 max queue, with the most-relieved cell −1.65.
-- **Three-seed robustness:** the agent confirms the winner on three crowds before proposing (D50). Hall, 300 people: second exit −20 / −17.6 / −18.6 s.
-- **Multi-user checks:** `npm run e2e:multiuser -w @egress/client` passes:
-  - private project isolation
-  - a viewer refused, with the optimistic edit rolled back
-  - an editor upgrade, with 30 ms cross-client sync
-  - service-only reducers and a wrong secret rejected
-  - replay surviving a reconnect
-- **Module:** all changes are additive (new tables and views only).
-- **To deploy after merge:** `spacetime publish egress-dev --server maincloud --module-path spacetimedb --delete-data=never`, then restart the Maincloud runner so it sends heartbeats.
-
-**Still open:**
-1. **Runner operation:** Maincloud and local workers are active. They are background processes on this machine, not auto-start services; restart after reboot or process exit. Maincloud credentials are saved separately by database target (D45).
-2. **Frontend lane:** wire ExitCraft to `createSpacetimeClient`, following §8 and the preserved GUI references. The current `/dev` route selects local or mock only; the Maincloud check used the real client from Node.
-3. **Frontend/assets later:** one 3D scene, top-down editing, isometric/freecam transition, viewcube, wall-only dithering and Blender assets. Furniture placement is planned; its backend model remains deferred.
-4. **Integration/demo:** multi-browser acceptance checks, venue scene, web host, error polish and submission work. This pass deploys `egress-dev`, not production `egress` or the website.
-
-**Pitch:** Egress is a collaborative building editor. You draw a floor plan, drop in a crowd, run a pedestrian-flow evacuation, watch congestion build up, and scrub the replay. A Nemotron agent then tests design changes against measured results.
+**What the feedback on STABLE-V1 changed** (Cody, 2026-11-08):
+- The agent ignores what was asked and always chases the worst bottleneck.
+- Rooms need recognizing, with an escape plan per real room.
+- The project must be public at `dontrepeatyourself.dev`, served from the home desktop. Secrets move to `.env` files.
+- A full-page saves screen becomes the landing page.
+- Display: a black background trial; right panes collapse like the left rail; Layers must not collide with the pane; the heatmap must be smooth in time and space; no sparkle icon.
+- Floor surfaces return, with wood / basic / tile materials.
+- Multiple floors with stairs.
+- Fire, after an airflow layer and smoke.
 
 ---
 
 ## 1. Ground rules
 
-- **Every pass ends in a working build.** If time runs out mid-pass, ship the previous pass plus whatever of the current one is green.
-- **Two lanes:**
-  - Backend: Cody + Claude, on `implement-backend`.
-  - Frontend: davidssien, building the ExitCraft UI on `main`.
-- **One boundary:** the frontend talks to the backend only through `@egress/client`. No UI component imports SpacetimeDB bindings directly.
-- **One data model:** `@egress/core` defines it. No second copy of domain types anywhere.
-- **Numbers come from the simulation only.** Every metric comes from `@egress/sim`, and the agent never invents numbers.
-- **Honest claims:** this is an exploratory flow model, not fire-code certification. Say "modeled change", never "safer building".
-- **Next.js 16 differs from training data.** Before writing Next code, read the relevant guide in `node_modules/next/dist/docs/` (see AGENTS.md).
-- **Prefer complete vertical slices** over speculative generality. If a detail is missing, pick the simplest option consistent with this plan and log it in §14.
+- **`main` is the trunk and only moves at green points.** Development happens on `backend-passes` (the dev branch). When a pass is green, fast-forward `main`. Each major milestone gets a `STABLE-Vn` tag. Never force-push. `implement-backend` is merged and retired.
+- **One boundary:** the UI talks to the backend only through `@egress/client`. **One data model:** `@egress/core` (Zod schemas are the source of truth).
+- **Numbers come from the simulation.** The agent never invents a metric. Copy says "modeled", never "safe" or "compliant"; compliance checks are labelled as modeled checks.
+- **Server-only project storage** (D58). The browser stores only the SpacetimeDB token.
+- **Secrets only in gitignored `.env` files**, each with a committed `.env.example` that has the keys and no values.
+- **Additive schema changes only.** Add new tables and views; never change existing table columns. New entity kinds ride in the existing JSON `entities.payload` rows.
+- **Next.js 16 differs from training data.** Read `node_modules/next/dist/docs/` before writing Next code.
+- **Every pass ends green:** tests, typecheck, a browser check of the changed UI, and the docs above updated.
 
-## 2. Timeline
+---
 
-| Pass | Window (CST) | Ends with |
+## 2. Priorities
+
+**`STABLE-V2` gate.**
+- https://dontrepeatyourself.dev serves Egress from the home desktop: web, SpacetimeDB and the runner.
+- The saves page is the landing page.
+- The display fixes are in.
+- The agent answers the question that was asked.
+- Real rooms get escape plans.
+- Floor surfaces have materials.
+- Multiple floors with stairs work: people walk down stairs and out.
+
+**`STABLE-V3`:** airflow particles, then smoke, then fire, combined into hazard evacuations.
+
+| # | Workstream | Target | Why now |
+|---|---|---|---|
+| A | Display fixes | V2 | Small, visible, and unblocks every review. |
+| B | Saves landing page | V2 | It's the front door of the public site, and its JSON export/import is how projects move off Maincloud. |
+| C | Hosting, secrets, sharing | V2 (**required**) | A public domain is mandatory for V2; other people need to see projects. |
+| D | Agent that answers the question | V2 | It's a correctness bug in the headline feature. |
+| E | Rooms and escape plans | V2 | New capability that builds on D's layout grounding. |
+| F | Floor surfaces, multiple floors, stairs | V2 | Cody asked for floors in the next major pass. Floor surfaces come first. |
+| G | Airflow → smoke → fire | V3 | Airflow must exist before smoke, and fire needs both. |
+
+---
+
+## 3. Workstreams
+
+### A. Display fixes
+
+1. **Black background trial.** Try black as the primary scene colour: ground `#0b0c0e`, white dots at lower alpha, room tint 5% white, walls stay light, heatmap and suggestion-blue unchanged. Keep the blueprint blue as a theme token (`?theme=blueprint`) until Cody picks one.
+2. **Collapsible right pane, mirroring the left rail.** In Simulate and Analysis (and the Edit inspector), the pane has a pull tab on the right edge. Collapse slides it out to the right and leaves the tab, just as the left rail does. The state is remembered per mode in `localStorage`; that's a viewer convenience, not project data.
+3. **Layers never collides with the pane.**
+   - The right side becomes one column. The top row holds presence and the Layers button.
+   - Opening Layers expands it as a panel at the top of that column, at the pane's width. The context pane stacks below it and shrinks to the remaining height.
+   - Nothing floats over anything. If the pane is collapsed, Layers opens alone.
+4. **Smooth heatmap, in time and space.**
+   - *Time:* fields arrive at 2 Hz. Keep the two samples around the playhead and blend them in the shader by the fractional time (lerp). The heat changes smoothly during playback and scrubbing.
+   - *Space:* upload the field as a float texture and sample it bicubically in a fragment shader, then apply the palette after interpolation. This gives smooth curves instead of 0.25 m squares.
+   - Walls stay crisp: the walkable mask is sampled separately, so heat never bleeds through a wall. Optional thin iso-contour lines at palette stops.
+5. **Chat bar:** remove the sparkle icon.
+6. **Small fixes:**
+   - Keep the drawing dimension label inside the viewport.
+   - Hide tooltips while a menu is open.
+   - Make the readout show the playhead's metrics where available, not only the live edge's.
+
+*Done when:* in a browser at 1440×900 and 1024×768, opening Layers in Simulate and Analysis never overlaps the pane; both panes collapse and restore; the heatmap plays smoothly with no visible cells; Cody has picked black or blueprint.
+
+### B. Saves landing page
+
+**UI**
+- `/` opens a full-page **saves screen**: the current Projects modal, grown to the whole page.
+- **Header:** a logo placeholder (an empty rounded box for now) and **"Egress"** in green, in the studio font (Inter / system stack, 600).
+- **Left: the project list.** Owned projects first, then "Shared with you". Columns: name, role, **size (KB)**, last edited.
+  - Each row has a **download JSON** button.
+  - Row menu: Rename, Delete (owner only).
+  - Header actions: New project, Import JSON, Import plan image.
+- **Right: the selected project's breakdown.**
+  - Top: the floor plan rendered **black on white**, as an SVG from the wall polygons, one image per floor.
+  - Details beneath: floors; walls, doors, windows and exits; size; your role; members; created and edited dates; the last run's evacuation time if any.
+  - A big blue **Open** button at the bottom right. **Double-clicking** a row also opens it.
+- **Open:** the saves screen **slides left** and reveals the editor. Each editor UI element **slides in from its nearest edge**: the mode switch and project chip from the top, the rail tab from the left, the pane and Layers from the right, the dock from the bottom. The scene itself doesn't move.
+- **Back to saves:** "Saves" (rail and project chip) slides everything back to the right.
+
+**Backend** (additive)
+- A `project_stats` table, written inside the document save path: size in bytes of the canonical JSON, counts per entity kind, floor count and revision. A `my_project_stats` view shows it for projects you're a member of.
+- A `session_preview` table and a `preview_entities` view, so the saves page can render and download any of your projects without opening it.
+- Client API: `projectStats: Store<ProjectStats[]>`, `previewProject(id): Promise<EgressDocument>`, `renameProject`, `deleteProject`, and `importProject(name, json)`, which validates with `parseDocument` and creates a project seeded with it.
+
+*Done when:* a fresh visitor lands on saves, creates a project, and sees its size, plan and counts. Download then re-import round-trips the same document; open and back slide correctly; the e2e covers preview and stats.
+
+### C. Hosting, secrets and sharing — required for `STABLE-V2`
+
+**Topology** (one Windows desktop). Step-by-step setup is in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
+
+| Component | Runs as | Listens | Public |
+|---|---|---|---|
+| SpacetimeDB standalone 2.14.1 | service | `127.0.0.1:3010` | `wss://db.dontrepeatyourself.dev`, client routes only |
+| Runner (sim + Nemotron agent) | service | outbound only | — |
+| Web (Next.js production build) | service | `127.0.0.1:3100` | `https://dontrepeatyourself.dev` |
+| Cloudflare Tunnel (`cloudflared`) | service | outbound only | Provides TLS, hides the home IP, needs no port forwarding |
+
+**Secrets and configuration**
+
+| File (gitignored) | Keys |
+|---|---|
+| `services/runner/.env` | `EGRESS_SERVICE_SECRET`, `NVIDIA_API_KEY`, `NEMOTRON_MODEL`, `SPACETIME_URI`, `SPACETIME_DB` |
+| `.env.deploy` (repo root) | `SPACETIME_SERVER_URL`, `SPACETIME_DB`, `SPACETIME_PUBLISH_TOKEN` |
+| `frontend/.env.local` | `NEXT_PUBLIC_EGRESS_SPACETIME_URI`, `NEXT_PUBLIC_EGRESS_SPACETIME_DB` |
+
+- **The runner already loads `services/runner/.env`**, so `NVIDIA_API_KEY` belongs there rather than in a shell variable.
+- **No interactive `spacetime login`.** The home server issues a *publisher identity* once (`POST /v1/identity`), and its token goes into `.env.deploy`.
+  - `npm run deploy:module` runs `spacetime login --token` and `spacetime publish` against a project-local CLI config (`--config-path`), so nobody's personal login changes.
+  - Verified 2026-11-08: a server-issued token published a throwaway database to the local server.
+  - That identity owns the database. Store the token in a password manager: without it, the module can't be updated.
+- **The studio's default backend comes from env.** No more hard-coded Maincloud. `?backend=` stays for development.
+- **Lock down the public SpacetimeDB.** A standalone server lets any identity publish new databases. Expose only the routes the browser uses:
+  - creating an identity (`POST /v1/identity`)
+  - the WebSocket subscribe route for the `egress` database
+  
+  Deny everything else at the edge, with a Cloudflare WAF rule or a small proxy allowlist. Confirm the exact routes from the browser's network panel before locking down.
+- **Moving off Maincloud.** Browser identities differ per server, so ownership doesn't carry over. Owners download JSON from the Maincloud saves page and import it on the new site. Maincloud stays up as a fallback until V2 is tagged.
+
+**Sharing** (the Plan v2 collaboration follow-ups)
+- One **permanent share link** per project (a `project_links` table) and `join_by_link`. Joining always gives **viewer** access.
+- **Owners** promote or demote anyone: a members list in the Share modal, through the existing `set_member_role`. Every owner sees the project in their saves.
+- **Presence:**
+  - Backend: an `online_connections` table maintained by connect/disconnect, and an `active_presence` view.
+  - UI: a person icon with a count at the top right; hovering lists the tokens.
+
+*Done when:*
+- A phone on cellular data opens https://dontrepeatyourself.dev, creates a project, and runs an evacuation on the home runner.
+- A second device opens the share link and joins as a viewer. Presence shows 2. The owner promotes them to editor and their edits sync.
+- A desktop reboot brings everything back with no manual steps.
+- A publish attempt from outside is refused.
+
+### D. An agent that answers the question
+
+**Problem.** On the Courtyard study, asking for a better door placement always puts the door on the room, even when the user names the far end of the hallway from the other door.
+
+**Causes**
+1. The heuristic planner ignores the prompt.
+2. `get_hotspots` only offers bottleneck fixes (widen an exit, add a door near the congested room).
+3. The model can only pick among those suggestions; it can't place an opening where the user asked (D29).
+4. `inspect_layout` doesn't describe walls relative to rooms or hallways, so "opposite end of the hallway" can't be resolved.
+
+**Design**
+1. **Intent first.** The request is one of:
+   - `targeted_edit`: a named element or placement
+   - `improve`: open-ended, so the worst bottleneck
+   - `question`: measure or explain only
+   - `compare`
+   
+   Nemotron expresses intent through its tool choices. The heuristic fallback gets a small keyword router so it never silently swaps the request for the bottleneck fix.
+2. **Grounded layout.** `inspect_layout` returns, for each wall: its rooms on each side (with labels from E), whether it's exterior, its length and its openings with offsets. Hallways are marked.
+3. **Authoring within limits.**
+   - `place_opening({ kind, widthM, wallId, offsetM | at: 'start'|'center'|'end' | farthestFrom: openingId })` and `move_opening`. Core validates them: inside the wall, no overlap, minimum widths.
+   - Candidates still go through `test_edit_batch` with the same crowd, and through `confirm_candidate`.
+4. **Answer what was asked.** Measure and propose the requested edit even if it doesn't help, and say so with the number. Offer the bottleneck fix as a separate second proposal, for example: "you asked X: +2.1 s; the bottleneck fix: −40 s". A job may submit up to 2 proposals.
+5. **Compliance and several edits per proposal** (carried over).
+   - A `check_compliance` tool runs modeled checks:
+     - door clear width ≥ 0.81 m
+     - corridor ≥ 1.12 m
+     - exits vs occupant load
+     - longest travel distance
+   - A batch of non-conflicting winners is combined, re-tested, and given one reason per command.
+
+*Done when:*
+- On Courtyard, "put a door at the opposite end of the hallway from the existing door" proposes an opening on the hallway wall farthest from that door, with its measured effect.
+- "Fix the worst bottleneck" still widens the exit.
+- Both are covered by scripted-LLM tests and heuristic-router tests, and checked in the browser with Nemotron.
+
+### E. Rooms and escape plans
+
+**Room recognition**
+- Closed shapes already come from `deriveLayout(doc).topology.rooms`.
+- When the set of rooms changes, the client calls `request_room_labels`. The runner sends Nemotron one batch of room descriptors:
+  - area, width, length and aspect ratio
+  - doors and exits
+  - neighbouring rooms
+  - exterior walls
+  - whether it contains an exit
+- It gets back `{ roomHash, kind: room | hallway | stair | closet | lobby | other, name, confidence }`.
+- **Fallback rules** when there's no key or the call fails: hallway if the narrow side is ≤ 2.4 m and the aspect ratio is ≥ 3, or if it connects ≥ 3 rooms; otherwise room.
+- Labels are stored in a `room_labels` table keyed by `(projectId, roomHash)`. The hash is the room's polygon, so unchanged rooms keep their labels across edits.
+- Selecting a room in Edit shows its label; the user can override the kind and name.
+
+**Escape plans** (a new left-rail item)
+- One plan **per valid room**. Hallways, stairs and closets get none.
+- Each plan:
+  - a top-down render of the floor with the room highlighted and a "You are here" marker
+  - a **primary route** from the room's door to the best exit
+  - a **secondary route** through a different exit
+  - distances and walking time at 1.34 m/s
+- Export is PNG/PDF.
+- **Routes** come from per-exit distance fields on the nav grid (`escapeRoutes(compiled, room)` in `@egress/sim`).
+- Later, routes avoid fire zones (G) and include stairs (F).
+
+*Done when:* on Courtyard, the two rooms are labelled rooms and the corridor is labelled hallway. Exactly two plans exist, each with primary and secondary routes, and they export.
+
+### F. Floor surfaces, multiple floors and stairs
+
+**Floor surfaces (first; requested 2026-11-08)**
+- A new `slab` entity: `{ id, floorId, polygon, material: 'wood' | 'basic' | 'tile' }`. *Basic* uses the same plain look as the walls.
+- Edit gets a **Floor** tool:
+  - drag a rectangle
+  - or click inside a room to fill it
+  - right-click the tool to pick the material, just like walls
+- Looks come from the same Blender manifest under a new `floors` section.
+- **Walkable area:** on the ground floor, rooms stay walkable (older documents keep working) and slabs add surface. On upper floors, **only slabs are walkable**, minus stair openings.
+
+**Multiple floors**
+- **UI:**
+  - A floor switcher in the bottom-left corner: `‹  Floor 1  ›`. On the top floor, `›` becomes `+` (add a floor).
+  - Clicking the label opens floor settings: name, **floor-to-floor height** (the floor's ceiling height, used for everything on it), delete.
+- **View:**
+  - Edit is top-down on the current floor.
+  - Floors below render ~45% darker; floors above are hidden.
+  - **The dot grid rises to the current floor's elevation, while the ground plane stays at 0.**
+- **Domain** (additive):
+  - floor commands `createFloor`, `updateFloor`, `deleteFloor`
+  - the `stair` entity
+  - all as JSON entity rows, so no table migration
+
+**Stairs**
+- **Drawing:** drawn as a rectangle, like Room, on the lower floor. An arrow on one edge marks the up direction (click it or press R to rotate). Each stair connects floor N to floor N+1.
+- **Rendering:** steps rising across the rectangle. Risers = round(floor height / 0.175 m). The floor above shows the opening.
+- **Simulation:**
+  - Compile every floor; stairs link the floor grids.
+  - People on upper floors route to stairs and **walk down** them more slowly. Starting values: 0.6 m/s along the run and 1.0 persons/m/s capacity. They come out on the lower floor and continue to exits.
+  - Actor flag 2 ("transitioning") means "on stairs".
+  - Frames gain a per-actor floor index (frame codec v2).
+  - Upward routing is out of scope.
+  - The math goes into PEOPLE_FLOW_MODEL.md before the code.
+
+*Done when:* a two-floor fixture with one stair evacuates fully, with people visibly descending. Switching floors darkens the floor below and raises the grid. Slabs render in all three materials, and upper-floor walkability follows them. Escape plans on floor 2 route via the stairs.
+
+### G. Hazards: airflow → smoke → fire (`STABLE-V3`)
+
+1. **Airflow layer.** A coarse per-floor 2D flow field driven by openings (doors open or closed, windows) and configurable inflows, solved with a stable-fluids style step on the 0.25–0.5 m grid. Shown as moving particles or streaks under Layers → Airflow, using fields `air.velocity` and `air.flowMagnitude`.
+2. **Smoke.** Concentration is carried by the airflow and spreads; sources are fires. It's a **time-based hazard**: visibility and walking speed fall, and an exposure dose accumulates.
+3. **Fire.**
+   - **Painted** fire zones, with the same brush as population painting (Simulate pane: Paint People | Fire).
+   - Fire spreads **through rooms**, independent of material:
+     - growth within a room follows a t² curve
+     - cells ignite after an exposure time
+     - spread passes through open doors; closed doors delay it
+   - It's an **immediate hazard**: burning cells are impassable and people re-route.
+4. **Combined hazard evacuation:**
+   - people avoid fire and are slowed by smoke
+   - metrics add exposure
+   - escape plans avoid fire
+   - fire is a new evacuation type in the scenario (`scenario.elements` is already reserved)
+
+**Before G:** the population painting UI (the backend has existed since D30) ships in V2, because fire painting reuses the brush.
+
+---
+
+## 4. Pass sequence
+
+| Pass | Contents | Gate |
 |---|---|---|
-| **0 Stable base** | Sat 17:00–19:30 | Contracts and schema frozen. Everything compiles, the partner can use the mock client, and Pass 0 is merged into `main`. |
-| **1 Saved editing** | 19:30–22:30 | Two browsers co-edit a saved project. |
-| **2 Congestion core** | 22:30–Sun 03:30 | **Functional base.** An Evacuate run streams into Live mode with a heatmap, and its replay survives a refresh. |
-| **3 Analysis agent** | 03:30–07:00 | Nemotron calls real tools and proposes a measured edit; Accept applies it. |
-| **4 Merge & harden** | 07:00–10:00 | Partner UI merged, venue scene, population painting, deployed. |
-| **5 Submit** | 10:00–12:00 | Code freeze at 10:30, backup video, README, submission. |
+| 6 | A (display) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists |
+| 7 | C: env-driven endpoints, deploy script, the home server live, sharing and presence | C done-when list from a phone on cellular data |
+| 8 | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron |
+| 9 | E: room labels and escape plans | E done-when list |
+| 10 | F: slabs and materials, then floors and stairs (core, then sim, then UI), plus population painting | F done-when list |
+| 11 | Harden, final review and docs; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
+| 12+ | G: airflow, then smoke, then fire; tag `STABLE-V3` | — |
 
-**Cut order if behind:**
-1. Pass 4 extras: the static heatmap, then painting, then venue polish.
-2. Analysis polish.
-3. Pass 2 is never cut.
+Pass 7 can start alongside 6 (it's mostly setup on the desktop); it needs B's JSON import before moving projects off Maincloud.
 
 ---
 
-## 3. Architecture
+## 5. Testing
 
-### Repo layout
+- `npm run test:backend` (core, sim, agent, client, runner) and the frontend `npm test`. Keep both green. *Known:* `real-plans.test.ts` from main `6780c69` fails one case; the frontend lane owns it.
+- E2E against a local SpacetimeDB: `e2e:local`, `e2e:client`, `e2e:multiuser`. New flows (stats, preview, links, presence, rooms, floors) each add a step.
+- Browser check of every changed UI at two sizes. Agent changes are also checked with Nemotron, not only the heuristic.
+- Determinism: frame hashes per seed. A model change updates PEOPLE_FLOW_MODEL.md in the same commit.
 
-```text
-/                       npm workspace and backend build plan.
-frontend/               Next.js app (frontend lane), moved here on main and merged back.
-  app/ components/ lib/ public/ tests/
-  app/dev/              Plain backend test page at /dev, retained alongside the demo.
-packages/
-  core/                 @egress/core: domain types, Zod, applyEdit, wall graph, corner polygons,
-                        rooms, diagnostics, canonical JSON + layoutHash, frame codec
-  sim/                  @egress/sim: grid compiler, nav fields, population, step, fields, metrics
-  client/               @egress/client: EgressClient interface, MockEgressClient,
-                        SpacetimeEgressClient, React hooks, generated bindings
-spacetimedb/            SpacetimeDB 2.x TypeScript module (the system of record)
-services/runner/        Node 22 process: simulation worker + Nemotron agent
-content/scenes/         Scene fixtures (EgressDocument v1 JSON)
-content/prefabs.json    Furniture registry (later)
-docs/                   Reference spec, partner sync notes
-```
-
-- npm workspaces: `frontend`, `packages/*`, `services/*`, `spacetimedb`. Root dev/build/start commands delegate to the frontend workspace.
-- Tests use `node --test`, which strips types on Node ≥ 22.18. That only works with erasable TS syntax: no `enum`, no `namespace`, no parameter properties. Relative imports end in `.ts`, the same convention the partner's `lib/` already uses.
-
-### Data flow
-
-```text
-Browser ──reducers──▶ SpacetimeDB ◀──reducers── Runner (Node, service identity)
-   ▲   views per caller,                             │  claims runs + agent jobs
-   │   scoped by the caller's sessions row           │  writes chunks / results / agent steps
-   └──── entities · runs · replay_chunks · ◀─────────┘
-         agent_steps · proposals                     └──▶ NVIDIA Nemotron (HTTPS)
-```
-
-- **There is no custom WebSocket.** Simulation frames reach the browser as `replay_chunks` rows through a subscribed view.
-- **The runner only makes outbound connections,** so it can run on a laptop during the demo with nothing to host.
-- **SpacetimeDB never runs per-pedestrian transactions.** One row per 2-second chunk.
-
----
-
-## 4. Domain model — `@egress/core` (EgressDocument v1)
-
-**Conventions:**
-- Units are meters.
-- Plan coordinates are `{x, y}`, with **+y = north**.
-- Angles are radians, counter-clockwise.
-- Snapping defaults to 0.25 m (the simulation cell size) and can be turned off.
-- Adapters:
-  - The 3D view maps plan `(x, y)` to three.js `(x, 0, -y)`.
-  - SVG flips y.
-
-```ts
-type ID = string;
-type Vec2 = { x: number; y: number };
-type WallMaterial = 'normal' | 'reinforced' | 'glass';   // physically identical in the MVP; render differently
-
-interface Floor   { kind: 'floor'; id: ID; level: number; name: string; elevationM: number; ceilingHeightM: number }
-interface Vertex  { kind: 'vertex'; id: ID; floorId: ID; position: Vec2 }
-interface Wall    { kind: 'wall'; id: ID; floorId: ID; startVertexId: ID; endVertexId: ID;
-                    thicknessM: number; heightM: number; material: WallMaterial }
-interface Opening { kind: 'opening'; id: ID; floorId: ID; wallId: ID;
-                    openingKind: 'door' | 'window' | 'exit';
-                    offsetM: number;                  // center, measured along the wall from its start vertex
-                    widthM: number; sillHeightM: number; openingHeightM: number;
-                    state: 'open' | 'closed' }
-type Entity = Floor | Vertex | Wall | Opening;        // furniture joins later
-
-interface EgressDocument {
-  docVersion: 1;
-  projectId: ID;
-  revision: number;
-  floors: Floor[]; vertices: Vertex[]; walls: Wall[]; openings: Opening[];
-  furniture: [];                                      // reserved until the furniture pass
-}
-```
-
-**Invariants enforced by `applyEdit`.** The stored wall graph is always planar.
-- A new wall endpoint within 1 mm (after snapping) of an existing vertex reuses that vertex.
-- An endpoint that lands on another wall's interior splits that wall, creating a T-junction.
-- Walls that cross are both split at a new vertex.
-- When a wall is split, each opening moves to the piece that contains its center. The edit is rejected if an opening would straddle the split.
-- Vertices left with no walls are deleted.
-- These walls are rejected: zero-length, duplicate, collinear-overlapping, and shorter than 0.5 m. These rules port the partner's existing validation.
-- An opening must fit inside its wall, at least 0.1 m from each end, and must not overlap another opening.
-- An `exit` opening must sit on a wall bordering the exterior face. Otherwise it gets an `EXIT_ON_INTERIOR_WALL` diagnostic.
-
-**Derived values** (computed, never stored):
-- `wallPolygons(doc)`: one polygon per solid wall piece, with corners computed per junction:
-  - **Degree 1:** flat cap.
-  - **Degree 2:** miter, or a bevel if the angle is under about 30°.
-  - **Degree ≥ 3:** each wall is mitered against its neighbours, plus a small hub polygon in the middle.
-  - Opening intervals are subtracted from the wall.
-
-  The same polygons feed the 3D structure (also viewed top-down during Edit) and simulation collision, so the picture always matches the physics. The plain `/dev` harness may draw them in SVG for backend testing; that is not a second product visual model.
-- `rooms(doc)`: the bounded faces of the vertex graph, with openings treated as closed. This ports `lib/rooms.ts`.
-- `exteriorBoundary(doc)`: the outer face.
-- `diagnostics(doc)`: `NOT_ENCLOSED`, `NO_EXIT`, `EXIT_ON_INTERIOR_WALL`, `OPENING_OUTSIDE_WALL`, `OPENING_OVERLAP`, `UNREACHABLE_ROOM`. The editor saves invalid drafts; simulations report these diagnostics instead of crashing.
-- `layoutHash(doc)`: a pure-JS SHA-256 of canonical JSON (sorted keys, `revision` excluded).
-
-### Edit commands
-
-```ts
-type EditCommand =
-  | { kind: 'createWallChain'; floorId: ID; points: Vec2[];          // pen tool; ≥2 points
-      thicknessM: number; heightM: number; material: WallMaterial }
-  | { kind: 'createBox'; floorId: ID; min: Vec2; max: Vec2;           // 4 vertices + 4 walls, shared corners
-      thicknessM: number; heightM: number; material: WallMaterial }
-  | { kind: 'eraseByLine'; floorId: ID; from: Vec2; to: Vec2 }        // deletes every wall piece the segment crosses, plus its openings
-  | { kind: 'moveVertex'; vertexId: ID; to: Vec2 }
-  | { kind: 'updateWall'; wallId: ID; patch: Partial<Pick<Wall, 'thicknessM' | 'heightM' | 'material'>> }
-  | { kind: 'createOpening'; wallId: ID; openingKind: Opening['openingKind']; offsetM: number; widthM: number;
-      sillHeightM?: number; openingHeightM?: number; state?: Opening['state'] }
-  | { kind: 'updateOpening'; openingId: ID; patch: Partial<Pick<Opening, 'offsetM' | 'widthM' | 'state' | 'openingKind'>> }
-  | { kind: 'deleteEntities'; ids: ID[] }
-  | { kind: 'applyPatch'; put: Entity[]; remove: ID[] };              // undo/redo, imports, agent proposals
-
-interface EditRequest { projectId: ID; requestId: ID; baseRevision: number; commands: EditCommand[] } // atomic batch
-
-applyEdit(doc, request) →
-  | { ok: true; doc; created: ID[][]; changed: ID[]; removed: ID[]; inverse: EditCommand }  // created[i] = IDs made by command i
-  | { ok: false; error: DomainError }
-```
-
-- **`applyEdit` is pure and deterministic.** It never uses `crypto`, `Date` or `Math.random`.
-- **Every new entity ID derives from the request:** `${requestId}.${n}`. That means:
-  - The client's optimistic result and the server's authoritative result agree exactly.
-  - A proposal applied with `requestId = proposal.id` gets the same IDs as its ghost preview.
-- **`inverse`** is an `applyPatch`: it puts back the previous state of everything changed or removed, and removes everything created. Undo and redo are just more edits.
-
-### Scenario
-
-```ts
-interface SimulationScenario {
-  scenarioVersion: 1; id: ID; projectId: ID; name: string;
-  population: { count: number; distribution: 'uniform' | 'painted';
-                strokes: PopulationBrushStroke[];   // shape from the reference contracts; used from Pass 4
-                seed: number };
-  goal: { kind: 'evacuate'; blockedExitIds: ID[] }; // 'circulate' reserved (P1)
-  durationSeconds: number;                          // timeout, default 300
-}
-```
-
-`DomainErrorCode` uses the reference contract's list plus `NOT_IMPLEMENTED` and `STALE_EDIT`.
-
-### Frame codec `egress-frames-v1`
-
-One `replay_chunks.bytes` value is `gzip(fflate)` of:
-
-```text
-u32 magic 'EGF1' | u16 version = 1 | u16 reserved
-u32 actorCount   | u32 firstTick   | u16 frameCount | u16 reserved
-f32 originX      | f32 originY                         // meters; positions are relative to this
-frame × frameCount:
-  u16 xCm[actorCount] | u16 yCm[actorCount]            // centimeters from origin (≤ 655 m)
-  u8  flags[actorCount], padded to 4 bytes             // 0 moving · 1 queued · 2 transitioning · 3 exited
-```
-
-- **Chunk size:** 20 frames, which is 2 simulated seconds.
-- **Expected size:** about 50 KB raw and 20–35 KB gzipped at 500 actors.
-- **Decoder output:** `{ tick, actorXY: Float32Array (meters), actorFlags: Uint8Array }[]`.
-- **Actor indices** stay stable for the whole run.
-
-**Heatmaps are not streamed.**
-- The client computes Current, Average and Peak overlays from decoded frames, using the same `@egress/sim` field functions as the runner.
-- The runner stores the authoritative final 0.25 m aggregates in `sim_results`.
-
-**Field IDs:**
-
-| Field | Meaning |
-|---|---|
-| `people.density` | people/m² |
-| `people.speed` | m/s |
-| `people.congestion` | density × max(0, 1 − speed / 1.34) |
-| `people.exitDistance` | meters (static) |
-
-Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `perCellPeak`. `people.velocity`, `people.routeDemand`, `air.*` and `smoke.*` are reserved.
-
----
-
-## 5. Persistence — SpacetimeDB module
-
-**Access rules:**
-- Every table is **private**.
-- Clients **read** only through views and **write** only through reducers.
-- Each user's `sessions` row picks which project and run their views return, because views take no arguments.
-
-| Table | Keys / indexes | Contents |
-|---|---|---|
-| `users` | pk identity | displayName, createdAt |
-| `sessions` | pk identity | activeProjectId, activeRunId |
-| `projects` | pk id | name, ownerIdentity, revision (u64), docVersion, updatedAt |
-| `project_members` | idx projectId, idx identity | role: `owner` / `editor` / `viewer` |
-| `project_invites` | pk codeHash | projectId, role, expiresAt, revoked |
-| `entities` | pk id · idx projectId | kind, payload (JSON of the entity), rev |
-| `edit_log` | pk autoinc · idx projectId | revision, requestId, author, commands JSON, at |
-| `scenarios` | pk id · idx projectId | name, payload (scenario JSON) |
-| `layout_snapshots` | pk hash | projectId, revision, document (EgressDocument JSON) |
-| `sim_runs` | pk id · idx projectId · idx status | layoutHash, scenario JSON, seed, modelId, modelVersion, pace, status, progressTick, chunkCount, requestedBy, claimedBy, errorCode, timestamps |
-| `sim_results` | pk runId | metrics JSON, fields (gzip Float32: average + peak, density + congestion), grid JSON |
-| `replay_chunks` | pk autoinc · idx runId | chunkIndex, firstTick, lastTick, encoding, bytes (`t.array(t.u8())`) |
-| `agent_jobs` | pk id · idx projectId · idx status | requestedBy, prompt, context JSON, status, budget JSON |
-| `agent_steps` | pk autoinc · idx jobId | seq, kind (`thought` / `tool_call` / `tool_result` / `message` / `error`), toolName, payload JSON |
-| `proposals` | pk id · idx projectId | jobId, baseRevision, commands JSON, notes JSON (command index → why), baselineRunId, candidateRunId, delta JSON, status |
-
-### Views
-
-| View | Returns |
-|---|---|
-| `my_profile` | the caller's `users` row |
-| `my_projects` | projects the caller belongs to, with their role |
-| `active_project`, `active_members` | the project in `sessions.activeProjectId`, if the caller is a member |
-| `active_entities`, `active_scenarios`, `active_edit_log` | that project's rows |
-| `active_runs` | that project's runs |
-| `active_replay`, `active_result` | chunks and result of `sessions.activeRunId`, if the caller is a member of its project |
-| `active_agent_jobs`, `active_agent_steps`, `active_proposals` | the active project's agent data |
-| `runner_queue`, `runner_inputs` | **runner identity only:** queued runs and agent jobs, plus the frozen inputs of runs it has claimed |
-
-### Reducers
-
-- **Lifecycle:**
-  - `clientConnected` creates the `users` and `sessions` rows if they're missing.
-  - `setDisplayName`.
-- **Projects:**
-  - `createProject(id, name, seedDocJson?)`.
-  - `renameProject`.
-  - `deleteProject` (owner only).
-  - `createInvite(projectId, role, codeHash, expiresAt)` (owner only).
-  - `revokeInvite`.
-  - `joinProject(code)`, which hashes the code with core's SHA-256.
-  - `setMemberRole` and `removeMember` (owner only).
-- **Session:**
-  - `openProject(projectId)`.
-  - `openRun(runId)`.
-- **Editing:** `applyEdit(requestJson)`, editor role or higher:
-  1. Load the project's entities into a document.
-  2. Run `core.applyEdit`.
-  3. Diff the result into rows.
-  4. Increment the revision.
-  5. Append to `edit_log`.
-
-  An invalid command throws a `DomainError`.
-- **Scenarios and runs:**
-  - `saveScenario(json)`.
-  - `requestSimulation(projectId, scenarioId, pace)`: builds the document, hashes it, inserts the `layout_snapshot` if it's new, and inserts a `sim_runs` row with status `queued`.
-  - `cancelSimulation(runId)`.
-- **Runner-only** (checked against the allowlist):
-  - `claimSimulation`, `reportProgress`, `appendReplayChunk`, `publishRunResult`, `failSimulation`.
-  - `claimAgentJob`, `appendAgentStep`, `publishProposal`, `finishAgentJob`.
-  - `recordAgentRun`: candidate runs computed in-process.
-- **Agent, called by users:**
-  - `requestAgentJob(projectId, prompt, contextJson)`.
-  - `acceptProposal(proposalId)`: editor role or higher. It re-runs `core.applyEdit` on the current document with `requestId = proposalId`, and returns `STALE_EDIT` if the edit no longer applies.
-  - `rejectProposal`.
-
-### Runner allowlist and secrets
-
-- The runner registers its identity through `register_service(secret)`; the module stores the secret's SHA-256 and service identities (D21), not a hard-coded identity constant.
-- Tokens live in gitignored `services/runner/.env.runner-token-<target hash>` files, scoped to URI and database. The legacy `.env.runner-token` is no longer read because a token issued locally is not valid on Maincloud (D45). The service secret and NVIDIA key remain server-side.
-
-### Migration policy
-
-- **Databases:** prod is `egress` on Maincloud and accepts **additive changes only**. Dev is `egress-dev` and may be wiped with `spacetime publish --delete-data`.
-- **Payload versions:** JSON payloads carry `docVersion` / `scenarioVersion`, and upgrade functions live in `@egress/core`.
-
----
-
-## 6. Simulation — `@egress/sim`
-
-> **Source of truth for the math:** [docs/PEOPLE_FLOW_MODEL.md](docs/PEOPLE_FLOW_MODEL.md) holds the exact formulas, parameter values, the reasons behind them, and validation results. This section is the original plan; where the two differ, the model doc wins.
-
-The lifecycle is model-agnostic:
-
-```text
-compile(doc) → CompiledFloor
-initialize(input, compiled) → SimState
-step(state)                    // dt = 0.1 s, fixed
-frame(state) · fields(state) · metrics(state) · isComplete(state)
-```
-
-**Compile** (cached by `layoutHash`):
-1. Lay a 0.25 m grid over the exterior boundary's bounding box plus a 1 m margin.
-2. Compute each cell's walkable fraction by 4×4 supersampling against `wallPolygons` (and furniture later). A cell is interior if it lies inside `rooms`.
-3. Turn openings into portals:
-   - Open doors and exits become passable line segments, with capacity **1.3 persons/m/s × widthM**.
-   - Closed doors and windows count as walls.
-4. Label regions: connected walkable cells (8-connected, no corner cutting) joined through open portals.
-5. Build one distance field per exit: Dijkstra with octile distances over walkable cells.
-   - Cells near walls get extra cost, about one actor radius, which keeps paths centred.
-   - An infinite distance means unreachable.
-
-**Initialize:**
-- **Count:** N comes from the scenario.
-- **Cell weight:** `w_i = 1` (painting comes in Pass 4) × walkable fraction.
-- **Placement:**
-  - Sample cells from the cumulative distribution using a seeded `sfc32` PRNG, and pick a uniform position within the chosen cell.
-  - Reject the position if it's closer than one radius to a wall polygon, or closer than two radii to another actor.
-  - After 50 failed attempts the run fails with `POPULATION_INFEASIBLE`. Actors are never silently dropped.
-- **Actors:**
-  - Radius is 0.22–0.25 m.
-  - Preferred speed is drawn from N(1.34, 0.26), clamped to [0.8, 1.8] m/s.
-  - Actors in regions with no reachable exit are counted as `unreachable` from tick 0.
-
-**Step** (per actor, in stable index order):
-1. **Exit choice,** every 20 ticks: pick the exit minimizing `distance / v_pref + queued(exit) / capacity(exit)`, with 10% hysteresis.
-2. **Desired velocity:** −∇distance (steepest of the 8 neighbours, bilinear) × v_pref.
-3. **Neighbours** come from a 1 m spatial hash.
-   - Repulsion is `A·exp((r_ij − d)/B)·n̂`, with A = 2.0 and B = 0.3.
-   - Velocity relaxes toward the desired velocity with τ = 0.5 s.
-   - Speed is clamped to 1.5·v_pref and acceleration to 5 m/s².
-4. **Collision:**
-   - Circles collide against wall-polygon edges and are pushed out along the edge normal.
-   - Overlapping actors are separated pairwise, in 2 iterations.
-5. **Portals:**
-   - Crossing a portal segment uses up a token from that portal's bucket, which refills at capacity × dt up to a maximum of 1.
-   - An actor with no token available waits before the line, with the flag set to `queued`.
-6. **Exit:** crossing an exit portal marks the actor `exited`. Its position freezes, it leaves the spatial hash, and that exit's throughput count goes up.
-
-A run is **complete** when every reachable actor has exited, or when `durationSeconds` is reached.
-
-**Fields:**
-- **Density:** each actor is deposited into its cell, then smoothed 3×3 **within the same region only**, so nothing bleeds through walls.
-- **Speed:** mean |v| per cell.
-- **Congestion:** as defined in §4.
-- **Accumulators:** `timeAverage` (sum ÷ ticks) and `perCellPeak`.
-
-**Metrics** (shape from `SimulationMetrics` in the reference contracts):
-- evacuation time
-- evacuated, remaining and unreachable counts
-- maxQueueLength
-- mean and peak congestion
-- perExitThroughput
-- bottlenecks: the top 5 local maxima of time-averaged congestion, at least 1.5 m apart, each with its center and peak tick
-
-**Determinism and performance:**
-- Only the seeded PRNG is used for randomness, and iteration order is stable.
-- Identical inputs must give an identical hash over all frames; a test checks this.
-- Target: 500 actors in ≤ 10 ms per tick on a laptop.
-- Log ms per tick and bytes per chunk.
-
----
-
-## 7. Runner and agent — `services/runner`
-
-**Run loop:**
-1. Connect with the token saved for the selected URI/database, register the service identity, and subscribe to runner views.
-2. Claim a queued run with `claimSimulation` (the first writer wins).
-3. Read the frozen input from `runner_inputs`, then compile (LRU cache by `layoutHash`) and initialize.
-4. Step. Every 20 ticks, encode a chunk, then call `appendReplayChunk` and `reportProgress`.
-   - **User runs** are paced at 1×, 2× or 4× real time by sleeping against the wall clock, so the LIVE edge grows visibly.
-   - **Agent runs** are unpaced.
-5. Finish:
-   - On completion, call `publishRunResult(metricsJson, fieldsBytes)`.
-   - On error, call `failSimulation(code)`.
-   - Check the run's status after every chunk, so cancellation takes effect within one chunk.
-
-**Agent** (runs in the same process):
-- **Model access:**
-  - Endpoint: `https://integrate.api.nvidia.com/v1/chat/completions` (OpenAI-compatible).
-  - Credentials and model come from `NVIDIA_API_KEY` and `NEMOTRON_MODEL`. The default model is `nvidia/nemotron-3-super-120b-a12b` and the fallback is `nvidia/nemotron-3.5-lightning-30b-a3b`.
-  - Calls use plain `fetch` with OpenAI-style `tools`.
-  - Hosted Lightning accepted tools and `chat_template_kwargs: { enable_thinking: false }` in live verification. The preferred Super model was unavailable; use `NEMOTRON_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b` for the verified dev setup.
-- **Tools.** Arguments are validated with Zod, and every call is logged to `agent_steps`.
-
-| Tool | Does |
-|---|---|
-| `inspect_layout()` | document summary, rooms, exits, diagnostics |
-| `inspect_run(runId)` | scenario and metrics |
-| `get_hotspots(runId, topK)` | bottlenecks, with the nearest openings and walls |
-| `run_scenario(scenarioPatch?)` | an unpaced run on the current layout |
-| `test_edit_batch(commands)` | applies the commands to a copy with `core.applyEdit`, validates it, reruns with the **same seed and initial positions**, and returns metric deltas |
-| `compare_runs(baselineRunId, candidateRunId)` | side-by-side metrics |
-| `submit_proposal(commands, notes, evidence)` | saves a proposal for human approval; `notes` maps command index → why |
-
-- **Budget per job:**
-  - at most 12 tool calls
-  - at most 2 scenarios
-  - at most 3 candidate batches
-  - 3 minutes of wall-clock time
-
-  Timeouts and errors show up as visible steps.
-- **No fabrication:** every number in the final message must come from a tool result. The agent never writes live geometry; only Accept does.
-- **Proposal gate:** `submit_proposal` checks the candidate's original baseline and requires `ΔeffectiveTime + 0.1 × ΔmaxQueue < −0.5`, matching the existing heuristic ranking rule. Unchanged or worse candidates are rejected before persistence.
-
----
-
-## 8. UI contract — modes, toolbars, `@egress/client`
-
-### UI direction v2 (Cody, Sun 2026-11-08 00:00) — supersedes the Sat 19:10 notes, D47 (no modals) and D48 (local save slots)
-
-Reference sketches: [layout-v2-rail-open.png](docs/reference/gui/sketches/layout-v2-rail-open.png) and [layout-v2-rail-closed.png](docs/reference/gui/sketches/layout-v2-rail-closed.png). Base the layout heavily on them.
-
-**Principles**
-- Egress is a CAD studio: professional, clean, cut. **No taglines**, eyebrows, slogans or explanatory sentences in the chrome. Labels are short nouns; help lives in tooltips with the shortcut.
-- Buttons look and behave like CAD tool buttons: icon, tooltip, pressed state, keyboard shortcut.
-- [Heroicons](https://heroicons.com) are placeholder icons until custom ones exist.
-- Modals are allowed where they are the right tool: Projects (save/open), Share, Import.
-- Don't surface room recognition or opening recognition in the UI (no "N rooms" counts).
-
-**Layout**
-
-| Region | Content |
-|---|---|
-| Canvas | The full-window 3D scene. |
-| Top center | Compact mode switch: `Edit \| Simulate \| Analysis`. |
-| Top left | Project name with sync state; the viewcube below it. |
-| Top right | Presence: a person icon and the number of people on the project; hover lists their tokens. Layers dropdown beside it. |
-| Left edge | **Pull tab.** Collapsed: a small tab with a chevron. Expanded: a vertical rail of meta actions (Projects, Share, Import, Export). |
-| Right | **Context pane**, only when the mode or selection has something to show. Its bottom box holds the primary action. |
-| Bottom center | **Context toolbar**, a tab attached to the bottom edge. It switches with the mode. |
-
-**Modes**
-
-| Mode | Bottom toolbar | Right pane |
-|---|---|---|
-| **Edit** | Select · **Wall** (right-click the button for a small type menu: Normal / Reinforced / Glass) · Room · Door · Window · Exit · Erase · Undo · Redo. Right-clicking a wall in the canvas opens the same type menu plus Delete. | Inspector, only while something is selected. |
-| **Simulate** | Run/Stop at the left; **transport and timeline centered**: `« 10` · `⏯` · `» 10`, scrubber from 0 to the LIVE edge, `LIVE` / `END` badge, speed 1× / 2× / 4×. | Population: count, distribution, seed (painting later), then live metrics. Run in the bottom box. |
-| **Analysis** | **A chat bar** (prompt + send). | Grows live as the agent works: steps, measured results, proposals with Accept / Reject, before/after. It replaces the separate Report / Suggestions tabs. |
-
-**Analysis suggestions on the model**
-- Suggested edits are **highlighted in blue on the model itself**: created and changed walls/openings glow blue; removed ones are hatched red.
-- A proposal can hold **several edits**. A small bubble sits next to each edit with a one-line reason (`proposal.notes.byCommand[i]`).
-- The agent bases its changes on both **compliance** (code-style checks) and **measured safety** (simulation). See backend follow-ups.
-
-**Layers** (dropdown, select one)
-- **People** (now). Options: **Discrete** (people as dots) or **Heatmap**. Heatmap field: Density or Congestion. Statistic: Current / Average / Peak. After a run completes, Average is the default, because the final frame is an empty building.
-- **Airflow** (future): listed but disabled. Its fields (`air.velocity`, `air.flowMagnitude`, `smoke.concentration`) are reserved in `FieldIdSchema`.
-
-**Scene**
-- **One 3D scene; Edit is always top-down.** Edit locks the scene to an orthographic overhead camera. Leaving Edit transitions to isometric and enables orbit. There is no second 2D model.
-- **Viewcube works like a CAD viewcube** (D63): drag it to orbit the camera; click a face, edge or corner to snap to that view; it always mirrors the camera. Edit stays top-down, so in Edit the cube only offers Top.
-- **Blueprint look:** a blue floor and a **white dot grid**: 0.25 m snap dots, brighter every metre. **No grid lines.** Drawing previews are white.
-- **Occluding walls are cross-hatched, never dithered.** Top-down views never fade anything. Outside top-down, walls between the camera and the interior floor draw as evenly spaced screen-space cross-hatching. This matches the hand-drawn look planned for future models. Furniture stays opaque.
-- **Parametric vs placeable.** Only walls are parametric now; counters and similar runs are planned. Everything else is a placeable: **wall-attached** (doors, windows, exits) or **floor-placed** (furniture).
-- **Blender wall textures.** `frontend/public/assets/walls/manifest.json` maps each wall material, and later each `finish` id, to textures exported from Blender (base colour, optional normal and roughness). UVs are world-scale, so a texture repeats every `repeatM` metres on any wall length. A missing file falls back to the flat material colour. Physics never reads textures or `finish`.
-
-**Simulate rules** (unchanged from D36)
-- Only the **distribution** and **elements** (future: fire, via `scenario.elements`) change in Simulate. Building edits happen in Edit.
-- Either change needs a restart. Stop calls `cancelRun`.
-- Pause and scrub are client-side. The server keeps simulating while paused. Stop or restart cancels the server job within ~100 ms.
-- Population paint is labelled *initial distribution*, never congestion.
-
-**Storage, identity and collaboration**
-- **Project storage is never browser-local.** Projects live in SpacetimeDB: Maincloud `egress-dev` for the demo, or `?backend=local` for a local dev server. Browser storage holds only the SpacetimeDB token, the "cookie" that links this browser to its projects. The local save slots are removed.
-- **One permanent share link per project.** It works whether or not the owner is online, and joining through it always gives **viewer** access.
-- **Owners** can raise anyone to editor or owner. Every owner token sees the project in its Projects list; projects shared with you appear separately.
-- People are recognized by token for now.
-- Until the backend follow-up lands, Share issues a 14-day viewer invite through the existing `createInvite`.
-
-**Backend follow-ups** (next backend pass)
-1. Collaboration: a permanent `project_links` code, `join_by_link`, presence (an online-connections table plus an `active_presence` view), and `members`, `presence`, `shareLink()` and `setMemberRole()` on `EgressClient`.
-2. Compliance checks as an agent tool. Each is a modeled check, not a certification: door, exit and corridor minimum widths; exit count against occupant load; travel distance.
-3. Multi-edit proposals: combine non-conflicting winning candidates into one batch, re-test the batch, and give each command its own reason.
-
-### `@egress/client` (sketch, finalized in Pass 0)
-
-```ts
-interface Store<T> { get(): T; subscribe(fn: () => void): () => void }   // for useSyncExternalStore
-
-interface EgressClient {
-  me: Store<{ identity: string; displayName: string } | null>;
-  projects: Store<ProjectSummary[]>;
-  createProject(name: string, seed?: EgressDocument): Promise<ID>;
-  openProject(id: ID): Promise<void>;
-  createInvite(role: Role): Promise<string>;          // returns the plain code; only its hash is stored
-  joinProject(code: string): Promise<ID>;
-
-  document: Store<DocumentView>;                      // server doc + optimistic edits + derived polygons/rooms/diagnostics
-  edit(commands: EditCommand[]): Promise<EditResult>;
-  undo(): void; redo(): void;
-
-  runs: Store<RunSummary[]>;
-  startRun(scenario: SimulationScenario, pace: Pace): Promise<ID>;
-  playback(runId: ID): PlaybackController;
-
-  agent: {
-    ask(prompt: string, context?: AgentContext): Promise<ID>;
-    steps: Store<AgentStep[]>;
-    proposals: Store<ProposalView[]>;                 // includes ghost diff: added / removed / changed entities
-    accept(id: ID): Promise<void>;
-    reject(id: ID): Promise<void>;
-  };
-}
-
-interface PlaybackController {
-  state: Store<{ tick: number; liveTick: number; playing: boolean; complete: boolean; speed: number }>;
-  play(): void; pause(): void; seek(tick: number): void; skip(seconds: number): void; goLive(): void;
-  actorsAt(timeSeconds: number): { xy: Float32Array; flags: Uint8Array };   // interpolated
-  field(id: FieldId, agg: Aggregation): ScalarField | null;
-  metrics: Store<SimulationMetrics | null>;
-}
-```
-
-- **Two implementations share this interface:**
-  - `MockEgressClient`: in-memory, with a canned run.
-  - `SpacetimeEgressClient`: the real backend.
-- **React access** goes through `useEgress(store)`.
-
----
-
-## 9. Passes
-
-Each pass lists backend chunks, `/dev` work, what the partner can start on, and its done-when. Every chunk is written so a teammate or a separate Claude session can pick it up cold.
-
-### Pass 0 — Stable base (17:00–19:30)
-
-**Goal:** nothing works end-to-end yet, but every boundary exists, compiles, and is frozen, so both lanes can build in parallel.
-
-- [x] **0.1 Workspaces:**
-  - Root `package.json` gets `workspaces`.
-  - `tsconfig.base.json`: strict, `erasableSyntaxOnly`, `allowImportingTsExtensions`, `noEmit`.
-  - Package skeletons with `exports` → `src/index.ts`.
-  - Root `npm test` runs every workspace's `node --test`.
-  - Next `transpilePackages` for `@egress/*`; check `node_modules/next/dist/docs/` first.
-  - Partner files untouched apart from `package.json` and `next.config.ts`.
-- [x] **0.2 SpacetimeDB setup:** (CLI and Maincloud login complete)
-  - Install the `spacetime` CLI (`iwr https://windows.spacetimedb.com -useb | iex`).
-  - *Human:* `spacetime login`.
-  - Scaffold the TS module in `spacetimedb/`.
-- [x] **0.3 `@egress/core`:**
-  - All §4 types plus Zod mirrors, and `DomainError`.
-  - Canonical JSON and `layoutHash`.
-  - The frame codec, with round-trip tests.
-  - `applyEdit` with `createWallChain`, `createBox` and `deleteEntities` working. Everything else returns `NOT_IMPLEMENTED`.
-- [x] **0.4 Fixtures:**
-  - `content/scenes/one-room.json`: a 10 × 8 m room with one 0.9 m exit.
-  - `content/scenes/two-rooms-corridor.json`: two rooms feeding a 1.2 m corridor to one exit, a deliberate bottleneck.
-  - A test checks both parse and pass diagnostics.
-- [x] **0.5 Module:** (published locally and to `egress-dev`; bindings generated and used by the client)
-  - All §5 tables, `sessions`, and the views.
-  - Reducers stubbed, with their auth checks.
-  - Publish `egress-dev` to Maincloud.
-  - Generate bindings into `packages/client/src/bindings`.
-- [x] **0.6 Spike** (local findings in the status above/D22–D24; hosted tools verified with Lightning in D41):
-  - (a) Does a view re-evaluate when the caller's `sessions` row changes?
-  - (b) Does the module bundle workspace `@egress/core` and Zod?
-  - (c) Does `t.array(t.u8())` arrive as `Uint8Array` or `number[]`?
-  - (d) Does hosted Nemotron accept `tools` and `chat_template_kwargs`?
-
-  Fallbacks:
-  - If (a) fails, use authorized procedures such as `getReplayChunks(runId, fromIndex)`.
-  - If (b) fails, keep the module's validation self-contained.
-- [x] **0.7 Runner skeleton:** (real local/Maincloud connections and service registration verified; D21 supersedes the original identity constant below)
-  - Create and store a token, connect, and print the identity.
-  - Add the identity constant to the module allowlist.
-  - Subscribe to `runner_queue`.
-- [x] **0.8 `@egress/client`:**
-  - The interface.
-  - `MockEgressClient`: uses `core.applyEdit` and plays a canned 20-second run of actors walking to the exit.
-  - The React hooks.
-- [x] **0.9 `/dev` shell:** (Edit tools work against the mock)
-  - Mode tabs.
-  - Toolbar placeholders per mode.
-  - A 2D canvas rendering a fixture through the mock.
-
-**Partner can start:** rendering `DocumentView`, the mode tabs and toolbars, and the Live time bar against the mock's canned run.
-
-**Done when:**
-- `npm test`, the typecheck and `npm run build` are green.
-- `egress-dev` is published.
-- The runner connects.
-- `/dev` renders a fixture.
-- Pass 0 is merged into `main` (additive only).
-
-### Pass 1 — Saved editing (19:30–22:30)
-
-- [x] **1.1 Graph operations in `applyEdit`:**
-  - Snapping and vertex merging.
-  - T-junction and crossing splits, moving each opening onto the right piece.
-  - Orphan cleanup.
-  - Commands: `eraseByLine`, `moveVertex`, `updateWall`, `createOpening`, `updateOpening`, `applyPatch`.
-  - `inverse` generation.
-  - Port the partner's validation rules.
-- [x] **1.2 `wallPolygons`:**
-  - Corners and opening subtraction.
-  - Tests: an L-corner has no notch; T and X junctions; 45°; a 15° bevel; a door cut.
-- [x] **1.3 Derived values and tests:** `rooms`, `exteriorBoundary`, `diagnostics`, with tests adapted from `tests/rooms.test.ts`.
-- [x] **1.4 Module reducers:** (implemented; current client E2E verifies edit/open, with multi-browser integration checks still open)
-  - `applyEdit`: load → apply → diff → write → revision++ → `edit_log`.
-  - Projects, invites and roles.
-  - `openProject`.
-  - A viewer can't edit, and a non-member sees nothing.
-- [x] **1.5 `SpacetimeEgressClient`:** (local and Maincloud client E2E passed)
-  - The token is kept in `localStorage`.
-  - View subscriptions build the `DocumentView`.
-  - An optimistic queue of pending edits, reconciled by `requestId` against `edit_log`.
-  - Undo and redo through inverse patches.
-- [x] **1.6 `/dev` Edit mode:** — *(against the mock client)*
-  - Pen, box, erase-by-line, and door/exit placement.
-  - Project list, create, invite code, join.
-
-**Done when:**
-- Two browsers on one project see each other's edits in under 1 s.
-- A reload keeps everything.
-- A third guest can't see the project.
-- A stale edit is rejected cleanly.
-- Tests are green.
-
-**Cut if late:** the `moveVertex` drag UI and windows.
-
-### Pass 2 — Congestion core (22:30–03:30) · FUNCTIONAL BASE
-
-- [x] **2.1 `sim/compile`:** grid, walkable fraction, interior, portals and regions, cached by `layoutHash`.
-- [x] **2.2 `sim/nav`:** distance fields and unreachable detection.
-- [x] **2.3 `sim/population`:** uniform seeded sampling and `POPULATION_INFEASIBLE`.
-- [x] **2.4 `sim/step`:** per §6.
-- [x] **2.5 `sim/fields` and `sim/metrics`.**
-- [x] **2.6 Tests:**
-  - No actor is ever inside a wall polygon (fuzzed over seeds).
-  - A 0.9 m door is passable on the 0.25 m grid.
-  - A queue forms in the corridor fixture.
-  - The same seed gives an identical frame hash.
-  - Blocking an exit changes the metrics.
-  - A run completes.
-  - An infeasible N errors.
-- [x] **2.7 Module:** (implemented; current Maincloud E2E verifies run/replay/results)
-  - `saveScenario`.
-  - `requestSimulation`: freezes and dedupes the snapshot.
-  - `cancelSimulation`.
-  - The runner reducers.
-  - Run, replay and result views.
-  - `openRun`.
-- [x] **2.8 Runner run loop:** per §7, with pacing and performance logs.
-- [x] **2.9 Client:** — *(Playback, LIVE edge, heatmaps from frames; the mock runs the real sim in the browser)*
-  - `startRun`.
-  - `PlaybackController`: buffers chunks, interpolates, tracks the LIVE edge, handles ±10 s skips and seeking.
-  - Fields computed client-side from frames, with final aggregates from `sim_results`.
-- [x] **2.10 `/dev` Live mode:** toolbar, time bar, heatmap, metrics.
-
-**Done when:**
-- 300 people evacuate the corridor fixture with a visible queue.
-- The heatmap stays after completion, with time-average as the default.
-- Refreshing still replays the run.
-- The LIVE edge grows during a paced run.
-- 500 actors take ≤ 10 ms per tick.
-
-**Cut if late:** the speed field, the bottleneck list, and pace options (keep 1×).
-
-### Pass 3 — Analysis agent (03:30–07:00)
-
-- [x] **3.1 Agent loop:** the Nemotron client, the tool loop, the budget, step logging.
-- [x] **3.2 Tools:** per §7. Candidate runs execute unpaced in-process and are recorded with `recordAgentRun`, so they appear as ordinary runs.
-- [x] **3.3 Module:** (proposal delivery and acceptance verified on Maincloud)
-  - Agent reducers and views.
-  - `acceptProposal` through `core.applyEdit` with `requestId = proposalId`.
-- [x] **3.4 Client:** — *(the mock runs the real agent tools and heuristic planner in the browser)*
-  - `agent.ask`, `steps`, `proposals`, `accept`, `reject`.
-  - The ghost diff: the proposal patch applied to a copy of the document, then diffed against the current one.
-- [x] **3.5 `/dev` Analysis mode:**
-  - Chat and step cards.
-  - Ghost entities with bubbles.
-  - Accept / Reject.
-  - The before/after card.
-
-**Done when:**
-1. Asking "Investigate the worst bottleneck" produces real tool calls.
-2. A candidate runs on the same seed.
-3. The proposal shows a measured delta.
-4. Accept updates both browsers.
-
-**Fallback:** if free-form tool use is unreliable, run a fixed but real two-step sequence: `get_hotspots`, then `test_edit_batch` on the top suggestion. The model only writes the explanation. **Never a canned transcript.**
-
-### Pass 4 — Merge and harden (07:00–10:00)
-
-- [ ] **4.1 Full merge with the partner UI:** wire their components to `@egress/client`, and drop `/dev` from navigation (keep the route).
-- [ ] **4.2 Venue scene:** `content/scenes/venue.json`, drawn in the editor and labelled approximate. Image detection only if time allows.
-- [x] **4.3 Population painting:**
-  - Scenario strokes.
-  - Compartments split at walls and door thresholds.
-  - Erase restores weight 1.
-  - Total N never changes.
-- [x] **4.4 Edit-mode static heatmap:** exit distance and route demand from `sim/nav`, labelled "potential bottleneck estimate".
-- [ ] **4.5 Deploy:**
-  - Web host (likely Vercel; confirm with the partner).
-  - Maincloud prod database `egress`.
-  - Runner on the demo laptop.
-  - Environment variables.
-- [ ] **4.6 Finish:** error and empty states, plus visible performance logs.
-
-**Cut order:**
-1. 4.4
-2. 4.3
-3. 4.2 polish
-
-### Pass 5 — Submit (10:00–12:00)
-
-- [ ] **10:30 code freeze** (fixes only).
-- [ ] **Backup demo video** following the demo script in spec §13.
-- [ ] **README:** setup, architecture, and the limitations from spec §14.
-- [ ] **Public repo** and the submission form.
-
----
-
-## 10. Branch and merge workflow
-
-- **Daily rhythm:** work on `implement-backend`. After every partner commit to `main`:
-  1. `git merge origin/main` into our branch.
-  2. Run the tests and `/dev` against the new UI.
-  3. Resolve any conflicts here, not on `main`.
-- **Pass 0 lands on `main` early.** It's additive: new folders plus the workspace config. The partner pulls it and builds against the contracts and the mock.
-- **Full merge into `main` after Pass 2,** once [docs/PARTNER_SYNC.md](docs/PARTNER_SYNC.md) is settled.
-- **Partner files stay untouched on our branch,** with these exceptions: `package.json` (workspaces), `next.config.ts` (transpilePackages), and `lib/` re-export shims once agreed.
-
-## 11. Testing
-
-- **Runner:** `node --test` in every workspace, with fixtures in `content/scenes/`.
-- **Acceptance tests** mirror spec §12: geometry, population, physics, rendering/replay, persistence/security, and AI. Each pass lists its own.
-- **Determinism tests** compare a SHA-256 over all frames of a run.
-
-## 12. Risks and spikes
+## 6. Risks
 
 | Risk | Mitigation |
 |---|---|
-| Views don't re-evaluate when `sessions` changes | Pass 0 spike; fall back to authorized procedures |
-| Module bundler can't import a workspace package or Zod | Pass 0 spike; keep module validation self-contained |
-| Node type stripping refuses `.ts` under `node_modules` | Workspaces symlink to real paths; fall back to `tsx` for the runner and tests |
-| A Maincloud schema migration breaks | Freeze the schema in Pass 0; additive changes only; generic JSON payloads |
-| Nemotron tool calling is unreliable, or the ~40 requests/min limit bites | ≤ 12 calls per job; fixed-sequence fallback; lightning-model fallback |
-| The simulation is too slow at 500 actors | Spatial hash; profile; drop to 300 |
-| Merge pain with the partner | Early Pass 0 merge; merge `main` often; the façade boundary |
+| Home internet or power goes down during the demo | Keep Maincloud running until after the demo; the runner can serve both. A UPS is worth having. |
+| The public SpacetimeDB is abused (publishing, spam projects) | Edge route allowlist; publisher token offline; per-identity project limits if needed |
+| Losing the publisher token | Password manager plus a sealed backup; document how to republish under a new name |
+| Nemotron mislabels rooms | Rule fallback, confidence shown, user override |
+| Multi-floor sim takes longer than planned | Ship floor surfaces and floors in the UI first; the sim allows down-only stairs and one stair per pair of floors to start |
+| Smooth heatmap costs too much GPU | One bicubic sample per pixel at playback resolution; fall back to linear filtering |
 
-## 13. Human action items
+## 7. Human action items (Cody)
 
-- [x] **Cody:** `spacetime login` (Maincloud) once the CLI is installed.
-- [x] **Cody:** make `NVIDIA_API_KEY` available to the server-side runner. It is accessible in this session and has completed real hosted requests; `.env` is optional when inherited from the environment.
-- [ ] **Cody + partner:** walk through [docs/PARTNER_SYNC.md](docs/PARTNER_SYNC.md).
-- [ ] **Cody + partner:** choose the web host (Vercel?).
+- [ ] Confirm where `dontrepeatyourself.dev` is registered. Add it to a free Cloudflare account and switch the nameservers ([SELF_HOSTING.md](docs/SELF_HOSTING.md) §1).
+- [ ] On the desktop: put `NVIDIA_API_KEY` into `services/runner/.env` (from `.env.example`).
+- [ ] Create the publisher token (SELF_HOSTING §4) and keep it in a password manager.
+- [ ] Set the desktop to never sleep, use wired ethernet, and set Windows Update active hours around demos.
+- [ ] Pick black or blueprint after the Pass 6 trial.
+
+## 8. Open questions for Cody
+
+1. **Background:** replace blueprint with black, or keep both as a setting?
+2. **Escape plans:** is PNG enough, or is a printable PDF needed? Are secondary routes wanted on every plan?
+3. **Stairs:** down-only for evacuation? (Assumed yes.) Any outdoor stairs or ramps?
+4. **Upper floors:** should walls placed on floor 2 require a slab underneath, or warn?
+5. **Fire:** realism target. Fire-modeling grade (t² growth, smoke dose) or a believable visual first?
 
 ---
 
-## 14. Decision log
+## 9. Decision log
+
+D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the rebuild. Where an older entry conflicts with a newer one, the newer one wins.
+
 
 | # | Date | Decision |
 |---|---|---|
@@ -917,3 +408,16 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D61 | 11-08 | **Agent suggestions:** several edits per proposal, highlighted in blue on the model with one short reason bubble each. The agent weighs compliance checks and measured safety. Compliance tooling and multi-edit batching are the next backend pass. |
 | D62 | 11-08 | **Blender wall textures:** a manifest at `frontend/public/assets/walls/manifest.json` maps materials (later `finish` ids) to exported textures with world-scale UVs and a flat-colour fallback. |
 | D63 | 11-08 | **Viewcube behaves like a CAD viewcube:** drag it to orbit; click faces, edges and corners for those views; it mirrors the camera. Edit still locks top-down. |
+| D64 | 11-08 | **Plan rebuilt after `STABLE-V1`.** Plan.md now holds priorities, workstreams and decisions. The contracts (§3–§8, same numbers) moved to `docs/ARCHITECTURE.md`; the old plan is archived unchanged at `docs/history/PLAN-STABLE-V1.md`. |
+| D65 | 11-08 | **Trunk and tags.** `main` fast-forwards from the dev branch `backend-passes` at green points; major milestones get `STABLE-Vn` tags (`STABLE-V1` = `60868ea`). `implement-backend` is merged and retired. |
+| D66 | 11-08 | **`STABLE-V2` requires the public site.** https://dontrepeatyourself.dev serves Egress from Cody's home desktop, which also runs SpacetimeDB and the runner. |
+| D67 | 11-08 | **Self-hosting topology:** SpacetimeDB standalone on `127.0.0.1:3010`, the runner, a Next.js production server on `127.0.0.1:3100`, and a Cloudflare Tunnel (TLS, no open ports, home IP hidden). The public SpacetimeDB exposes only the browser's routes; publishing is denied at the edge. |
+| D68 | 11-08 | **Secrets and publishing.** Each component reads a gitignored `.env` with a committed `.env.example`. Publishing uses a server-issued publisher token (`POST /v1/identity`) through a project-local CLI config (`--config-path`), so nobody needs an interactive `spacetime login`. A throwaway publish with such a token was verified on the local server. |
+| D69 | 11-08 | **The saves page is the landing page.** It's a full-page project list with size in KB, JSON download, a black-on-white plan render and details; Open (or double-click) slides to the editor and Saves slides back. Backed by additive `project_stats` and preview views; JSON import is also the Maincloud-to-home migration path. |
+| D70 | 11-08 | **Display changes:** a black background trial behind a theme token (blueprint kept until Cody picks); the right pane collapses with a pull tab mirroring the left rail; Layers expands at the top of one right column and the pane shrinks below it, so they never overlap; no sparkle icon in the chat bar. |
+| D71 | 11-08 | **Smooth heatmap:** blend the two 2 Hz field samples around the playhead by fractional time, sample bicubically from a float texture and apply the palette after interpolation; a separate walkable mask keeps walls crisp. |
+| D72 | 11-08 | **The agent answers the question asked.** Requests are classified (targeted edit, improve, question, compare); `inspect_layout` describes walls by room and hallway; `place_opening`/`move_opening` allow constrained authoring. The requested edit is measured and proposed even if it doesn't help, with the bottleneck fix offered as a second proposal. |
+| D73 | 11-08 | **Rooms and escape plans.** Nemotron labels each closed room (room, hallway, stair, closet, lobby, other) from geometric descriptors, with a rule fallback, cached by polygon hash and overridable by the user. Only real rooms get escape plans, each with primary and secondary routes from per-exit distance fields. |
+| D74 | 11-08 | **Floor surfaces return:** a `slab` entity with `wood`, `basic` (the wall look) or `tile`, drawn with a Floor tool or filled into a room. Ground-floor rooms stay walkable; on upper floors only slabs are walkable. |
+| D75 | 11-08 | **Multiple floors and stairs:** a bottom-left `‹ Floor n ›` switcher with per-floor floor-to-floor height; floors below render darker and floors above are hidden; the dot grid rises with the current floor while the ground stays at 0. Stairs are rectangles with an up edge, rendered as risers; evacuation routes go down only; frames gain a per-actor floor index. |
+| D76 | 11-08 | **Hazard order:** airflow particles, then smoke (time-based hazard carried by airflow), then fire (painted zones that spread through rooms independent of material; an immediate hazard). The population painting UI ships in V2 so fire painting can reuse the brush. |
