@@ -41,10 +41,18 @@
   2. `npm run publish:local -w @egress/spacetimedb`
   3. `npm run generate -w @egress/spacetimedb`
 
+**Real backend in the browser (Sat 20:00):**
+- `createSpacetimeClient({ uri, db })` implements `EgressClient` over the bindings. The client end-to-end check passes: `npm run e2e:local -w @egress/client`.
+- Running against the real local stack:
+  1. `spacetimedb-cli start --listen-addr 127.0.0.1:3010`
+  2. `npm run login:local -w @egress/spacetimedb && npm run publish:local -w @egress/spacetimedb`
+  3. `$env:SPACETIME_URI='ws://127.0.0.1:3010'; $env:SPACETIME_DB='egress-local'; npm start -w @egress/runner`
+  4. Open `http://localhost:3000/dev?backend=local`. Without `?backend=local`, `/dev` uses the in-browser mock.
+
 **Still open:**
-1. **Cody:** run `spacetime login`, then `npm run publish:dev -w @egress/spacetimedb` to deploy to Maincloud.
-2. **Backend:** `SpacetimeEgressClient`, the browser implementation of `EgressClient`, built from the bindings plus `OptimisticDocument` and `Playback`.
-3. **Cody:** put `NVIDIA_API_KEY` in `services/runner/.env` to switch the agent from the heuristic planner to Nemotron.
+1. **Cody:** run `spacetime login` (Maincloud), then `npm run publish:dev -w @egress/spacetimedb`. Point the runner at `wss://maincloud.spacetimedb.com` / `egress-dev`, which are the defaults in `services/runner/.env`.
+2. **Cody:** put `NVIDIA_API_KEY` in `services/runner/.env` to switch the agent from the heuristic planner to Nemotron.
+3. **Frontend lane:** wire ExitCraft to `createSpacetimeClient`, following the UI direction in §8.
 
 **Pitch:** Egress is a collaborative building editor. You draw a floor plan, drop in a crowd, run a pedestrian-flow evacuation, watch congestion build up, and scrub the replay. A Nemotron agent then tests design changes against measured results.
 

@@ -11,7 +11,7 @@ import {
   ACTOR_EXITED, ACTOR_QUEUED, CELL_SIZE_M, TICK_RATE_HZ, deriveLayout, parseDocument, projectOnSegment,
   type Aggregation, type EditCommand, type EgressDocument, type OpeningKind, type Pace, type PopulationBrushStroke, type ScalarField, type Vec2,
 } from '@egress/core';
-import { createMockClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
+import { createMockClient, createSpacetimeClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import { compileFloor, paintWeights, structuralField, type StructuralFieldId } from '@egress/sim';
 import oneRoom from '../../content/scenes/one-room.json';
@@ -25,21 +25,28 @@ const OPENING_WIDTH: Record<OpeningKind, number> = { door: 0.9, exit: 1.2, windo
 
 const noopSubscribe = () => () => {};
 
+const FIXTURES = [
+  { name: 'Two rooms + corridor', doc: () => parseDocument(twoRooms) },
+  { name: 'One room', doc: () => parseDocument(oneRoom) },
+  { name: 'Hall (30 × 20 m)', doc: () => parseDocument(hall) },
+];
+
 export default function DevHarness() {
   // Browser-only: the client owns timers and random ids, so never create it during SSR.
   const isBrowser = useSyncExternalStore(noopSubscribe, () => true, () => false);
-  const client = useMemo<EgressClient | null>(() => (isBrowser ? createMockClient({
-    seed: [
-      { name: 'Two rooms + corridor', doc: parseDocument(twoRooms) },
-      { name: 'One room', doc: parseDocument(oneRoom) },
-      { name: 'Hall (30 × 20 m)', doc: parseDocument(hall) },
-    ],
-  }) : null), [isBrowser]);
-  if (!client) return <div style={{ padding: 24, fontFamily: 'system-ui' }}>Starting mock backend…</div>;
-  return <Harness client={client} />;
+  // /dev?backend=local uses the real local SpacetimeDB (+ a running runner); default is the in-browser mock.
+  const backend = isBrowser ? new URLSearchParams(window.location.search).get('backend') ?? 'mock' : 'mock';
+  const client = useMemo<EgressClient | null>(() => {
+    if (!isBrowser) return null;
+    if (backend === 'local') return createSpacetimeClient({ uri: 'ws://127.0.0.1:3010', db: 'egress-local' });
+    return createMockClient({ seed: FIXTURES.map(f => ({ name: f.name, doc: f.doc() })) });
+  }, [isBrowser, backend]);
+  if (!client) return <div style={{ padding: 24, fontFamily: 'system-ui' }}>Starting backend…</div>;
+  return <Harness client={client} backend={backend} />;
 }
 
-function Harness({ client }: { client: EgressClient }) {
+function Harness({ client, backend }: { client: EgressClient; backend: string }) {
+  const status = useEgress(client.status);
   const [mode, setMode] = useState<Mode>('edit');
   const projects = useEgress(client.projects);
   const view = useEgress(client.document);
@@ -58,7 +65,11 @@ function Harness({ client }: { client: EgressClient }) {
         <select value={view.projectId ?? ''} onChange={e => { setRunId(null); void client.openProject(e.target.value || null); }}>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name} (r{p.revision})</option>)}
         </select>
-        <span style={{ color: '#6b7385' }}>mock backend · rev {view.doc?.revision ?? '–'}</span>
+        <select value="" onChange={e => { const f = FIXTURES.find(x => x.name === e.target.value); if (f) { setRunId(null); void client.createProject(f.name, f.doc()); } }}>
+          <option value="">+ new project…</option>
+          {FIXTURES.map(f => <option key={f.name}>{f.name}</option>)}
+        </select>
+        <span style={{ color: '#6b7385' }}>{backend === 'local' ? `SpacetimeDB local (${status})` : 'mock backend'} · rev {view.doc?.revision ?? '–'}{view.pending ? ` · ${view.pending} pending` : ''}</span>
         {view.lastError && <span style={{ color: '#b42318' }}>{view.lastError.code}: {view.lastError.message}</span>}
         {view.doc && deriveLayout(view.doc).diagnostics.map((d, i) => <span key={i} title={d.message} style={{ color: d.level === 'error' ? '#b42318' : '#b54708' }}>⚠ {d.code}</span>)}
       </header>
