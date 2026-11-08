@@ -1,43 +1,67 @@
-# Egress branch demo
+# Egress studio (UI v2)
 
-Implemented on `implement-backend` after merging current `origin/main` at `1c1cd88`. Keep these changes on this branch; no push or website publication was requested.
+Branch `backend-passes`. Design source: Plan.md §8 "UI direction v2" and the sketches in `docs/reference/gui/sketches/layout-v2-*.png`.
 
-## Open the demo
+## Open it
 
-From the repository root, run `npm install` and `npm run dev`, then open [the demo](http://localhost:3000/).
+`npm install`, then `npm run dev` and open http://localhost:3000/.
 
-- `/` uses durable browser-local save slots and the existing shared client/simulation implementation. A small example opens on first use; later visits restore the selected save. Layouts persist; local simulation results and undo history are session-only.
-- `/?backend=maincloud` uses the real `@egress/client` connection to `egress-dev` and the running Maincloud worker. Projects, edits, runs and results live in SpacetimeDB. NVIDIA remains runner-only.
-- `/?backend=local` uses the real local database/worker. `/dev?backend=local` remains the plain backend harness.
-- The Save slots panel also offers these storage choices. Browser-local slots belong to this browser/origin, so use the same `localhost` address. Clearing site data removes local saves; Export plan provides a JSON copy.
+| URL | Backend |
+|---|---|
+| `/` | Maincloud `egress-dev` (default). Projects live on the server; the browser keeps only its SpacetimeDB token. |
+| `/?backend=local` | A local SpacetimeDB at `ws://127.0.0.1:3010`, database `egress-local`. Add `&db=egress-backend` (or `&uri=`) to point elsewhere. Start a runner for the same database. |
+| `/?backend=mock` | In-memory development backend (real simulation and agent in the browser). Nothing is stored. |
+| `?project=<id>` | Opens that project if you are a member. The URL always tracks the open project. |
+| `?join=<code>` | Joins through a share link (viewer access), then opens the project. |
 
-## Controls and implemented behavior
+`/dev` is still the plain backend harness.
 
-- **One 3D scene.** Design locks the existing meshes to an orthographic overhead camera. Simulate and Analysis transition to isometric, then allow orbit/pan/zoom. No second 2D editor is used by the demo.
-- **Viewcube.** The cube reflects the camera and its top/north/south/east/west faces select views. Top/Iso/Front and Frame controls are also available. Side views are disabled in Design. Camera elevation stays above the floor; the floor cannot be viewed from underneath.
-- **Walls and rooms.** Select Walls and click two points or drag a segment. Hold Shift for angles; otherwise the gesture is axis-aligned. Room creates a wall box. Snapping is 0.25 m. All edits use the existing deterministic core and client commands.
-- **Existing asset types.** Normal, reinforced and glass wall styles; doors, windows and exits with the existing procedural 3D frame/pane/leaf treatment. Pick a type in the left menu, then place it in the top-down scene. Selecting a wall reveals its material inspector.
-- **Erase and history.** Click an opening/wall or drag through walls to erase; Undo/Redo use the shared client. Esc cancels an unfinished gesture. F frames the current layout.
-- **Collapsible left menu.** Its handle opens/closes it. Every bottom-toolbar action collapses it again. Save slots opens an inline switcher with the existing plans and a named **+ Create new** action. No modal or blocking popup is used, including by the retained sketch importer component.
-- **Persistence.** Browser-local save slots automatically record the active document and selection of save slot. Multiple plans survive refresh independently. Invalid/unreadable old saves are preserved rather than overwritten; storage failures show an error. Maincloud projects already provide separate server saves.
-- **Viewing.** Walls that intercept camera-to-interior-floor samples use alpha-hashed dithering; their frames/trim follow the wall. Furniture is not part of the fade set. This uses Three.js [alpha-hashed transparency](https://threejs.org/docs/pages/Material.html#alphaHash), rather than changing collision or deleting geometry.
-- **Simulation/report.** Population, Run/Stop, playback controls and a basic measured report use the existing backend. A new run automatically plays at 4×. Analysis Suggestions connects to the existing agent/proposal APIs. This demo does not yet include every control from `/dev`, such as the heatmap selector, population painting or full replay scrubber.
+## Layout
 
-The current frontend's top mode control, switching bottom taskbar, palette, and side-menu patterns and the [recorded UI references](UI_REFERENCE.md) guide the layout. The supplied sketches remain reference artifacts; their startup modal is superseded by the user's no-modal direction. The current sketch/QR importer and server routes were retained by the merge; connecting imported legacy layouts to the canonical document is deferred.
+- **Top left:** project name with sync dot (green saved, amber saving, red disconnected); click for Projects. The viewcube sits below it.
+- **Top center:** `Edit | Simulate | Analysis` (keys 1 / 2 / 3).
+- **Top right:** "Sim server offline" chip when no runner heartbeat; **Layers**.
+- **Left edge:** pull tab. Open it for Projects, Share, Import plan image, Export (JSON / PNG) and Frame (F).
+- **Right:** the context pane, only when there is something to show. Its dashed bottom box holds the primary action.
+- **Bottom:** the context toolbar.
 
-## What the simplest demo still needs from the backend
+## Modes
 
-**No new backend contract is required for drawing a wall layout, changing among the three wall types, placing doors/windows/exits, viewing the result in 3D, or using multiple saved projects.** Those operations are implemented already and the demo now uses them.
+**Edit** (top-down, locked)
+- Select (V), Wall (W), Room (R), Door (D), Window (N), Exit (E), Erase (X), Undo / Redo (Ctrl+Z / Ctrl+Shift+Z).
+- **Right-click the Wall button** for the wall type (Normal / Reinforced / Glass). Right-click a wall on the canvas to change its type or delete it.
+- Walls chain click-to-click; Esc or right-click ends the chain; clicking the start point closes it. Drag draws one segment. Axis-locked by default; hold Shift for any angle. Snaps to existing vertices (0.3 m), otherwise to the 0.25 m dots. A live dimension follows the cursor.
+- Doors, windows and exits preview on the nearest wall before you click.
+- Middle-drag or Space+drag pans; wheel zooms. Delete removes the selection.
+- Selecting a wall or opening opens the inspector (type, thickness, height / kind, width, open/closed).
 
-The main backend gap for the next asset pass is **furniture/placeable instances**: a prefab reference, floor/position/rotation, edit commands, and footprint/clearance validation against walls and egress openings. `furniture: []` remains reserved. Do not add that contract merely for decorative art.
+**Simulate**
+- Pane: people, distribution (Uniform; Painted comes later), seed, then live readout: end state, evacuation time, how far the server has computed, evacuated, still inside, max queue, and people who cannot reach an exit.
+- Toolbar: « 10 s, play/pause, » 10 s (also ←, Space, →), timeline up to the LIVE edge, `LIVE` / `END` badge, playback 1× / 2× / 4×.
+- The server always computes at 4× and runs ahead; pause and scrub are client-side. A run ends only when everyone reachable is out, the flow stops changing for 10 s, or a 15-minute safety cap.
 
-Blender `.glb` loading, module fitting, materials and render budgets are frontend/asset work; none are prerequisites for displaying the existing procedural meshes. No Blender GLB library is bundled by this demo. See [3D_ASSET_PLAN.md](3D_ASSET_PLAN.md) before that pass. Floor surfaces are derived from enclosed rooms; custom free-standing slabs, multi-floor navigation, fire and airflow remain outside this simple demo.
+**Analysis**
+- Toolbar: chat bar. An empty message asks for the worst bottleneck and a measured fix.
+- Pane: the question, each measured agent step with its number, the agent's answer, the suggestion (reasons, Δ evacuation time, Δ max queue, crowds tested, mean across crowds, before → after), a difference-map toggle, and Accept / Reject.
+- Suggested edits glow blue on the model, with a bubble giving the short reason next to each edit.
 
-## Verification
+**Layers**: People (Discrete dots, or Heatmap of density or congestion as Current / Average / Peak, with a legend). Airflow is listed and disabled.
 
-- All **41 frontend tests** passed, including new tests for independent local slots, refresh recovery and preserving unreadable saves.
-- Frontend typecheck, targeted lint and the production build passed, including the final camera/toolbar/playback refinements.
-- Browser: created a second save, drew a room, switched saves, refreshed and recovered the selected plan. Placed a real exit in the same scene. Checked top-down camera lock, isometric transition, viewcube presets and wall-only dithering.
-- Maincloud through this UI: a glass room changed the layout from 10 to 14 walls; confirmation returned and undo restored 10. A 50-person run completed in **47.4 s**, with **50 evacuated / 0 remaining**, and the report reached Analysis. The worker logged 24 replay chunks and the same 50/50 result.
+## Scene
 
-Only repository commits are made for this demo. Nothing is pushed back to `main` or published as a website.
+- Blueprint floor with a white dot grid (0.25 m dots, brighter every 1 m and 5 m; small dots fade out when zoomed out). No grid lines.
+- Walls hiding the floor are cross-hatched (never in top-down views).
+- Viewcube: drag to orbit; click a face, edge or corner. Locked to Top in Edit.
+- Wall looks come from `frontend/public/assets/walls/manifest.json` (Blender textures; see the README there).
+
+## Verified (2026-11-08)
+
+- `?backend=mock`: drew a reinforced wall with snapping and dimensions; inspector edits; right-click type menu; 150-person run to "Everyone is out" at 114.4 s with END; heatmap Average; viewcube edge click and drag-orbit; agent proposal (exit 1.2 → 1.8 m, −40.8 s, mean −35.8 s over 3 crowds) shown blue with its bubble; Accept applied it.
+- `?backend=local&db=egress-backend` with a runner: project created server-side, runner online, a run streamed from the server (playhead behind the LIVE edge), and the server agent's proposal (−40.1 s; mean −35.6 s over 3 crowds) rendered the same way.
+- Not yet checked against Maincloud from this UI.
+
+## Not done yet
+
+- Presence (person icon + count, hover for tokens), permanent share links and role management need the collaboration backend (Plan.md §8 follow-ups). Share currently creates a 14-day viewer invite.
+- Population painting in Simulate; fire / elements.
+- Compliance-based and multi-edit suggestions (backend follow-ups).

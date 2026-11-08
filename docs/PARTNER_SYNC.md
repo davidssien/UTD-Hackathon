@@ -4,7 +4,14 @@
 
 Context: [Plan.md](../Plan.md) is the build plan. We've renamed the product **Egress**.
 
-## Latest handoff — 2026-11-07
+## Latest — 2026-11-08 (branch `backend-passes`)
+
+- **Studio UI v2** is built to Plan.md §8 "UI direction v2"; see [DEMO_UI.md](DEMO_UI.md). CAD chrome, no taglines, Heroicons placeholders, a pull-tab rail, a context pane and a bottom context toolbar per mode.
+- **Projects are never stored in the browser** (D58). `/` talks to Maincloud; the local save slots are gone.
+- **Wall textures:** drop Blender exports into `frontend/public/assets/walls/` and list them in `manifest.json`; see the README there.
+- `implement-backend` is merged into `backend-passes`; `backend-passes` merges into `main` when the project is done.
+
+## Earlier handoff — 2026-11-07
 
 - **Branch demo now implemented:** merged current main at `1c1cd88`, including `frontend/` relocation and sketch/QR modules. Root uses a single 3D scene, top-down Design, isometric/freecam, an orientation cube, wall-only dithering and the requested top selector / switching taskbar / collapsible side menu. No modal popups. Browser-local save slots include Create new; the same UI can use Maincloud. See [DEMO_UI.md](DEMO_UI.md). These changes remain on our branch, without a push or publication.
 
