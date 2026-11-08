@@ -197,3 +197,15 @@ test('parsers reject malformed input as DomainErrors', () => {
   assert.throws(() => parseDocument({ docVersion: 2 }), (e: Error & { code?: string }) => e.code === 'INVALID_GEOMETRY');
   assert.doesNotThrow(() => parseDocument(base()));
 });
+
+test('field bundle codec round-trips Float32 arrays including NaN', async () => {
+  const { encodeFieldBundle, decodeFieldBundle } = await import('@egress/core');
+  const grid = { floorId: 'f', origin: { x: -1, y: -1 }, cellSizeM: 0.25, width: 7, height: 5 };
+  const a = Float32Array.from({ length: 35 }, (_, i) => (i % 6 === 0 ? NaN : i * 0.5));
+  const b = Float32Array.from({ length: 35 }, (_, i) => i * i);
+  const decoded = decodeFieldBundle(encodeFieldBundle({ grid, fields: { 'people.congestion/timeAverage': a, 'people.density/perCellPeak': b } }));
+  assert.deepEqual(decoded.grid, grid);
+  assert.deepEqual(Array.from(decoded.fields['people.density/perCellPeak']), Array.from(b));
+  assert.ok(Number.isNaN(decoded.fields['people.congestion/timeAverage'][0]));
+  assert.equal(decoded.fields['people.congestion/timeAverage'][5], 2.5);
+});
