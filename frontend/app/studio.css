@@ -11,6 +11,7 @@
 .studio :where(button:disabled){cursor:default;opacity:.38}
 .studio :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .studio :where(svg){width:18px;height:18px;flex:none}
+.editor-surface{position:absolute;inset:0}
 .scene-loading,.egress-scene{position:absolute;inset:0}
 .egress-scene canvas{display:block;touch-action:none}
 .egress-scene.tool-wall canvas,.egress-scene.tool-box canvas,.egress-scene.tool-door canvas,.egress-scene.tool-window canvas,.egress-scene.tool-exit canvas{cursor:crosshair}

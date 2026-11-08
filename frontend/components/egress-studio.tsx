@@ -106,6 +106,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   });
   const [entry, setEntry] = useState<ProjectEntry | null>(null);
   const savesPage = useRef<HTMLElement>(null);
+  const openSequence = useRef(0);
   const [tool, setTool] = useState<SceneTool>('select');
   const [wallType, setWallType] = useState<WallMaterial>('normal');
   const [slabType, setSlabType] = useState<SlabMaterial>('wood');
@@ -211,14 +212,15 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const openFromSaves = (projectId: string) => {
     if (entry) return;
-    const request: ProjectEntry = { projectId, phase: 'request' };
-    setEntry(request);
+    const attempt = ++openSequence.current;
+    setEntry({ projectId, phase: 'request' });
     setError('');
     void client.openProject(projectId).then(() => {
-      setEntry(current => current === request ? { projectId, phase: 'iso' } : current);
+      if (attempt !== openSequence.current) return;
+      setEntry({ projectId, phase: 'iso' });
       setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select');
       setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform');
-    }).catch(e => { setEntry(null); fail(e); });
+    }).catch(e => { if (attempt === openSequence.current) { setEntry(null); fail(e); } });
   };
   // Keep the first rendered isometric view in place as the saves page slides away.
   useEffect(() => {
@@ -231,14 +233,16 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     return () => { live = false; };
   }, [entry]);
   useEffect(() => {
-    if (!entry || (entry.phase !== 'request' && entry.phase !== 'iso')) return;
+    if (!entry) return;
+    const offline = status === 'error' || status === 'disconnected';
     const timer = setTimeout(() => {
-      setEntry(null);
-      setError('Could not load this project. Open it again to retry.');
-    }, 30000);
+      openSequence.current++;
+      setEntry(null); setScreen('saves');
+      setError(offline ? 'Connection lost while opening the project.' : 'Could not load this project. Open it again to retry.');
+    }, offline ? 0 : 30000);
     return () => clearTimeout(timer);
-  }, [entry]);
-  const toSaves = () => { setRail(false); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); setScreen('saves'); };
+  }, [entry, status]);
+  const toSaves = () => { setTagMenu(null); setRail(false); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); setScreen('saves'); };
   const edit = (commands: EditCommand[]) => {
     if (!canEdit) { setError('You have view access to this project.'); return; }
     if (locked) { setError(LOCKED_MESSAGE); return; }
@@ -367,6 +371,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       if (!target.closest('.floor-switch')) setFloorPanel(false);
       if (!target.closest('.layers-panel, .hud-button')) setLayersOpen(false);
     }}>
+    <div className="editor-surface" inert={screen === 'saves'}>
     <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       inputBlocked={screen === 'saves' || !!entry}
@@ -508,13 +513,15 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <button className="danger" onClick={() => { edit([{ kind: 'deleteEntities', ids: [menu.openingId ?? menu.wallId ?? menu.stairId ?? menu.slabId!] }]); setSelected(null); setMenu(null); }}><TrashIcon />Delete</button>
     </div>}
 
+    {tagMenu && <RoomTagMenu at={tagMenu} label={labelMap.get(tagMenu.hash)} onClose={() => setTagMenu(null)}
+      onSave={(kind, name) => { void client.setRoomLabel(tagMenu.hash, kind, name).catch(fail); setTagMenu(null); }} />}
+    </div>
+
     {(error || view.lastError || (status === 'error' && connectionError)) && <div className="toast" role="alert"><span>{error || view.lastError?.message || connectionError}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
 
     <SavesPage pageRef={savesPage} client={client} active={screen === 'saves'} onOpen={openFromSaves} onImportImage={() => setModal('import')}
       onCreateExample={x => x.load().then(d => client.createProject(x.name, d))} onError={fail} />
 
-    {tagMenu && <RoomTagMenu at={tagMenu} label={labelMap.get(tagMenu.hash)} onClose={() => setTagMenu(null)}
-      onSave={(kind, name) => { void client.setRoomLabel(tagMenu.hash, kind, name).catch(fail); setTagMenu(null); }} />}
     {modal === 'plans' && doc && <ModalFrame title="Escape plans" wide onClose={() => setModal(null)}><EscapePlans doc={doc} labels={labelMap} projectName={project?.name ?? 'Plan'} /></ModalFrame>}
     {modal === 'share' && <ShareModal client={client} role={role} backend={backend} onClose={() => setModal(null)} />}
     {modal === 'import' && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal import-host">
