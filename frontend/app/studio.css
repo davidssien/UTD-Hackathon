@@ -44,7 +44,7 @@
 .layers-panel>button{display:flex;align-items:center;gap:8px;height:30px;padding:0 8px;border-radius:6px;text-align:left}
 .layers-panel>button:hover:not(:disabled){background:var(--chrome-2)}
 .layers-panel>button[aria-pressed=true]{font-weight:600}
-.layers-panel>button svg{width:15px;height:15px;color:var(--accent)}
+.layers-panel>button svg{width:15px;height:15px;color:var(--accent);margin-left:auto}
 .layers-panel hr{border:0;border-top:1px solid var(--chrome-3);margin:4px 2px}
 .layers-panel .segmented{margin:0 4px 4px}
 .pane>.pane-collapse{position:absolute;left:-19px;top:14px;width:18px;height:44px;display:grid;place-items:center;background:var(--chrome);border:1px solid var(--line);border-right:0;border-radius:9px 0 0 9px;color:var(--muted)}
@@ -84,6 +84,7 @@
 .field>span{width:84px;flex:none;color:var(--muted)}
 .field input[type=number],.field select{width:100%;height:28px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;font-variant-numeric:tabular-nums}
 .field input.narrow{width:68px;flex:none}
+.field input.wide{flex:1;min-width:0;width:0}
 .field input[type=range]{flex:1;min-width:0;width:0;accent-color:var(--accent)}
 .field em{font-style:normal;color:var(--muted)}
 .segmented{display:flex;background:var(--chrome-2);border:1px solid var(--line);border-radius:7px;padding:2px;gap:2px;flex:1}
@@ -350,7 +351,7 @@
 
 /* Population brush (D76) */
 .paint-box{margin:4px 0 6px;padding:4px 8px 8px;border:1px solid var(--chrome-3);border-radius:8px;background:var(--chrome-2)}
-.paint-box .icon-button.on{background:var(--ink);color:#fff}
+.paint-box .icon-button.on{background:var(--ink);color:#fff;border-radius:50%}
 .paint-box .field .button{height:26px;padding:0 8px;font-weight:500}
 .note:not(.warn):not(.error){background:var(--chrome-2);color:var(--ink-2)}
 

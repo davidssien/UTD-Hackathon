@@ -605,13 +605,13 @@ function LayersPanel({ layer, onChange, wind, onWind, flow, error }: {
 }) {
   return <div className="layers-panel" aria-label="Layers">
     <div className="menu-label">Layer</div>
-    <button aria-pressed={layer.family === 'people'} onClick={() => onChange({ ...layer, family: 'people' })}>{layer.family === 'people' && <CheckIcon />}People</button>
-    <button aria-pressed={layer.family === 'air'} onClick={() => onChange({ ...layer, family: 'air' })}>{layer.family === 'air' && <CheckIcon />}Airflow</button>
+    <button aria-pressed={layer.family === 'people'} onClick={() => onChange({ ...layer, family: 'people' })}>People{layer.family === 'people' && <CheckIcon />}</button>
+    <button aria-pressed={layer.family === 'air'} onClick={() => onChange({ ...layer, family: 'air' })}>Airflow{layer.family === 'air' && <CheckIcon />}</button>
     <hr />
     {layer.family === 'air' ? <>
       <div className="menu-label">Wind</div>
       <WindCompass value={wind} onChange={onWind} />
-      <p className="air-readout" role="status">{error ?? (!flow ? 'Calculating airflow…' : flow.peak < 1e-6 ? 'No through-flow under this wind. Open exterior windows or doors on different sides.' : `${flow.exteriorOpenings} open exterior apertures · relative airflow`)}</p>
+      {(error || !flow || flow.peak < 1e-6) && <p className="air-readout" role="status">{error ?? (!flow ? 'Calculating airflow…' : 'No through-flow under this wind. Open exterior windows or doors on different sides.')}</p>}
       {flow && flow.peak > 1e-6 && <div className="legend air-legend"><span>Lower</span><i /><span>Higher</span></div>}
     </> : <>
     <div className="menu-label">View</div>
@@ -720,7 +720,7 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
       <div className="field"><span>Distribution</span><Segmented value={distribution} options={[{ id: 'uniform', name: 'Uniform' }, { id: 'painted', name: 'Painted' }]} onChange={onDistribution} disabled={running} /></div>
       {distribution === 'painted' && <div className="paint-box">
         <div className="field"><span>Brush</span>
-          <button className={`icon-button ${brush ? 'on' : ''}`} aria-pressed={!!brush} data-tip={brush ? 'Put the brush away' : 'Paint on the floor plan'} disabled={running} onClick={() => onBrush(brush ? null : { radiusM: 2, mode: 'increase' })}><PaintBrushIcon /></button>
+          <button className={`icon-button ${brush ? 'on' : ''}`} aria-pressed={!!brush} data-tip="Toggle brush" disabled={running} onClick={() => onBrush(brush ? null : { radiusM: 2, mode: 'increase' })}><PaintBrushIcon /></button>
           <Segmented value={brush?.mode ?? 'increase'} disabled={running || !brush} options={[{ id: 'increase', name: 'More' }, { id: 'decrease', name: 'Fewer' }, { id: 'erase', name: 'Reset' }]} onChange={mode => brush && onBrush({ ...brush, mode })} />
         </div>
         <label className="field"><span>Size</span>
@@ -734,7 +734,7 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
         <p className="fine">Painting changes where people start, not how many. Left-drag on the plan while the brush is out.</p>
       </div>}
       <label className="field"><span>Seed</span>
-        <input type="number" className="narrow" min={0} value={seed} disabled={running} onChange={e => setSeed(Math.max(0, Number(e.target.value) || 0))} />
+        <input type="number" className="wide" aria-label="Seed" min={0} value={seed} disabled={running} onChange={e => setSeed(Math.max(0, Number(e.target.value) || 0))} />
         <button className="icon-button" data-tip="New seed" disabled={running} onClick={() => setSeed(Math.floor(Math.random() * 100000))}><ArrowPathIcon /></button>
       </label>
       {!capacity && <p className="note">There is no space to place people in the current layout and distribution.</p>}
