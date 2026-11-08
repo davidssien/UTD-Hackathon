@@ -52,3 +52,14 @@ test('append refuses crossing an existing wall without changing current geometry
   const crossing={...current,walls:[{id:'new',x1:2,z1:-2,x2:2,z2:2,thickness:.2}]};
   const result=mergeImport(current,crossing);assert.ok(result.error);assert.equal(result.building,current);
 });
+test('image recognition ignores furniture, recognizes a door leaf, and closes the floor boundary',async()=>{
+ const {default:sharp}=await import('sharp');
+ const {data,info}=await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="480"><rect width="600" height="480" fill="white"/><path d="M270 60H60V410H530V60H310" stroke="black" stroke-width="10" fill="none"/><path d="M270 60V100" stroke="black" stroke-width="3"/><rect x="180" y="200" width="40" height="40" stroke="black" stroke-width="3" fill="none"/></svg>')).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ const result=recognizeSketch({width:info.width,height:info.height,data} as unknown as ImageData);
+ assert.equal(result.building.walls.length,6);assert.equal(result.building.walls.flatMap(w=>w.openings??[])[0]?.type,'door');assert.equal(result.building.floors?.length,1);assert.ok(result.ignored.length>=4);
+});
+test('numeric review edits preserve sub-grid coordinates and undo restores geometry',()=>{
+ const loaded=editorReducer(initialEditor,{type:'load',building:current});
+ const result=editorReducer(loaded,{type:'edit',command:{type:'resize-wall',wallId:'a',endpoint:'end',point:{x:4.13,z:0},snap:false}});
+ assert.equal(result.present!.walls[0].x2,4.13);assert.equal(editorReducer(result,{type:'undo'}).present,loaded.present);
+});

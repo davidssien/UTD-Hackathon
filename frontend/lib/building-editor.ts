@@ -13,7 +13,7 @@ export type EditCommand =
   | { type: 'fill-floor'; point: Point }
   | { type: 'delete-base-floor' }
   | { type: 'delete-floor'; floorId: string }
-  | { type: 'resize-wall'; wallId: string; endpoint: 'start' | 'end'; point: Point }
+  | { type: 'resize-wall'; wallId: string; endpoint: 'start' | 'end'; point: Point; snap?: boolean }
   | { type: 'wall'; start: Point; end: Point }
   | { type: 'opening'; wallId: string; kind: 'door' | 'window'; point: Point }
   | { type: 'delete-walls'; wallIds: string[] }
@@ -100,7 +100,7 @@ export function editBuilding(building: Building, command: EditCommand): { buildi
     const target = building.walls.find(w => w.id === command.wallId);
     if (!target) return { building };
     const old = command.endpoint === 'start' ? { x: target.x1, z: target.z1 } : { x: target.x2, z: target.z2 };
-    const point = snapPoint(command.point, building.walls.filter(w => w.id !== target.id));
+    const point = command.snap === false ? command.point : snapPoint(command.point, building.walls.filter(w => w.id !== target.id));
     if (![point.x, point.z].every(Number.isFinite)) return { building, error: 'Choose a valid grid point.' };
     if (Math.hypot(point.x - old.x, point.z - old.z) < .001) return { building };
     const walls = building.walls.map(w => {

@@ -7,7 +7,7 @@ export type Building = { references?: { image: string; width: number; depth: num
 
 // Extract long, dark horizontal and vertical runs, then consolidate adjacent
 // scanlines into wall centerlines. Doorway gaps remain gaps in the geometry.
-export function detectWalls(image: ImageData, buildingWidth: number, threshold: number, minLength: number): Building {
+export function detectWalls(image: ImageData, buildingWidth: number, threshold: number, minLength: number, minThickness = 2): Building {
   const { width, height, data } = image;
   const mask = new Uint8Array(width * height);
   for (let i = 0; i < mask.length; i++) {
@@ -43,7 +43,7 @@ export function detectWalls(image: ImageData, buildingWidth: number, threshold: 
     for (const t of tracks) {
       const thickness = t.last - t.first + 1;
       // Reject one-pixel annotation strokes and broad filled regions.
-      if (thickness < 2 || thickness > Math.max(width, height) * .055) continue;
+      if (thickness < minThickness || thickness > Math.max(width, height) * .055) continue;
       const center = (t.first + t.last) / 2;
       const x1 = vertical ? center : t.start;
       const z1 = vertical ? t.start : center;
@@ -55,11 +55,11 @@ export function detectWalls(image: ImageData, buildingWidth: number, threshold: 
   return { walls, width: buildingWidth, depth: height * scale, sourceWidth: width, sourceHeight: height };
 }
 
-export async function readFloorplan(source: string): Promise<HTMLCanvasElement> {
+export async function readFloorplan(source: string, maxSize = 1000): Promise<HTMLCanvasElement> {
   const image = new Image();
   image.src = source;
   await image.decode();
-  const ratio = Math.min(1, 1000 / Math.max(image.width, image.height));
+  const ratio = Math.min(1, maxSize / Math.max(image.width, image.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(image.width * ratio);
   canvas.height = Math.round(image.height * ratio);
