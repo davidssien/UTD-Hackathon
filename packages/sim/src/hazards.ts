@@ -3,7 +3,7 @@
  *
  * One flame pin per run. The fire is the set of open cells whose walking distance from the pin
  * is within a radius that grows at FIRE_SPREAD_M_PER_S. Burning cells emit smoke, which moves on
- * the floor's steady airflow (wind through open apertures, plus HVAC supply vents) and spreads by
+ * the floor's steady airflow (wind through open apertures, plus the building's HVAC vents) and spreads by
  * diffusion; open exterior apertures vent it outside. Everything here is independent of the
  * crowd, so a viewer can recompute the same smoke for any replay tick from the run's inputs.
  *
@@ -12,7 +12,7 @@
  * routes do not bend around flames, but an exit or stair inside the fire closes.
  */
 import { DT_SECONDS, TICK_RATE_HZ, type EgressDocument, type ScalarField, type SimulationScenario, type Vec2 } from '@egress/core';
-import { solveAir, type AirVent, type WindFrom } from './airflow.ts';
+import { solveAir, type WindFrom } from './airflow.ts';
 
 export const HAZARD = {
   /** Fire front speed along walkable paths (m/s) and its cap (m). */
@@ -48,9 +48,7 @@ export interface Hazard {
 export function createHazard(doc: EgressDocument, scenario: Pick<SimulationScenario, 'elements' | 'windFrom'>): Hazard | null {
   const fire = scenario.elements?.find((e): e is FireElement => e.kind === 'fire');
   if (!fire || !doc.floors.some(f => f.id === fire.floorId)) return null;
-  const vents: AirVent[] = (scenario.elements ?? []).filter(e => e.kind === 'vent' && e.floorId === fire.floorId)
-    .map(e => ({ position: e.position, radiusM: e.radiusM }));
-  const air = solveAir(doc, fire.floorId, (scenario.windFrom ?? 'west') as WindFrom, vents);
+  const air = solveAir(doc, fire.floorId, (scenario.windFrom ?? 'west') as WindFrom); // includes the building's HVAC vents
   const { grid, navigable, neighbours } = air;
   const n = navigable.length, cell = grid.cellSizeM;
 

@@ -104,6 +104,8 @@ export function layoutHash(doc: EgressDocument): string {
     openings: byId(doc.openings),
     ...(doc.slabs?.length ? { slabs: byId(doc.slabs) } : {}),
     ...(doc.stairs?.length ? { stairs: byId(doc.stairs) } : {}),
+    // Placeables change where people can walk and where air is supplied; absent ones keep old hashes.
+    ...(doc.placeables?.length ? { placeables: byId(doc.placeables) } : {}),
     furniture: doc.furniture,
   }));
 }

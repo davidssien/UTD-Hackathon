@@ -1,7 +1,7 @@
 /** Steady planar cross-ventilation under an assumed exterior wind. Open exterior apertures
  * prescribe relative pressure. Interior openings connect rooms. Sealed boundaries carry
  * zero flux. The pressure gradient gives a relative flow vector for each grid cell. */
-import { topology, type EgressDocument, type ScalarField, type Vec2 } from '@egress/core';
+import { PLACEABLES, topology, type EgressDocument, type ScalarField, type Vec2 } from '@egress/core';
 import { compileFloor } from './compile.ts';
 
 export const WIND_FROM = {
@@ -33,7 +33,7 @@ function airDomain(doc: EgressDocument, floorId: string) {
     const sides = topo.wallSides.get(o.wallId);
     const exterior = sides && isRoom(sides.left) !== isRoom(sides.right);
     return { ...o, openingKind: exterior ? 'exit' : 'door' };
-  }) }, floorId);
+  }) }, floorId, { obstacles: false });
 }
 
 export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFrom = 'west', vents: AirVent[] = []): FloorAirflow {
@@ -43,8 +43,11 @@ export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFro
 }
 
 /** The steady pressure solve plus the cell graph, aperture cells and gradient, for smoke transport. */
-export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, vents: AirVent[]) {
+export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, extraVents: AirVent[] = []) {
   const c = airDomain(doc, floorId);
+  // HVAC vents placed in the building, plus any given explicitly.
+  const vents = [...(doc.placeables ?? []).filter(p => p.floorId === floorId && PLACEABLES[p.item].suppliesAir)
+    .map(p => ({ position: p.position, radiusM: Math.max(PLACEABLES[p.item].widthM, PLACEABLES[p.item].depthM) / 2 + 0.2 })), ...extraVents];
   const { grid, navigable, blockedEdges } = c;
   const { width, height, cellSizeM } = grid;
   const n = navigable.length;

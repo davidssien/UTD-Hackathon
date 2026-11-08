@@ -16,7 +16,7 @@ import { DomainError, type DomainErrorData } from '../errors.ts';
 import {
   cross, distance, dot, MIN_WALL_LENGTH_M, normalize, OPENING_END_CLEARANCE_M, projectOnSegment, segmentIntersection, sub, VERTEX_MERGE_M,
 } from '../geometry.ts';
-import type { EditCommand, EgressDocument, Entity, Floor, ID, Opening, Slab, Stair, Vec2, Vertex, Wall, WallMaterial } from '../types.ts';
+import type { EditCommand, EgressDocument, Entity, Floor, ID, Opening, Placeable, Slab, Stair, Vec2, Vertex, Wall, WallMaterial } from '../types.ts';
 
 export type PatchCommand = Extract<EditCommand, { kind: 'applyPatch' }>;
 
@@ -90,6 +90,7 @@ class Working {
   openings: Map<ID, Opening>;
   slabs: Map<ID, Slab>;
   stairs: Map<ID, Stair>;
+  placeables: Map<ID, Placeable>;
   created: ID[] = [];
   private readonly requestId: ID;
   private counter = 0;
@@ -102,10 +103,11 @@ class Working {
     this.openings = new Map(doc.openings.map(e => [e.id, e]));
     this.slabs = new Map((doc.slabs ?? []).map(e => [e.id, e]));
     this.stairs = new Map((doc.stairs ?? []).map(e => [e.id, e]));
+    this.placeables = new Map((doc.placeables ?? []).map(e => [e.id, e]));
   }
 
   entities(): Entity[] {
-    return [...this.floors.values(), ...this.vertices.values(), ...this.walls.values(), ...this.openings.values(), ...this.slabs.values(), ...this.stairs.values()];
+    return [...this.floors.values(), ...this.vertices.values(), ...this.walls.values(), ...this.openings.values(), ...this.slabs.values(), ...this.stairs.values(), ...this.placeables.values()];
   }
 
   nextId(): ID {
@@ -115,7 +117,7 @@ class Working {
   }
 
   find(id: ID): Entity | undefined {
-    return this.floors.get(id) ?? this.vertices.get(id) ?? this.walls.get(id) ?? this.openings.get(id) ?? this.slabs.get(id) ?? this.stairs.get(id);
+    return this.floors.get(id) ?? this.vertices.get(id) ?? this.walls.get(id) ?? this.openings.get(id) ?? this.slabs.get(id) ?? this.stairs.get(id) ?? this.placeables.get(id);
   }
 
   floor(id: ID): Floor {
@@ -289,6 +291,7 @@ class Working {
     for (const v of [...this.vertices.values()]) if (v.floorId === id) this.deleteVertex(v.id);
     for (const o of [...this.openings.values()]) if (o.floorId === id) this.openings.delete(o.id);
     for (const s of [...this.slabs.values()]) if (s.floorId === id) this.slabs.delete(s.id);
+    for (const p of [...this.placeables.values()]) if (p.floorId === id) this.placeables.delete(p.id);
     for (const s of [...this.stairs.values()]) if (s.floorId === id || s.toFloorId === id) this.stairs.delete(s.id);
     this.floors.delete(id);
     for (const f of [...this.floors.values()]) {
@@ -324,6 +327,7 @@ class Working {
     else if (e.kind === 'wall') this.deleteWall(id);
     else if (e.kind === 'slab') this.slabs.delete(id);
     else if (e.kind === 'stair') this.stairs.delete(id);
+    else if (e.kind === 'placeable') this.placeables.delete(id);
     else this.deleteOpening(id);
     return true;
   }
@@ -337,6 +341,7 @@ class Working {
     else if (e.kind === 'wall') this.walls.set(e.id, e);
     else if (e.kind === 'slab') this.slabs.set(e.id, e);
     else if (e.kind === 'stair') this.stairs.set(e.id, e);
+    else if (e.kind === 'placeable') this.placeables.set(e.id, e);
     else this.openings.set(e.id, e);
   }
 
@@ -483,6 +488,19 @@ function apply(ws: Working, command: EditCommand): void {
       if (!stair) throw new DomainError('NOT_FOUND', `Stair ${command.stairId} does not exist.`);
       const next = { ...stair, ...definedOnly(command.patch) };
       ws.stairs.set(stair.id, { ...next, ...rect(next.min, next.max) });
+      return;
+    }
+    case 'createPlaceable': {
+      ws.floor(command.floorId);
+      const id = ws.nextId();
+      ws.placeables.set(id, { kind: 'placeable', id, floorId: command.floorId, item: command.item, position: { x: command.position.x, y: command.position.y }, rotationDeg: ((command.rotationDeg ?? 0) % 360 + 360) % 360 });
+      return;
+    }
+    case 'updatePlaceable': {
+      const p = ws.placeables.get(command.placeableId);
+      if (!p) throw new DomainError('NOT_FOUND', `Placeable ${command.placeableId} does not exist.`);
+      const next = { ...p, ...definedOnly(command.patch) };
+      ws.placeables.set(p.id, { ...next, rotationDeg: ((next.rotationDeg % 360) + 360) % 360 });
       return;
     }
     case 'deleteEntities': {

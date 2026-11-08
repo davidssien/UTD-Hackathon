@@ -5,7 +5,7 @@
  * layoutHash.
  */
 import {
-  CELL_SIZE_M, deriveLayout, groundFloorId, isPassable, layoutHash, openingSegment, pointInPolygon, stairGeometry, topology, wallGeometry,
+  CELL_SIZE_M, deriveLayout, groundFloorId, isPassable, layoutHash, openingSegment, PLACEABLES, placeableFootprint, pointInPolygon, stairGeometry, topology, wallGeometry,
   type EgressDocument, type GridDefinition, type ID, type Opening, type Vec2,
 } from '@egress/core';
 import { buildNavigation, type Navigation } from './nav.ts';
@@ -57,9 +57,14 @@ export interface CompiledFloor {
 
 const cache = new Map<string, CompiledFloor>();
 
-export function compileFloor(doc: EgressDocument, floorId: ID = groundFloorId(doc)): CompiledFloor {
+/**
+ * `obstacles: false` leaves furniture out: it is 0–0.5 m tall, so it stops people but air
+ * passes over it (the airflow domain compiles without it).
+ */
+export function compileFloor(doc: EgressDocument, floorId: ID = groundFloorId(doc), options: { obstacles?: boolean } = {}): CompiledFloor {
+  const obstacles = options.obstacles !== false;
   const hash = layoutHash(doc);
-  const key = `${hash}:${floorId}`;
+  const key = `${hash}:${floorId}:${obstacles ? 'o' : 'a'}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -71,6 +76,9 @@ export function compileFloor(doc: EgressDocument, floorId: ID = groundFloorId(do
   };
   const walls = wallGeometry(floorDoc, { cut: isPassable });
   const solids = [...walls.pieces.map(p => p.polygon), ...walls.hubs.map(h => h.polygon)];
+  if (obstacles) {
+    for (const p of doc.placeables ?? []) if (p.floorId === floorId && PLACEABLES[p.item].blocksPeople) solids.push(placeableFootprint(p));
+  }
   const topo = topology(floorDoc);
   const rooms = topo.rooms;
 

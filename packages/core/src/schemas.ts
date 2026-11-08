@@ -90,7 +90,18 @@ export const StairSchema = z.object({
   upEdge: StairEdgeSchema,
 });
 
-export const EntitySchema = z.discriminatedUnion('kind', [FloorSchema, VertexSchema, WallSchema, OpeningSchema, SlabSchema, StairSchema]);
+/** Furniture and fixtures (final sprint, D88): rotated about the vertical axis only. See core/placeables.ts for sizes. */
+export const PlaceableItemSchema = z.enum(['table', 'desk', 'chair', 'counter', 'vent']);
+export const PlaceableSchema = z.object({
+  kind: z.literal('placeable'),
+  id: IdSchema,
+  floorId: IdSchema,
+  item: PlaceableItemSchema,
+  position: Vec2Schema,
+  rotationDeg: z.number().min(-360).max(360),
+});
+
+export const EntitySchema = z.discriminatedUnion('kind', [FloorSchema, VertexSchema, WallSchema, OpeningSchema, SlabSchema, StairSchema, PlaceableSchema]);
 
 export const EgressDocumentSchema = z.object({
   docVersion: z.literal(1),
@@ -103,6 +114,7 @@ export const EgressDocumentSchema = z.object({
   /** Floor surfaces and stairs (D74, D75). Older documents have none. */
   slabs: z.array(SlabSchema).default([]),
   stairs: z.array(StairSchema).default([]),
+  placeables: z.array(PlaceableSchema).default([]),
   /** Reserved until the furniture pass. */
   furniture: z.array(z.never()),
 });
@@ -163,6 +175,8 @@ export const EditCommandSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('updateFloor'), floorId: IdSchema, patch: z.object({ name: z.string().trim().min(1).max(80).optional(), ceilingHeightM: z.number().min(2).max(50).optional() }) }),
   z.object({ kind: z.literal('createStair'), floorId: IdSchema, min: Vec2Schema, max: Vec2Schema, upEdge: StairEdgeSchema }),
   z.object({ kind: z.literal('updateStair'), stairId: IdSchema, patch: z.object({ upEdge: StairEdgeSchema.optional(), min: Vec2Schema.optional(), max: Vec2Schema.optional() }) }),
+  z.object({ kind: z.literal('createPlaceable'), floorId: IdSchema, item: PlaceableItemSchema, position: Vec2Schema, rotationDeg: z.number().min(-360).max(360).optional() }),
+  z.object({ kind: z.literal('updatePlaceable'), placeableId: IdSchema, patch: z.object({ position: Vec2Schema.optional(), rotationDeg: z.number().min(-360).max(360).optional() }) }),
   /** Generic put/remove. Used for undo/redo, imports and agent proposals. */
   z.object({ kind: z.literal('applyPatch'), expectedLayoutHash: z.string().length(64).optional(), put: z.array(EntitySchema).max(5000), remove: z.array(IdSchema).max(5000) }),
 ]);
@@ -211,8 +225,6 @@ export const SimulationScenarioSchema = z.object({
    */
   elements: z.array(z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('fire'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().positive().max(20), startSeconds: z.number().nonnegative() }),
-    /** HVAC supply (Pass F): holds a small floor-to-ceiling region at positive pressure, pushing air toward open outlets. */
-    z.object({ kind: z.literal('vent'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().min(0.2).max(5) }),
   ])).max(50).optional(),
   /** Assumed exterior wind for airflow and smoke (default west). */
   windFrom: z.enum(['west', 'north', 'east', 'south']).optional(),

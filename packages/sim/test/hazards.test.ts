@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { parseDocument, type EgressDocument, type SimulationScenario } from '@egress/core';
-import { floorAirflow, runSimulation } from '@egress/sim';
+import { applyEditOrThrow, parseDocument, type EgressDocument, type SimulationScenario } from '@egress/core';
+import { compileFloor, floorAirflow, runSimulation } from '@egress/sim';
 
 const root = join(import.meta.dirname, '..', '..', '..', 'content');
 const load = (path: string) => parseDocument(JSON.parse(readFileSync(join(root, path), 'utf8')));
@@ -35,13 +35,18 @@ test('people trapped behind a fire at the only exit are overcome by smoke, and t
   assert.ok(m.complete);
 });
 
-test('an HVAC supply vent pushes air toward an open exit, and a sealed room stays still', () => {
-  const doc = load('scenes/one-room.json'), floorId = doc.floors[0].id;
-  const vent = [{ position: { x: 5, y: 7 }, radiusM: 0.6 }];
-  const open = floorAirflow(doc, floorId, 'north', vent);
-  const g = open.magnitude.grid, at = (x: number, y: number) => Math.floor((y - g.origin.y) / g.cellSizeM) * g.width + Math.floor((x - g.origin.x) / g.cellSizeM);
-  const mid = at(5, 4);
-  assert.ok(open.y[mid] < 0, 'air in the middle of the room flows south, from the vent toward the exit');
-  const sealed = floorAirflow({ ...doc, openings: doc.openings.map(o => ({ ...o, state: 'closed' as const })) }, floorId, 'north', vent);
+test('placeables: a table stops people but not air; a ceiling vent drives air to the exit; a sealed room stays still', () => {
+  const room = load('scenes/one-room.json'), floorId = room.floors[0].id;
+  const doc = applyEditOrThrow(room, { requestId: 'p', commands: [
+    { kind: 'createPlaceable', floorId, item: 'table', position: { x: 5, y: 4 }, rotationDeg: 90 },
+    { kind: 'createPlaceable', floorId, item: 'vent', position: { x: 5, y: 7 } },
+  ] }).doc;
+  const people = compileFloor(doc, floorId), g = people.grid;
+  const at = (x: number, y: number) => Math.floor((y - g.origin.y) / g.cellSizeM) * g.width + Math.floor((x - g.origin.x) / g.cellSizeM);
+  assert.equal(people.navigable[at(5, 4.6)], 0, 'people cannot stand on the (rotated) table');
+  const air = floorAirflow(doc, floorId, 'north');
+  const ga = air.magnitude.grid, cell = Math.floor((4.6 - ga.origin.y) / ga.cellSizeM) * ga.width + Math.floor((5 - ga.origin.x) / ga.cellSizeM);
+  assert.ok(Number.isFinite(air.magnitude.values[cell]) && air.y[cell] < 0, 'air passes over the table, south from the vent toward the exit');
+  const sealed = floorAirflow({ ...doc, openings: doc.openings.map(o => ({ ...o, state: 'closed' as const })) }, floorId, 'north');
   assert.equal(sealed.peak, 0);
 });
