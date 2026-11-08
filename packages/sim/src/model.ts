@@ -68,6 +68,9 @@ export const PARAMS = {
   /** Fields are sampled every N ticks (2 Hz). */
   fieldEvery: 5,
   spawnAttempts: 250,
+  /** The flow counts as stabilized after this many ticks with no exits and mean speed below stableSpeed (Plan D38). */
+  stableWindowTicks: 100,
+  stableSpeed: 0.05,
 } as const;
 
 export interface SimState {
@@ -99,6 +102,8 @@ export interface SimState {
   readonly maxTicks: number;
   maxQueue: number;
   lastExitTick: number;
+  /** Last tick anything changed meaningfully (someone exited, or people were still moving). */
+  lastProgressTick: number;
   exited: number;
   unreachable: number;
   /** The people as spawned, for rerunning a candidate layout with the same population. */
@@ -196,7 +201,7 @@ export function initialize(input: FrozenSimulationInput): SimState {
     tokens: new Float64Array(compiled.portals.length).fill(1), portalOpen, allowedExit,
     throughput: new Int32Array(compiled.exits.length), queueAtExit: new Int32Array(compiled.exits.length),
     hash: new ActorHash(grid, n), fields: new FieldAccumulator(compiled),
-    maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, exited: 0, unreachable: 0,
+    maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, lastProgressTick: 0, exited: 0, unreachable: 0,
     initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref) },
     respawned,
   };
@@ -367,7 +372,12 @@ export function step(state: SimState): void {
   }
 
   separateOverlaps(state);
+  const exitedBefore = state.exited;
   sweepExited(state);
+  // Stabilization (D38): progress = someone left, or the people inside are still moving.
+  let active = 0, speedSum = 0;
+  for (let a = 0; a < n; a++) if (flag[a] !== ACTOR_EXITED) { active++; speedSum += Math.hypot(vx[a], vy[a]); }
+  if (state.exited > exitedBefore || active === 0 || speedSum / active >= PARAMS.stableSpeed) state.lastProgressTick = state.tick + 1;
   let queue = 0;
   for (let e = 0; e < exits.length; e++) queue = Math.max(queue, state.queueAtExit[e]);
   state.maxQueue = Math.max(state.maxQueue, queue);
@@ -448,7 +458,15 @@ function sampleFields(state: SimState) {
 // ── outputs ─────────────────────────────────────────────────────────────────
 
 export function isComplete(state: SimState): boolean {
-  return state.exited + state.unreachable >= state.n || state.tick >= state.maxTicks;
+  return endReason(state) !== null;
+}
+
+/** Why the run ended: everyone reachable is out, the flow stabilized (nothing changing), or the safety timeout. */
+export function endReason(state: SimState): 'all-out' | 'stabilized' | 'timeout' | null {
+  if (state.exited + state.unreachable >= state.n) return 'all-out';
+  if (state.tick - state.lastProgressTick >= PARAMS.stableWindowTicks) return 'stabilized';
+  if (state.tick >= state.maxTicks) return 'timeout';
+  return null;
 }
 
 export function frame(state: SimState): ActorFrame {
@@ -490,6 +508,7 @@ export function metrics(state: SimState): SimulationMetrics {
     peakCongestion: round3(summary.peak),
     perExitThroughput: Object.fromEntries(exits.map((e, i) => [e.openingId, state.throughput[i]])),
     bottlenecks,
+    endReason: endReason(state) ?? undefined,
     complete,
   };
 }

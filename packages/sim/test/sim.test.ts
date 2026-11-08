@@ -129,3 +129,18 @@ test('painting shifts where people start without changing N; erase restores unif
   assert.equal(east, 0, 'nobody starts where density is painted to zero');
   assert.ok(west > 70, `most people start in the heavily painted room (${west})`);
 });
+
+test('runs end by reason: all-out, timeout, or stabilized when nothing changes for 10 s', async () => {
+  const { endReason, PARAMS } = await import('@egress/sim');
+  const doc = fixture('one-room.json');
+  const done = runSimulation({ runId: 'a', document: doc, scenario: scenario(doc, 30) }, { keepChunks: false });
+  assert.equal(done.metrics.endReason, 'all-out');
+  const short = runSimulation({ runId: 't', document: doc, scenario: { ...scenario(doc, 60), durationSeconds: 5 } }, { keepChunks: false });
+  assert.equal(short.metrics.endReason, 'timeout');
+  // Stabilized: people still inside, but no exits and no movement for the whole window.
+  const s = initialize({ runId: 's', document: doc, scenario: scenario(doc, 20) });
+  s.tick = PARAMS.stableWindowTicks + 5;
+  s.lastProgressTick = 5;
+  assert.equal(endReason(s), 'stabilized');
+  assert.equal(isComplete(s), true);
+});

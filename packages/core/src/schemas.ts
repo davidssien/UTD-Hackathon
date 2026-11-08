@@ -231,6 +231,8 @@ export const SimulationMetricsSchema = z.object({
   perExitThroughput: z.record(IdSchema, z.number().int().nonnegative()),
   bottlenecks: z.array(BottleneckMetricSchema).max(32),
   complete: z.boolean(),
+  /** all-out: every reachable person left; stabilized: nothing changed for 10 s (people trapped or stalled); timeout: safety cap. */
+  endReason: z.enum(['all-out', 'stabilized', 'timeout']).optional(),
 });
 
 // ── Agent ───────────────────────────────────────────────────────────────────

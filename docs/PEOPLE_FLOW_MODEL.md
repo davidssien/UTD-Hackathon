@@ -164,8 +164,17 @@ Each tick:
    - **Squeeze:** if stuck for more than 20 ticks within 3 m of a portal, the person "turns sideways" for 60 ticks. Their contact radius becomes `min(r, 0.13 m)` for neighbour forces, wall push-out and overlap separation. Their center still can never enter a wall.
    - Together these took every seed of every fixture from occasional permanent jams to complete evacuation (D27). Note: they shave roughly 5–10% off clearance times in tight doors compared with a stricter body model. Comparisons between layouts stay valid because both sides use the same rules.
 
-**Completion**
-- A run ends when `exited + unreachable = N`, or when `t ≥ durationSeconds` (a timeout).
+**Completion (D38: Live ends when the flow has stabilized).** The run ends at the first of these, and the reason is reported in `metrics.endReason`:
+
+| Reason | Condition |
+|---|---|
+| `all-out` | `exited + unreachable = N` |
+| `stabilized` | no exits and mean speed of the people inside below 0.05 m/s for 100 consecutive ticks (10 s) |
+| `timeout` | `t ≥ durationSeconds`, kept only as a safety cap |
+
+Stabilization costs O(N) per tick: one running sum of speeds and a counter. It catches crowds that are trapped or stalled but were not unreachable at the start.
+
+For future steady-state scenarios (Circulate), stabilization means the occupancy and the heatmap changing less than ε over the window. That would use the same mechanism with different progress signals.
 
 ## 5. Fields and heatmaps (`fields.ts`)
 
