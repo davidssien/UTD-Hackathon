@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { Armchair, Box, BrickWall, DoorOpen, Grid2X2, LoaderCircle, Redo2, Trash2, Undo2, Upload, X, AppWindow, PaintBucket, SquareDashed } from 'lucide-react';
 import { detectWalls, readFloorplan } from '@/lib/floorplan';
 import { decodeProject, PROJECT_KEY } from '@/lib/project-storage';
+import SketchImporter from '@/components/sketch-importer';
 import PlanEditor from '@/components/plan-editor';
 import { editorReducer, initialEditor, type EditCommand, type Tool } from '@/lib/building-editor';
 import { initialMode, toolModeReducer } from '@/lib/tool-mode';
@@ -19,6 +20,7 @@ const BuildingViewer = dynamic(() => import('@/components/building-viewer'), {
 export default function Home() {
   const [editor, dispatch] = useReducer(editorReducer, initialEditor);
   const building = editor.present;
+  const [pendingImport, setPendingImport] = useState<File | undefined>();
   const [selectedWalls, setSelectedWalls] = useState<string[]>([]);
   useEffect(() => { setSelectedWalls(ids => ids.filter(id => building?.walls.some(w => w.id === id))); }, [building]);
   const [mode, setMode] = useReducer(toolModeReducer, initialMode);
@@ -28,6 +30,7 @@ export default function Home() {
   const [cancelToken, setCancelToken] = useState(0);
   const commit = useCallback((command: EditCommand) => dispatch({ type: 'edit', command }), []);
   const [source, setSource] = useState('/sample-plan.svg');
+  const displaySource = building?.referenceImage ?? source;
   const [tab, setTab] = useState<'model' | 'plan'>('model');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -97,11 +100,11 @@ export default function Home() {
   useEffect(() => {
     if (!building || source.startsWith('blob:')) return;
     try {
-      localStorage.setItem(PROJECT_KEY, JSON.stringify({ version: 1, source, building }));
+      localStorage.setItem(PROJECT_KEY, JSON.stringify({ version: 1, source: displaySource, building }));
     } catch {
       setError('Your changes could not be saved in this browser. Keep this tab open to retain them.');
     }
-  }, [building, source]);
+  }, [building, source, displaySource]);
 
   useEffect(() => () => {
     if (sourceRef.current.startsWith('blob:')) URL.revokeObjectURL(sourceRef.current);
@@ -127,34 +130,10 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey);
   }, [tab, selectedWalls]);
 
-  const upload = async (file?: File) => {
+  const upload = (file?: File) => {
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      setError('Choose a PNG, JPG, or WebP image.');
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      setError('Choose an image smaller than 20 MB.');
-      return;
-    }
-    let url: string;
-    try {
-      url = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('The image could not be read.'));
-        reader.readAsDataURL(file);
-      });
-    } catch {
-      setError('The image could not be read. Try uploading it again.');
-      return;
-    }
-    if (sourceRef.current.startsWith('blob:')) URL.revokeObjectURL(sourceRef.current);
-    sourceRef.current = url;
-    setSource(url);
-    dispatch({ type: 'load', building: null });
-    setTab('plan');
-    await generate(url);
+    setPendingImport(file);
+    setMode({ type: 'panel', panel: 'import' });
   };
 
   return (
@@ -179,7 +158,7 @@ export default function Home() {
           ref={viewer}
           active={tab === 'model'}
           building={building}
-          sceneKey={source}
+          sceneKey={displaySource}
           tool={tool}
           onEdit={commit}
           selectedWalls={selectedWalls}
@@ -189,13 +168,15 @@ export default function Home() {
 
       {tab === 'plan' && (
         <section className="floor-plan" aria-label="Floor plan workspace">
-          {building ? <PlanEditor building={building} source={source} tool={tool} cancelToken={cancelToken} onEdit={commit} selectedWalls={selectedWalls} onSelectionChange={setSelectedWalls} /> : <div className="plan-image"><img src={source} alt="Source floor plan" /></div>}
-          <button className="upload-button" onClick={() => fileInput.current?.click()}>
-            <Upload size={16} /> Upload floor plan
+          {building ? <PlanEditor building={building} source={displaySource} tool={tool} cancelToken={cancelToken} onEdit={commit} selectedWalls={selectedWalls} onSelectionChange={setSelectedWalls} /> : <div className="plan-image"><img src={source} alt="Source floor plan" /></div>}
+          <button className="upload-button" onClick={() => { setPendingImport(undefined); setMode({ type: 'panel', panel: 'import' }); }}>
+            <Upload size={16} /> Import Floor Plan
           </button>
         </section>
       )}
 
+      {tab === 'model' && <button className="import-launch" onClick={() => { setPendingImport(undefined); setMode({ type: 'panel', panel: 'import' }); }}><Upload size={16}/> Import Floor Plan</button>}
+      {mode.panel === 'import' && <SketchImporter current={building} initialFile={pendingImport} onClose={() => setMode({ type: 'cancel' })} onImport={(result, append) => { generation.current++; setBusy(false); dispatch({ type: 'edit', command: { type: 'import', building: result, append } }); setTab('model'); }} />}
       <nav className="view-tabs" aria-label="Workspace views">
         <button
           className={tab === 'model' ? 'active' : ''}
@@ -225,7 +206,7 @@ export default function Home() {
           <button aria-pressed={tool === 'door'} title="Select tool · Esc to cancel" className={tool === 'door' ? 'active' : ''} onClick={() => { setTool('door'); }}><DoorOpen size={23}/><strong>Door</strong><span>0.9 × 2.1 m</span></button>
           <button aria-pressed={tool === 'window'} title="Select tool · Esc to cancel" className={tool === 'window' ? 'active' : ''} onClick={() => { setTool('window'); }}><AppWindow size={23}/><strong>Window</strong><span>1.2 × 1.2 m</span></button>
         </div>}
-        <div className={`build-instruction ${editor.past.length || editor.future.length || selectedWalls.length ? 'with-utilities' : ''}`} role="status">{tool === 'wall' ? 'Click start and end · Each wall finishes separately · Shift for angles · Esc to exit' : tool === 'floor' ? 'Click or drag between two corners to draw a floor · Esc to exit' : tool === 'fill-floor' ? 'Click inside an enclosed room to fill its floor · Esc to exit' : tool === 'door' || tool === 'window' ? `Click a wall to place a ${tool} · Esc to finish` : tool === 'delete' ? 'Click a wall, floor, door, or window to remove it · Esc to finish' : tab === 'model' ? 'Right-drag to orbit · Scroll to zoom · Shift-click or drag to select walls' : 'Choose a tool to edit your floor plan'}</div>
+        <div className={`build-instruction ${editor.past.length || editor.future.length || selectedWalls.length ? 'with-utilities' : ''}`} role="status">{building.importInfo && !building.importInfo.calibrated && <span>Estimated scale · </span>}{tool === 'wall' ? 'Click start and end · Each wall finishes separately · Shift for angles · Esc to exit' : tool === 'floor' ? 'Click or drag between two corners to draw a floor · Esc to exit' : tool === 'fill-floor' ? 'Click inside an enclosed room to fill its floor · Esc to exit' : tool === 'door' || tool === 'window' ? `Click a wall to place a ${tool} · Esc to finish` : tool === 'delete' ? 'Click a wall, floor, door, or window to remove it · Esc to finish' : tab === 'model' ? 'Right-drag to orbit · Scroll to zoom · Shift-click or drag to select walls' : 'Choose a tool to edit your floor plan'}</div>
         <nav className="build-toolbar" aria-label="Building tools">
           <button aria-pressed={tool === 'wall' || tool === 'floor' || tool === 'fill-floor' || buildOpen} aria-expanded={buildOpen} className={tool === 'wall' || tool === 'floor' || tool === 'fill-floor' || buildOpen ? 'active' : ''} onClick={() => { setMode({ type: 'panel', panel: 'build' }); }}><BrickWall size={23}/><span>{tool === 'wall' ? 'Walls' : tool === 'floor' ? 'Draw floor' : tool === 'fill-floor' ? 'Fill room' : 'Build'}<small>Walls & floors</small></span></button>
           <button aria-pressed={tool === 'door' || tool === 'window' || furnitureOpen} aria-expanded={furnitureOpen} className={tool === 'door' || tool === 'window' || furnitureOpen ? 'active' : ''} onClick={() => { setMode({ type: 'panel', panel: 'furniture' }); }}><Armchair size={23}/><span>{tool === 'door' ? 'Door' : tool === 'window' ? 'Window' : 'Furniture'}<small>Doors & windows</small></span></button>

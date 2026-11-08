@@ -67,3 +67,15 @@ npm run build
 ```
 
 The tests cover image recognition, calibration, floor bounds, snapping, wall validation, door/window constraints, actual opening geometry, deletion, and undo/redo.
+
+## Sketch-to-House import
+
+Choose **Import Floor Plan** from either view. Upload PNG/JPEG/WebP (10 MB max), or generate a QR code with **Use your phone**. The phone previews the photo before sending. Desktop polling stops when the image arrives.
+
+Run `npm run dev -- --hostname 0.0.0.0` and use the same Wi-Fi network. QR links use a LAN address instead of localhost. With multiple adapters or an HTTPS tunnel, set `IMPORT_PUBLIC_ORIGIN` to the reachable origin before starting the server. Allow inbound traffic for the development port. LAN origins are explicitly allowed by Next.js configuration.
+
+Review lines over the image before generating. Drag wall endpoints, trace missing walls, delete errors, and place native doors/windows. Toggle reference/wall/opening layers. Select a known wall and enter its length to calibrate scale. Translate/rotate the import onto the existing ground floor, or replace the building; confirmation is one undoable edit. Closed rooms become native floors. Autosave retains the building and reference, subject to browser storage capacity.
+
+Recognition runs locally: adaptive contrast/thresholding, axis-aligned stroke extraction, endpoint/T-junction repair, and room reconstruction. It does not recognize door/window symbols, labels, dimension annotations, arbitrary angled strokes, or perspective. Correct these manually in review. All detections require review; scale remains estimated until calibrated. No AI service is called.
+
+Upload sessions use private temporary files, separate random read/upload tokens, 15-minute expiry, bounded uploads, and decoded/re-encoded images. This backend targets a single Node server with writable temporary storage. Multi-instance/serverless deployment needs shared session/blob storage and deployment-level rate limiting. Expired files are removed on access/session creation; closing desktop pairing deletes the session. Physical phone cameras and real photographed drawings still need device testing. Multi-story import and automatic perspective/semantic recognition are not implemented.

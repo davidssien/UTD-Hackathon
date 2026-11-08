@@ -5,7 +5,7 @@ import { getFloorBounds, getWallBounds, type Building, type Wall } from '@/lib/f
 import { polygonArea, roomAt } from '@/lib/rooms';
 import { editBuilding, floorRectangle, nearestWall, openingAt, snapPoint, wallEnd, wallLength, type EditCommand, type Point, type Tool } from '@/lib/building-editor';
 
-type Props = { building: Building; source: string; tool: Tool; cancelToken: number; onEdit: (command: EditCommand) => void; selectedWalls: string[]; onSelectionChange: (ids: string[]) => void };
+type Props = { building: Building; source: string; tool: Tool; cancelToken: number; layers?: { walls: boolean; openings: boolean }; onEdit: (command: EditCommand) => void; selectedWalls: string[]; onSelectionChange: (ids: string[]) => void };
 
 function Openings({ wall }: { wall: Wall }) {
   const length = wallLength(wall);
@@ -21,7 +21,7 @@ function Openings({ wall }: { wall: Wall }) {
   </g>;
 }
 
-export default function PlanEditor({ building, source, tool, cancelToken, onEdit, selectedWalls, onSelectionChange }: Props) {
+export default function PlanEditor({ building, source, tool, cancelToken, onEdit, selectedWalls, onSelectionChange, layers = { walls: true, openings: true } }: Props) {
   const selected = selectedWalls[0];
   const setSelected = (id: string | null) => onSelectionChange(id ? [id] : []);
   const resize = useRef<{ wallId: string; endpoint: 'start' | 'end' } | null>(null);
@@ -98,12 +98,13 @@ export default function PlanEditor({ building, source, tool, cancelToken, onEdit
     <defs><pattern id="plan-grid" width=".5" height=".5" patternUnits="userSpaceOnUse"><path d="M .5 0 H0 V.5" fill="none" stroke="#dce1e5" strokeWidth=".015" /></pattern></defs>
     <rect x={minX} y={minZ} width={width} height={depth} fill="url(#plan-grid)" />
     <image href={source} x={-building.width / 2} y={-building.depth / 2} width={building.width} height={building.depth} opacity=".32" pointerEvents="none" />
+    {(building.references ?? []).map((reference,i) => <image key={i} href={reference.image} x={-reference.width/2} y={-reference.depth/2} width={reference.width} height={reference.depth} transform={`translate(${reference.x} ${reference.z}) rotate(${reference.rotation})`} opacity=".25" pointerEvents="none" />)}
     {baseFloor && <rect data-floor-id="__base__" x={baseFloor.minX} y={baseFloor.minZ} width={baseFloor.maxX-baseFloor.minX} height={baseFloor.maxZ-baseFloor.minZ} fill="#b7a78d" fillOpacity=".35" />}
     {(building.floors ?? []).map(f => <polygon key={f.id} data-floor-id={f.id} points={f.points.map(p => `${p.x},${p.z}`).join(' ')} fill="#c5aa80" fillOpacity=".7" stroke="#ae936b" strokeWidth=".025" />)}
     {building.walls.map(w => <g key={w.id}>
-      <line data-wall-id={w.id} x1={w.x1} y1={w.z1} x2={w.x2} y2={w.z2} stroke={tool === 'delete' && hoveredWall?.id === w.id ? '#c65f4b' : selected === w.id ? '#8277c7' : '#4b5948'} strokeWidth={w.thickness} />
-      <line data-wall-id={w.id} x1={w.x1} y1={w.z1} x2={w.x2} y2={w.z2} stroke="transparent" strokeWidth={Math.max(.3, w.thickness)} />
-      <Openings wall={w} />
+      <line visibility={layers.walls ? undefined : 'hidden'} data-wall-id={w.id} x1={w.x1} y1={w.z1} x2={w.x2} y2={w.z2} stroke={tool === 'delete' && hoveredWall?.id === w.id ? '#c65f4b' : selected === w.id ? '#8277c7' : '#4b5948'} strokeWidth={w.thickness} />
+      <line visibility={layers.walls ? undefined : 'hidden'} data-wall-id={w.id} x1={w.x1} y1={w.z1} x2={w.x2} y2={w.z2} stroke="transparent" strokeWidth={Math.max(.3, w.thickness)} />
+      <g visibility={layers.openings ? undefined : 'hidden'}><Openings wall={w} /></g>
     </g>)}
     {tool === 'select' && selectedWall && (['start', 'end'] as const).map(endpoint => <circle key={endpoint} cx={endpoint === 'start' ? selectedWall.x1 : selectedWall.x2} cy={endpoint === 'start' ? selectedWall.z1 : selectedWall.z2} r=".16" fill="#fff" stroke="#8277c7" strokeWidth=".05" style={{ cursor: 'move' }} onPointerDown={e => { e.stopPropagation(); resize.current = { wallId: selectedWall.id, endpoint }; e.currentTarget.setPointerCapture(e.pointerId); }}><title>Drag to resize connected walls</title></circle>)}
     {tool === 'wall' && hover && !anchor && <circle cx={snapPoint(hover, building.walls).x} cy={snapPoint(hover, building.walls).z} r=".1" fill="#779b57" pointerEvents="none" />}

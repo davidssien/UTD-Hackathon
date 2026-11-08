@@ -10,7 +10,7 @@ export function decodeProject(raw: string): { source: string; building: Building
   const b = p?.building;
   if (p?.version !== 1 || typeof p.source !== 'string' ||
       !(p.source === '/sample-plan.svg' || /^data:image\/(png|jpeg|webp);base64,/.test(p.source)) ||
-      !b || ![b.width, b.depth, b.sourceWidth, b.sourceHeight].every(positive) ||
+      !b || (b.references !== undefined && (!Array.isArray(b.references) || b.references.length > 100 || !b.references.every((r: any) => r && typeof r.image === 'string' && /^data:image\/(png|jpeg|webp);base64,/.test(r.image) && [r.width,r.depth].every(positive) && [r.x,r.z,r.rotation].every(finite)))) || (b.referenceImage !== undefined && (typeof b.referenceImage !== 'string' || !/^data:image\/(png|jpeg|webp);base64,/.test(b.referenceImage))) || ![b.width, b.depth, b.sourceWidth, b.sourceHeight].every(positive) ||
       !Array.isArray(b.walls) || b.walls.length > 10000 ||
       !b.walls.every((w: any) => w && typeof w.id === 'string' &&
         [w.x1, w.x2, w.z1, w.z2].every(finite) && positive(w.thickness) &&
