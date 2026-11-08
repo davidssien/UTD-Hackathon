@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { sha256Hex } from '../canonical.ts';
+import { groundFloorId } from '../document.ts';
 import type { EgressDocument, ID, Vec2 } from '../types.ts';
 import { topology } from './topology.ts';
 
@@ -26,6 +27,7 @@ export type RoomLabel = z.infer<typeof RoomLabelSchema>;
 export interface RoomDescriptor {
   roomHash: string;
   id: string;
+  floorId: ID;
   polygon: Vec2[];
   center: Vec2;
   areaM2: number;
@@ -47,11 +49,13 @@ export interface RoomDescriptor {
 const round = (v: number) => Math.round(v * 100) / 100;
 
 /** Outline hash: rounded to 1 cm, starting at the smallest vertex, so the same room hashes the same. */
-export function roomHash(polygon: Vec2[]): string {
+export function roomHash(polygon: Vec2[], floorKey = ''): string {
   const pts = polygon.map(p => `${Math.round(p.x * 100)},${Math.round(p.y * 100)}`);
   let start = 0;
   for (let i = 1; i < pts.length; i++) if (pts[i] < pts[start]) start = i;
-  return sha256Hex([...pts.slice(start), ...pts.slice(0, start)].join(';')).slice(0, 16);
+  // Upper floors salt the hash with their floor id so stacked identical rooms keep separate labels;
+  // ground-floor hashes are unchanged so existing labels survive (D75).
+  return sha256Hex((floorKey ? `${floorKey}|` : '') + [...pts.slice(start), ...pts.slice(0, start)].join(';')).slice(0, 16);
 }
 
 export function roomKindByRules(widthM: number, lengthM: number, areaM2: number, neighbours: number): RoomKind {
@@ -61,10 +65,10 @@ export function roomKindByRules(widthM: number, lengthM: number, areaM2: number,
 }
 
 /** What the labeller sees: geometry facts only, no outlines (small enough for one Nemotron call). */
-export type RoomFacts = Omit<RoomDescriptor, 'id' | 'polygon' | 'center' | 'wallIds' | 'openingIds'>;
+export type RoomFacts = Omit<RoomDescriptor, 'id' | 'floorId' | 'polygon' | 'center' | 'wallIds' | 'openingIds'>;
 
 export function roomFacts(room: RoomDescriptor): RoomFacts {
-  const { id: _id, polygon: _polygon, center: _center, wallIds: _walls, openingIds: _openings, ...facts } = room;
+  const { id: _id, floorId: _floor, polygon: _polygon, center: _center, wallIds: _walls, openingIds: _openings, ...facts } = room;
   return facts;
 }
 
@@ -84,7 +88,8 @@ export function ruleLabels(rooms: RoomFacts[]): RoomLabel[] {
 export function describeRooms(doc: EgressDocument): RoomDescriptor[] {
   const topo = topology(doc);
   const roomIds = new Set(topo.rooms.map(r => r.id));
-  const hashes = new Map(topo.rooms.map(r => [r.id, roomHash(r.polygon)]));
+  const ground = groundFloorId(doc);
+  const hashes = new Map(topo.rooms.map(r => [r.id, roomHash(r.polygon, r.floorId === ground ? '' : r.floorId)]));
   return topo.rooms.map(r => {
     const xs = r.polygon.map(p => p.x), ys = r.polygon.map(p => p.y);
     const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
@@ -107,7 +112,7 @@ export function describeRooms(doc: EgressDocument): RoomDescriptor[] {
     }
     const widthM = round(Math.min(w, h)), lengthM = round(Math.max(w, h)), areaM2 = round(r.area);
     return {
-      roomHash: hashes.get(r.id)!, id: r.id, polygon: r.polygon,
+      roomHash: hashes.get(r.id)!, id: r.id, floorId: r.floorId, polygon: r.polygon,
       center: { x: round(xs.reduce((a, b) => a + b, 0) / xs.length), y: round(ys.reduce((a, b) => a + b, 0) / ys.length) },
       areaM2, widthM, lengthM, doors, exits, windows, neighbours: [...neighbours], wallIds: [...r.wallIds], openingIds: [...new Set(openingIds)],
       exteriorWalls, ruleKind: roomKindByRules(widthM, lengthM, areaM2, neighbours.size),

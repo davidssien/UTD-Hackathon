@@ -15,6 +15,9 @@ export const WallMaterialSchema = z.enum(['normal', 'reinforced', 'glass']);
 export const OpeningKindSchema = z.enum(['door', 'window', 'exit']);
 export const OpeningStateSchema = z.enum(['open', 'closed']);
 export const RoleSchema = z.enum(['owner', 'editor', 'viewer']);
+/** Floor surface finishes (D74). 'basic' uses the plain wall look. Visual only; walkability comes from geometry. */
+export const SlabMaterialSchema = z.enum(['wood', 'basic', 'tile']);
+export const StairEdgeSchema = z.enum(['n', 'e', 's', 'w']);
 
 // ── Entities (EgressDocument v1) ────────────────────────────────────────────
 
@@ -64,7 +67,30 @@ export const OpeningSchema = z.object({
   state: OpeningStateSchema,
 });
 
-export const EntitySchema = z.discriminatedUnion('kind', [FloorSchema, VertexSchema, WallSchema, OpeningSchema]);
+/** A floor surface (D74): a polygon on one floor with a finish. On upper floors only slabs are walkable. */
+export const SlabSchema = z.object({
+  kind: z.literal('slab'),
+  id: IdSchema,
+  floorId: IdSchema,
+  polygon: z.array(Vec2Schema).min(3).max(128),
+  material: SlabMaterialSchema,
+});
+
+/**
+ * A straight stair (D75): a rectangle on `floorId` rising to `toFloorId` (the next floor up).
+ * `upEdge` is the side of the rectangle at the top; people evacuate down it.
+ */
+export const StairSchema = z.object({
+  kind: z.literal('stair'),
+  id: IdSchema,
+  floorId: IdSchema,
+  toFloorId: IdSchema,
+  min: Vec2Schema,
+  max: Vec2Schema,
+  upEdge: StairEdgeSchema,
+});
+
+export const EntitySchema = z.discriminatedUnion('kind', [FloorSchema, VertexSchema, WallSchema, OpeningSchema, SlabSchema, StairSchema]);
 
 export const EgressDocumentSchema = z.object({
   docVersion: z.literal(1),
@@ -74,6 +100,9 @@ export const EgressDocumentSchema = z.object({
   vertices: z.array(VertexSchema),
   walls: z.array(WallSchema),
   openings: z.array(OpeningSchema),
+  /** Floor surfaces and stairs (D74, D75). Older documents have none. */
+  slabs: z.array(SlabSchema).default([]),
+  stairs: z.array(StairSchema).default([]),
   /** Reserved until the furniture pass. */
   furniture: z.array(z.never()),
 });
@@ -125,6 +154,15 @@ export const EditCommandSchema = z.discriminatedUnion('kind', [
     }),
   }),
   z.object({ kind: z.literal('deleteEntities'), ids: z.array(IdSchema).min(1).max(5000) }),
+  /** Floor tool (D74): a surface from a drawn rectangle or a filled room outline. */
+  z.object({ kind: z.literal('createSlab'), floorId: IdSchema, polygon: z.array(Vec2Schema).min(3).max(128), material: SlabMaterialSchema }),
+  z.object({ kind: z.literal('updateSlab'), slabId: IdSchema, patch: z.object({ material: SlabMaterialSchema.optional(), polygon: z.array(Vec2Schema).min(3).max(128).optional() }) }),
+  /** A new floor on top; its elevation is the floor below plus that floor's floor-to-floor height. */
+  z.object({ kind: z.literal('createFloor'), name: z.string().trim().min(1).max(80), ceilingHeightM: z.number().positive().max(50).optional() }),
+  /** Changing a floor-to-floor height moves every floor above it. */
+  z.object({ kind: z.literal('updateFloor'), floorId: IdSchema, patch: z.object({ name: z.string().trim().min(1).max(80).optional(), ceilingHeightM: z.number().min(2).max(50).optional() }) }),
+  z.object({ kind: z.literal('createStair'), floorId: IdSchema, min: Vec2Schema, max: Vec2Schema, upEdge: StairEdgeSchema }),
+  z.object({ kind: z.literal('updateStair'), stairId: IdSchema, patch: z.object({ upEdge: StairEdgeSchema.optional(), min: Vec2Schema.optional(), max: Vec2Schema.optional() }) }),
   /** Generic put/remove. Used for undo/redo, imports and agent proposals. */
   z.object({ kind: z.literal('applyPatch'), put: z.array(EntitySchema).max(5000), remove: z.array(IdSchema).max(5000) }),
 ]);

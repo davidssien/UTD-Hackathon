@@ -5,7 +5,7 @@
  * layoutHash.
  */
 import {
-  CELL_SIZE_M, deriveLayout, isPassable, layoutHash, openingSegment, pointInPolygon, topology, wallGeometry,
+  CELL_SIZE_M, deriveLayout, groundFloorId, isPassable, layoutHash, openingSegment, pointInPolygon, topology, wallGeometry,
   type EgressDocument, type GridDefinition, type ID, type Opening, type Vec2,
 } from '@egress/core';
 import { buildNavigation, type Navigation } from './nav.ts';
@@ -52,7 +52,7 @@ export interface CompiledFloor {
 
 const cache = new Map<string, CompiledFloor>();
 
-export function compileFloor(doc: EgressDocument, floorId: ID = doc.floors[0]?.id ?? ''): CompiledFloor {
+export function compileFloor(doc: EgressDocument, floorId: ID = groundFloorId(doc)): CompiledFloor {
   const hash = layoutHash(doc);
   const key = `${hash}:${floorId}`;
   const hit = cache.get(key);

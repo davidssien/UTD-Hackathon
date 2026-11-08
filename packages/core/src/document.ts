@@ -4,8 +4,8 @@
  */
 import { canonicalJson } from './canonical.ts';
 import { DomainError } from './errors.ts';
-import { distance, OPENING_END_CLEARANCE_M } from './geometry.ts';
-import type { EgressDocument, Entity, Floor, ID, Opening, Vertex, Wall } from './types.ts';
+import { distance, OPENING_END_CLEARANCE_M, signedArea } from './geometry.ts';
+import type { EgressDocument, Entity, Floor, ID, Opening, Slab, Stair, Vertex, Wall } from './types.ts';
 
 export const DEFAULT_WALL = { thicknessM: 0.2, heightM: 2.8, material: 'normal' } as const;
 export const DEFAULT_DOOR = { widthM: 0.9, sillHeightM: 0, openingHeightM: 2.1 } as const;
@@ -14,25 +14,37 @@ export const DEFAULT_EXIT = { widthM: 1.2, sillHeightM: 0, openingHeightM: 2.1 }
 
 export function emptyDocument(projectId: ID, floorId: ID = `${projectId}.floor0`): EgressDocument {
   const floor: Floor = { kind: 'floor', id: floorId, level: 0, name: 'Ground floor', elevationM: 0, ceilingHeightM: 3 };
-  return { docVersion: 1, projectId, revision: 0, floors: [floor], vertices: [], walls: [], openings: [], furniture: [] };
+  return { docVersion: 1, projectId, revision: 0, floors: [floor], vertices: [], walls: [], openings: [], slabs: [], stairs: [], furniture: [] };
+}
+
+/** Floors from the ground up (D75). Levels are unique; ids break ties in damaged documents. */
+export function floorsByLevel(doc: EgressDocument): Floor[] {
+  return [...doc.floors].sort((a, b) => a.level - b.level || (a.id < b.id ? -1 : 1));
+}
+
+/** The lowest floor's id: where exits to the outside are and where the simulation runs today. */
+export function groundFloorId(doc: EgressDocument): ID {
+  return floorsByLevel(doc)[0]?.id ?? '';
 }
 
 export function documentToEntities(doc: EgressDocument): Entity[] {
-  return [...doc.floors, ...doc.vertices, ...doc.walls, ...doc.openings];
+  return [...doc.floors, ...doc.vertices, ...doc.walls, ...doc.openings, ...(doc.slabs ?? []), ...(doc.stairs ?? [])];
 }
 
 const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /** Build a document from unordered entity rows. Arrays are sorted by id so the result is deterministic. */
 export function entitiesToDocument(projectId: ID, revision: number, entities: Iterable<Entity>): EgressDocument {
-  const doc: EgressDocument = { docVersion: 1, projectId, revision, floors: [], vertices: [], walls: [], openings: [], furniture: [] };
+  const doc: EgressDocument = { docVersion: 1, projectId, revision, floors: [], vertices: [], walls: [], openings: [], slabs: [], stairs: [], furniture: [] };
   for (const e of entities) {
     if (e.kind === 'floor') doc.floors.push(e);
     else if (e.kind === 'vertex') doc.vertices.push(e);
     else if (e.kind === 'wall') doc.walls.push(e);
+    else if (e.kind === 'slab') doc.slabs.push(e);
+    else if (e.kind === 'stair') doc.stairs.push(e);
     else doc.openings.push(e);
   }
-  doc.floors.sort(byId); doc.vertices.sort(byId); doc.walls.sort(byId); doc.openings.sort(byId);
+  doc.floors.sort(byId); doc.vertices.sort(byId); doc.walls.sort(byId); doc.openings.sort(byId); doc.slabs.sort(byId); doc.stairs.sort(byId);
   return doc;
 }
 
@@ -41,6 +53,8 @@ export interface DocumentIndex {
   vertices: Map<ID, Vertex>;
   walls: Map<ID, Wall>;
   openings: Map<ID, Opening>;
+  slabs: Map<ID, Slab>;
+  stairs: Map<ID, Stair>;
 }
 
 export function indexDocument(doc: EgressDocument): DocumentIndex {
@@ -49,11 +63,13 @@ export function indexDocument(doc: EgressDocument): DocumentIndex {
     vertices: new Map(doc.vertices.map(e => [e.id, e])),
     walls: new Map(doc.walls.map(e => [e.id, e])),
     openings: new Map(doc.openings.map(e => [e.id, e])),
+    slabs: new Map((doc.slabs ?? []).map(e => [e.id, e])),
+    stairs: new Map((doc.stairs ?? []).map(e => [e.id, e])),
   };
 }
 
 export function findEntity(index: DocumentIndex, id: ID): Entity | undefined {
-  return index.floors.get(id) ?? index.vertices.get(id) ?? index.walls.get(id) ?? index.openings.get(id);
+  return index.floors.get(id) ?? index.vertices.get(id) ?? index.walls.get(id) ?? index.openings.get(id) ?? index.slabs.get(id) ?? index.stairs.get(id);
 }
 
 export function wallLength(index: DocumentIndex, wall: Wall): number {
@@ -94,6 +110,16 @@ export function assertDocumentIntegrity(doc: EgressDocument): void {
     if (!a || !b) throw new DomainError('INVALID_GEOMETRY', `Wall ${w.id} references a missing vertex.`);
     if (a.floorId !== w.floorId || b.floorId !== w.floorId) throw new DomainError('INVALID_GEOMETRY', `Wall ${w.id} spans floors.`);
     if (w.startVertexId === w.endVertexId) throw new DomainError('INVALID_GEOMETRY', `Wall ${w.id} has zero length.`);
+  }
+  for (const s of doc.slabs ?? []) {
+    if (!index.floors.has(s.floorId)) throw new DomainError('INVALID_GEOMETRY', `Floor surface ${s.id} is on a missing floor.`);
+    if (Math.abs(signedArea(s.polygon)) < 0.25) throw new DomainError('INVALID_GEOMETRY', 'A floor surface must cover at least 0.25 m².');
+  }
+  for (const s of doc.stairs ?? []) {
+    const from = index.floors.get(s.floorId), to = index.floors.get(s.toFloorId);
+    if (!from || !to) throw new DomainError('INVALID_GEOMETRY', `Stair ${s.id} connects a missing floor.`);
+    if (to.level !== from.level + 1) throw new DomainError('INVALID_GEOMETRY', 'A stair connects a floor to the floor directly above it.');
+    if (s.max.x - s.min.x < 0.8 || s.max.y - s.min.y < 0.8) throw new DomainError('INVALID_GEOMETRY', 'A stair must be at least 0.8 m wide and long.');
   }
   const perWall = new Map<ID, Opening[]>();
   for (const o of doc.openings) {

@@ -15,7 +15,7 @@ import { DomainError, type DomainErrorData } from '../errors.ts';
 import {
   cross, distance, dot, MIN_WALL_LENGTH_M, normalize, OPENING_END_CLEARANCE_M, projectOnSegment, segmentIntersection, sub, VERTEX_MERGE_M,
 } from '../geometry.ts';
-import type { EditCommand, EgressDocument, Entity, Floor, ID, Opening, Vec2, Vertex, Wall, WallMaterial } from '../types.ts';
+import type { EditCommand, EgressDocument, Entity, Floor, ID, Opening, Slab, Stair, Vec2, Vertex, Wall, WallMaterial } from '../types.ts';
 
 export type PatchCommand = Extract<EditCommand, { kind: 'applyPatch' }>;
 
@@ -84,6 +84,8 @@ class Working {
   vertices: Map<ID, Vertex>;
   walls: Map<ID, Wall>;
   openings: Map<ID, Opening>;
+  slabs: Map<ID, Slab>;
+  stairs: Map<ID, Stair>;
   created: ID[] = [];
   private readonly requestId: ID;
   private counter = 0;
@@ -94,10 +96,12 @@ class Working {
     this.vertices = new Map(doc.vertices.map(e => [e.id, e]));
     this.walls = new Map(doc.walls.map(e => [e.id, e]));
     this.openings = new Map(doc.openings.map(e => [e.id, e]));
+    this.slabs = new Map((doc.slabs ?? []).map(e => [e.id, e]));
+    this.stairs = new Map((doc.stairs ?? []).map(e => [e.id, e]));
   }
 
   entities(): Entity[] {
-    return [...this.floors.values(), ...this.vertices.values(), ...this.walls.values(), ...this.openings.values()];
+    return [...this.floors.values(), ...this.vertices.values(), ...this.walls.values(), ...this.openings.values(), ...this.slabs.values(), ...this.stairs.values()];
   }
 
   nextId(): ID {
@@ -107,7 +111,7 @@ class Working {
   }
 
   find(id: ID): Entity | undefined {
-    return this.floors.get(id) ?? this.vertices.get(id) ?? this.walls.get(id) ?? this.openings.get(id);
+    return this.floors.get(id) ?? this.vertices.get(id) ?? this.walls.get(id) ?? this.openings.get(id) ?? this.slabs.get(id) ?? this.stairs.get(id);
   }
 
   floor(id: ID): Floor {
@@ -274,10 +278,37 @@ class Working {
     this.vertices.delete(id);
   }
 
+  /** Floors stack (D75): deleting one removes what is on it, stairs to it, and lowers the floors above. */
   deleteFloor(id: ID) {
+    const floor = this.floor(id);
+    if (this.floors.size <= 1) throw new DomainError('INVALID_INPUT', 'A building keeps at least one floor.');
     for (const v of [...this.vertices.values()]) if (v.floorId === id) this.deleteVertex(v.id);
     for (const o of [...this.openings.values()]) if (o.floorId === id) this.openings.delete(o.id);
+    for (const s of [...this.slabs.values()]) if (s.floorId === id) this.slabs.delete(s.id);
+    for (const s of [...this.stairs.values()]) if (s.floorId === id || s.toFloorId === id) this.stairs.delete(s.id);
     this.floors.delete(id);
+    for (const f of [...this.floors.values()]) {
+      if (f.level > floor.level) this.floors.set(f.id, { ...f, level: f.level - 1, elevationM: round(f.elevationM - floor.ceilingHeightM) });
+    }
+    // A stair now spanning a gap (its floors are no longer adjacent) cannot stand.
+    for (const s of [...this.stairs.values()]) {
+      const from = this.floors.get(s.floorId), to = this.floors.get(s.toFloorId);
+      if (!from || !to || to.level !== from.level + 1) this.stairs.delete(s.id);
+    }
+  }
+
+  /** The floor directly above, if any. */
+  floorAbove(floor: Floor): Floor | undefined {
+    return [...this.floors.values()].find(f => f.level === floor.level + 1);
+  }
+
+  /** Recompute elevations from the ground up after a floor-to-floor height changes. */
+  restack() {
+    const ordered = [...this.floors.values()].sort((a, b) => a.level - b.level);
+    for (let i = 1; i < ordered.length; i++) {
+      const below = this.floors.get(ordered[i - 1].id)!;
+      this.floors.set(ordered[i].id, { ...ordered[i], elevationM: round(below.elevationM + below.ceilingHeightM) });
+    }
   }
 
   /** Cascading delete. Returns false when the id is unknown. */
@@ -287,6 +318,8 @@ class Working {
     if (e.kind === 'floor') this.deleteFloor(id);
     else if (e.kind === 'vertex') this.deleteVertex(id);
     else if (e.kind === 'wall') this.deleteWall(id);
+    else if (e.kind === 'slab') this.slabs.delete(id);
+    else if (e.kind === 'stair') this.stairs.delete(id);
     else this.deleteOpening(id);
     return true;
   }
@@ -298,6 +331,8 @@ class Working {
     if (e.kind === 'floor') this.floors.set(e.id, e);
     else if (e.kind === 'vertex') this.vertices.set(e.id, e);
     else if (e.kind === 'wall') this.walls.set(e.id, e);
+    else if (e.kind === 'slab') this.slabs.set(e.id, e);
+    else if (e.kind === 'stair') this.stairs.set(e.id, e);
     else this.openings.set(e.id, e);
   }
 
@@ -310,6 +345,11 @@ class Working {
 
 /** Is p on the infinite line through a with unit direction dir? */
 const collinear = (a: Vec2, dir: Vec2, p: Vec2) => Math.abs(cross(dir, sub(p, a))) <= VERTEX_MERGE_M;
+
+const round = (n: number) => Math.round(n * 1000) / 1000;
+
+/** Normalize a rectangle so min ≤ max on both axes. */
+const rect = (a: Vec2, b: Vec2) => ({ min: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, max: { x: Math.max(a.x, b.x), y: Math.max(a.y, b.y) } });
 
 /** Smallest wall piece a move may leave behind (splits can create pieces shorter than MIN_WALL_LENGTH_M). */
 const MIN_PIECE_M = 0.05;
@@ -395,6 +435,50 @@ function apply(ws: Working, command: EditCommand): void {
       const opening = ws.openings.get(command.openingId);
       if (!opening) throw new DomainError('NOT_FOUND', `Opening ${command.openingId} does not exist.`);
       ws.openings.set(opening.id, { ...opening, ...definedOnly(command.patch) });
+      return;
+    }
+    case 'createSlab': {
+      ws.floor(command.floorId);
+      const id = ws.nextId();
+      ws.slabs.set(id, { kind: 'slab', id, floorId: command.floorId, polygon: command.polygon.map(p => ({ x: p.x, y: p.y })), material: command.material });
+      return;
+    }
+    case 'updateSlab': {
+      const slab = ws.slabs.get(command.slabId);
+      if (!slab) throw new DomainError('NOT_FOUND', `Floor surface ${command.slabId} does not exist.`);
+      ws.slabs.set(slab.id, { ...slab, ...definedOnly(command.patch) });
+      return;
+    }
+    case 'createFloor': {
+      const top = [...ws.floors.values()].sort((a, b) => b.level - a.level)[0];
+      const id = ws.nextId();
+      ws.floors.set(id, {
+        kind: 'floor', id, name: command.name,
+        level: top ? top.level + 1 : 0,
+        elevationM: top ? round(top.elevationM + top.ceilingHeightM) : 0,
+        ceilingHeightM: command.ceilingHeightM ?? top?.ceilingHeightM ?? 3,
+      });
+      return;
+    }
+    case 'updateFloor': {
+      const floor = ws.floor(command.floorId);
+      ws.floors.set(floor.id, { ...floor, ...definedOnly(command.patch) });
+      ws.restack();
+      return;
+    }
+    case 'createStair': {
+      const floor = ws.floor(command.floorId);
+      const above = ws.floorAbove(floor);
+      if (!above) throw new DomainError('INVALID_INPUT', 'Add a floor above before placing a stair up to it.');
+      const id = ws.nextId();
+      ws.stairs.set(id, { kind: 'stair', id, floorId: floor.id, toFloorId: above.id, ...rect(command.min, command.max), upEdge: command.upEdge });
+      return;
+    }
+    case 'updateStair': {
+      const stair = ws.stairs.get(command.stairId);
+      if (!stair) throw new DomainError('NOT_FOUND', `Stair ${command.stairId} does not exist.`);
+      const next = { ...stair, ...definedOnly(command.patch) };
+      ws.stairs.set(stair.id, { ...next, ...rect(next.min, next.max) });
       return;
     }
     case 'deleteEntities': {
