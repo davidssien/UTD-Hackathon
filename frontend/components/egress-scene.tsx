@@ -1,310 +1,646 @@
 'use client';
-
+/**
+ * The one 3D scene (Plan.md §8 "Scene"). Edit locks it top-down; other modes orbit.
+ * Blueprint ground with a white dot grid, walls from `deriveLayout`, cross-hatched
+ * occluders, people and heatmap layers, blue-highlighted agent suggestions with
+ * reason bubbles, and a CAD viewcube.
+ */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { deriveLayout, projectOnSegment, type EditCommand, type EgressDocument, type Vec2, type WallMaterial } from '@egress/core';
+import { deriveLayout, projectOnSegment, type EditCommand, type EgressDocument, type ScalarField, type Vec2, type WallMaterial } from '@egress/core';
 import type { PlaybackController } from '@egress/client';
+import { WallLibrary } from '@/lib/wall-textures';
+import { ViewCube } from './scene/viewcube';
 
-export type SceneTool = 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'pan';
-type CameraPreset = 'top' | 'iso' | 'front' | 'back' | 'left' | 'right' | 'fit';
-export type SceneHandle = { preset: (view: CameraPreset) => void; exportImage: () => void };
-type Props = { doc: EgressDocument | null; editing: boolean; tool: SceneTool; material: WallMaterial; selected: string | null; onSelect: (id: string | null) => void; onEdit: (commands: EditCommand[]) => void; playback?: PlaybackController | null };
-type Runtime = { scene: THREE.Scene; camera: THREE.OrthographicCamera; controls: OrbitControls; renderer: THREE.WebGLRenderer; walls: THREE.Group; floors: THREE.Group; preview: THREE.Group; center: THREE.Vector3; extent: number; frame: (preset: CameraPreset, animate?: boolean) => void; cancel: () => void };
-const COLORS = { normal: '#f1f0e8', reinforced: '#a8babd', glass: '#8dc5ce' };
+export type SceneTool = 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit';
+export type PeopleView = 'discrete' | 'heatmap';
+export type HeatField = 'people.density' | 'people.congestion';
+export type HeatStat = 'instant' | 'timeAverage' | 'perCellPeak';
+export interface SceneLayer { people: PeopleView; field: HeatField; stat: HeatStat }
+/** An explicit heatmap, e.g. a before/after difference map (diverging palette). */
+export interface HeatOverlay { field: ScalarField; diverging: boolean }
+export interface SceneNote { key: string; text: string; entityId: string }
+export interface SceneHit { wallId?: string; openingId?: string }
+export interface SceneHandle { view(view: 'top' | 'iso' | 'fit'): void; exportImage(): void }
 
-function clear(group: THREE.Group) {
+interface Props {
+  doc: EgressDocument | null;
+  editing: boolean;
+  tool: SceneTool;
+  wallType: WallMaterial;
+  selected: string | null;
+  /** Entity ids drawn in suggestion blue (created or changed by a proposal). */
+  highlight?: ReadonlySet<string>;
+  notes?: SceneNote[];
+  playback?: PlaybackController | null;
+  layer: SceneLayer;
+  overlay?: HeatOverlay | null;
+  onSelect(id: string | null): void;
+  onEdit(commands: EditCommand[]): void;
+  onContext?(at: { x: number; y: number }, hit: SceneHit | null): void;
+}
+
+const BLUEPRINT = '#1c446f';
+const SUGGEST = '#3d9bff';
+const SELECT = '#ffb020';
+const WALL_STYLE: Record<WallMaterial, { thicknessM: number }> = { normal: { thicknessM: 0.2 }, reinforced: { thicknessM: 0.3 }, glass: { thicknessM: 0.12 } };
+const OPENING_WIDTH = { door: 0.9, window: 1.2, exit: 1.2 } as const;
+const MAX_POLAR = Math.PI * 0.44;
+const HEAT_MAX: Record<HeatField, number> = { 'people.density': 3.5, 'people.congestion': 2 };
+
+const toWorld = (p: Vec2, h = 0) => new THREE.Vector3(p.x, h, -p.y);
+
+function disposeChildren(group: THREE.Object3D) {
   for (const object of [...group.children]) {
     group.remove(object);
     object.traverse(o => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments || o instanceof THREE.Line) {
+      if (o instanceof THREE.Mesh || o instanceof THREE.Line || o instanceof THREE.Points) {
         o.geometry.dispose();
-        (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose();
       }
     });
   }
 }
 
-function polygon(points: Vec2[], height: number, bottom: number, material: THREE.Material) {
+function extrude(points: Vec2[], height: number, material: THREE.Material, bottom = 0) {
   const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p.x, p.y)));
   const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false }), material);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = bottom;
-  mesh.receiveShadow = true;
   return mesh;
 }
 
+/** Cross-hatching for walls that hide the floor (D57): evenly spaced screen-space lines, no dither. */
+function hatchable<M extends THREE.Material>(m: M): M {
+  const hatch = { value: 0 };
+  const spacing = { value: 7 * Math.min(globalThis.devicePixelRatio ?? 1, 2) };
+  m.userData.hatch = hatch;
+  m.onBeforeCompile = shader => {
+    shader.uniforms.uHatch = hatch;
+    shader.uniforms.uHatchSpacing = spacing;
+    shader.fragmentShader = 'uniform float uHatch;\nuniform float uHatchSpacing;\n' + shader.fragmentShader.replace('void main() {', `void main() {
+      if (uHatch > 0.5) {
+        float a = mod(gl_FragCoord.x + gl_FragCoord.y, uHatchSpacing);
+        float b = mod(gl_FragCoord.x - gl_FragCoord.y + 8192.0, uHatchSpacing);
+        if (min(a, b) > uHatchSpacing * 0.17) discard;
+      }`);
+  };
+  m.customProgramCacheKey = () => 'egress-hatch';
+  return m;
+}
+
+function groundMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uBase: { value: new THREE.Color(BLUEPRINT) }, uDot: { value: new THREE.Color('#ffffff') } },
+    vertexShader: `varying vec2 vPlan;
+      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vPlan = vec2(w.x, -w.z); gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform vec3 uBase; uniform vec3 uDot; varying vec2 vPlan;
+      float dots(vec2 p, float spacing, float radiusPx) {
+        vec2 px = max(fwidth(p), vec2(1e-5));
+        vec2 d = (fract(p / spacing + 0.5) - 0.5) * spacing;
+        return 1.0 - smoothstep(radiusPx - 0.6, radiusPx + 0.6, length(d / px));
+      }
+      void main() {
+        float mpp = max(fwidth(vPlan.x), fwidth(vPlan.y));
+        float minor = dots(vPlan, 0.25, 0.85) * 0.30 * (1.0 - smoothstep(0.035, 0.07, mpp));
+        float major = dots(vPlan, 1.0, 1.25) * 0.62 * (1.0 - smoothstep(0.15, 0.3, mpp));
+        float coarse = dots(vPlan, 5.0, 1.5) * 0.55;
+        gl_FragColor = vec4(mix(uBase, uDot, max(max(minor, major), coarse)), 1.0);
+        #include <colorspace_fragment>
+      }`,
+  });
+}
+
+/** Sequential palette for density/congestion; diverging (cyan = relieved, red = worse) for difference maps. */
+function paint(field: ScalarField, diverging: boolean, max: number): Uint8Array {
+  const v = field.values, out = new Uint8Array(v.length * 4);
+  let scale = max;
+  if (diverging) { scale = 1e-6; for (const x of v) if (Number.isFinite(x)) scale = Math.max(scale, Math.abs(x)); }
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i];
+    if (!Number.isFinite(x) || Math.abs(x) < 1e-4) continue;
+    const t = Math.min(1, Math.abs(x) / scale);
+    let r: number, g: number, b: number;
+    if (diverging) [r, g, b] = x < 0 ? [70, 220, 255] : [255, 84, 64];
+    else if (t < 0.5) { const k = t / 0.5; r = 255; g = Math.round(225 - 85 * k); b = Math.round(110 - 70 * k); }
+    else { const k = (t - 0.5) / 0.5; r = Math.round(255 - 30 * k); g = Math.round(140 - 110 * k); b = 40; }
+    out[i * 4] = r; out[i * 4 + 1] = g; out[i * 4 + 2] = b; out[i * 4 + 3] = Math.round(70 + 170 * Math.sqrt(t));
+  }
+  return out;
+}
+
+interface Runtime {
+  camera: THREE.OrthographicCamera;
+  controls: OrbitControls;
+  renderer: THREE.WebGLRenderer;
+  scene: THREE.Scene;
+  walls: THREE.Group;
+  floors: THREE.Group;
+  library: WallLibrary;
+  cube: ViewCube;
+  anchors: Map<string, THREE.Vector3>;
+  bounds: { center: THREE.Vector3; extent: number };
+  frame(view: 'top' | 'iso' | 'fit', animate?: boolean): void;
+  cancel(): void;
+}
+
 const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, ref) {
-  const host = useRef<HTMLDivElement>(null), runtime = useRef<Runtime | null>(null);
-  const latest = useRef(props), cube = useRef<HTMLDivElement>(null), framed = useRef<string | null>(null);
+  const host = useRef<HTMLDivElement>(null);
+  const cubeHost = useRef<HTMLDivElement>(null);
+  const dim = useRef<HTMLDivElement>(null);
+  const noteEls = useRef(new Map<string, HTMLDivElement>());
+  const runtime = useRef<Runtime | null>(null);
+  const latest = useRef(props);
+  const framedProject = useRef<string | null>(null);
   const [error, setError] = useState('');
+  const [library, setLibrary] = useState<WallLibrary | null>(null);
   useEffect(() => { latest.current = props; });
+  useEffect(() => { let live = true; void WallLibrary.load().then(l => { if (live) setLibrary(l); }); return () => { live = false; }; }, []);
+
   useImperativeHandle(ref, () => ({
-    preset(view) { runtime.current?.frame(latest.current.editing && view !== 'fit' ? 'top' : view); },
+    view(view) { runtime.current?.frame(latest.current.editing && view === 'iso' ? 'top' : view); },
     exportImage() {
-      const r = runtime.current;
-      if (!r) return;
+      const r = runtime.current; if (!r) return;
       r.renderer.render(r.scene, r.camera);
       const a = document.createElement('a'); a.download = 'egress-plan.png'; a.href = r.renderer.domElement.toDataURL('image/png'); a.click();
     },
   }), []);
 
+  // ── Renderer, camera, input (once) ────────────────────────────────────────
   useEffect(() => {
+    if (!library) return;
     const node = host.current!;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); }
-    catch { setError('3D rendering is unavailable in this browser. Try enabling hardware acceleration.'); return; }
+    catch { queueMicrotask(() => setError('3D rendering is unavailable in this browser.')); return; }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-    renderer.setClearColor('#e9eef0'); node.prepend(renderer.domElement);
+    renderer.setClearColor(BLUEPRINT);
+    node.prepend(renderer.domElement);
+
     const scene = new THREE.Scene();
-    scene.add(new THREE.HemisphereLight('#ffffff', '#94a8b8', 2.4));
-    const sun = new THREE.DirectionalLight('#fff6e5', 2.4); sun.position.set(12, 24, 10); sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -35, right: 35, top: 35, bottom: -35 }); sun.shadow.normalBias = .03; scene.add(sun);
-    const camera = new THREE.OrthographicCamera(-15, 15, 15, -15, .05, 500);
+    scene.add(new THREE.HemisphereLight('#ffffff', '#5d7896', 2.2));
+    const sun = new THREE.DirectionalLight('#ffffff', 2.0); sun.position.set(14, 26, 9); sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40 }); sun.shadow.normalBias = 0.03;
+    scene.add(sun);
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMaterial());
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.renderOrder = -1;
+    const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.ShadowMaterial({ opacity: 0.22 }));
+    shadowCatcher.rotation.x = -Math.PI / 2; shadowCatcher.position.y = -0.005; shadowCatcher.receiveShadow = true;
+    const walls = new THREE.Group(), floors = new THREE.Group(), preview = new THREE.Group();
+    scene.add(ground, shadowCatcher, floors, walls, preview);
+
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false }));
+    ring.rotation.x = -Math.PI / 2; ring.renderOrder = 10; ring.visible = false; scene.add(ring);
+
+    const people = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 12, 8), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.6 }), 4000);
+    people.count = 0; people.frustumCulled = false; scene.add(people);
+    const heat = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+    heat.rotation.x = -Math.PI / 2; heat.position.y = 0.03; heat.visible = false; heat.renderOrder = 2; scene.add(heat);
+    let heatTexture: THREE.DataTexture | null = null, heatKey = '', lastHeat = 0;
+
+    const camera = new THREE.OrthographicCamera(-15, 15, 15, -15, 0.05, 1000);
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.dampingFactor = .12; controls.screenSpacePanning = false;
-    controls.minPolarAngle = .001; controls.maxPolarAngle = Math.PI * .44; controls.minZoom = .35; controls.maxZoom = 8;
-    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-    const walls = new THREE.Group(), floors = new THREE.Group(), preview = new THREE.Group(); scene.add(floors, walls, preview);
-    const grid = new THREE.GridHelper(100, 100, '#a7b8c1', '#c9d4d9'); grid.position.y = -.025; scene.add(grid);
-    const points: number[] = [];
-    for (let x = -25; x <= 25; x += .25) for (let z = -25; z <= 25; z += .25) points.push(x, -.015, z);
-    const dots = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(points, 3)), new THREE.PointsMaterial({ color: '#8fa6b4', size: .022 })); scene.add(dots);
-    const people = new THREE.InstancedMesh(new THREE.SphereGeometry(.17, 10, 8), new THREE.MeshStandardMaterial({ color: '#f9d995' }), 2000); people.count = 0; scene.add(people);
-    const matrix = new THREE.Matrix4();
-    let transition: { start: number; from: THREE.Vector3; to: THREE.Vector3; targetFrom: THREE.Vector3; targetTo: THREE.Vector3 } | null = null;
-    let anchor: Vec2 | null = null, down: Vec2 | null = null, downPixels: Vec2 | null = null;
-    const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-    const r: Runtime = { scene, camera, controls, renderer, walls, floors, preview, center: new THREE.Vector3(), extent: 20, cancel() { anchor = null; down = null; clear(preview); }, frame(view, animate = true) {
-      r.cancel();
-      const fit = view === 'fit';
-      const vertices = latest.current.doc?.vertices;
-      if (fit && vertices?.length) {
-        const xs = vertices.map(v => v.position.x), ys = vertices.map(v => v.position.y);
-        r.center.set((Math.min(...xs) + Math.max(...xs)) / 2, 0, -(Math.min(...ys) + Math.max(...ys)) / 2);
-        r.extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 12);
-      }
-      const top = latest.current.editing || view === 'top';
-      const d = Math.max(8, r.extent);
-      const target = r.center.clone(); target.y = 0;
-      const offset = top ? new THREE.Vector3(0, d * 1.5, .001)
-        : view === 'front' ? new THREE.Vector3(0, d * .38, d * 1.5)
-        : view === 'back' ? new THREE.Vector3(0, d * .38, -d * 1.5)
-        : view === 'left' ? new THREE.Vector3(-d * 1.5, d * .38, 0)
-        : view === 'right' ? new THREE.Vector3(d * 1.5, d * .38, 0)
-        : new THREE.Vector3(d, d * 1.15, d);
-      const to = target.clone().add(offset);
-      if (fit) camera.zoom = 1;
-      const half = d * .7, aspect = Math.max(.2, node.clientWidth / Math.max(1, node.clientHeight));
+    controls.enableDamping = true; controls.dampingFactor = 0.14; controls.screenSpacePanning = true;
+    controls.minPolarAngle = 0; controls.maxPolarAngle = MAX_POLAR; controls.minZoom = 0.25; controls.maxZoom = 12;
+
+    const bounds = { center: new THREE.Vector3(), extent: 16 };
+    let transition: { start: number; from: THREE.Vector3; to: THREE.Vector3; targetFrom: THREE.Vector3; targetTo: THREE.Vector3; zoomFrom: number; zoomTo: number } | null = null;
+    const distance = () => Math.max(80, bounds.extent * 4);
+    const fitFrustum = () => {
+      const half = Math.max(8, bounds.extent) * 0.62, aspect = Math.max(0.2, node.clientWidth / Math.max(1, node.clientHeight));
       camera.left = -half * aspect; camera.right = half * aspect; camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
-      if (animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) transition = { start: performance.now(), from: camera.position.clone(), to, targetFrom: controls.target.clone(), targetTo: target };
-      else { transition = null; camera.position.copy(to); controls.target.copy(target); camera.lookAt(target); controls.update(); }
-    } };
+    };
+    const aim = (direction: THREE.Vector3, opts: { animate?: boolean; target?: THREE.Vector3; zoom?: number } = {}) => {
+      const dir = direction.clone().normalize();
+      const elevation = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+      const minElevation = Math.PI / 2 - MAX_POLAR;
+      if (elevation < minElevation) { // keep the camera above the floor
+        const flat = new THREE.Vector3(dir.x, 0, dir.z);
+        if (flat.lengthSq() < 1e-6) flat.set(0, 0, 1);
+        flat.normalize().multiplyScalar(Math.cos(minElevation)); dir.set(flat.x, Math.sin(minElevation), flat.z);
+      }
+      if (Math.abs(dir.x) < 1e-4 && Math.abs(dir.z) < 1e-4) dir.set(0, 1, 0.0006).normalize(); // straight down, north up
+      const target = opts.target ?? controls.target.clone();
+      const to = target.clone().addScaledVector(dir, distance());
+      const zoom = opts.zoom ?? camera.zoom;
+      if (opts.animate !== false && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        transition = { start: performance.now(), from: camera.position.clone(), to, targetFrom: controls.target.clone(), targetTo: target, zoomFrom: camera.zoom, zoomTo: zoom };
+      } else {
+        transition = null; camera.position.copy(to); controls.target.copy(target); camera.zoom = zoom; camera.updateProjectionMatrix(); controls.update();
+      }
+    };
+    const cube = new ViewCube(
+      (dTheta, dPhi) => {
+        if (latest.current.editing) return;
+        transition = null;
+        const offset = camera.position.clone().sub(controls.target);
+        const s = new THREE.Spherical().setFromVector3(offset);
+        s.theta += dTheta; s.phi = THREE.MathUtils.clamp(s.phi + dPhi, 0.0006, MAX_POLAR);
+        camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(s));
+        controls.update();
+      },
+      dir => aim(latest.current.editing ? new THREE.Vector3(0, 1, 0) : dir),
+    );
+    cubeHost.current?.appendChild(cube.element);
+
+    let anchor: Vec2 | null = null, chainStart: Vec2 | null = null;
+    let down: { at: Vec2 | null; px: Vec2; button: number } | null = null;
+    let spaceHeld = false;
+    const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    const r: Runtime = {
+      camera, controls, renderer, scene, walls, floors, library, cube, anchors: new Map(), bounds,
+      cancel() { anchor = null; chainStart = null; disposeChildren(preview); if (dim.current) dim.current.hidden = true; },
+      frame(view, animate = true) {
+        r.cancel();
+        const vs = latest.current.doc?.vertices ?? [];
+        if (vs.length) {
+          const xs = vs.map(v => v.position.x), ys = vs.map(v => v.position.y);
+          bounds.center.set((Math.min(...xs) + Math.max(...xs)) / 2, 0, -(Math.min(...ys) + Math.max(...ys)) / 2);
+          bounds.extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 10);
+        }
+        fitFrustum();
+        const top = latest.current.editing || view === 'top';
+        const dir = top ? new THREE.Vector3(0, 1, 0) : view === 'iso' || view === 'fit' ? new THREE.Vector3(0.9, 1.05, 1.15) : new THREE.Vector3(0, 1, 0);
+        aim(view === 'fit' && !latest.current.editing ? camera.position.clone().sub(controls.target) : dir, { animate, target: bounds.center.clone(), zoom: 1 });
+      },
+    };
     runtime.current = r;
     r.frame('top', false);
-    const ground = (e: PointerEvent): Vec2 | null => {
+
+    const ndc = (e: PointerEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
-      ray.setFromCamera(new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1), camera);
+      return new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1);
+    };
+    const groundAt = (e: PointerEvent): Vec2 | null => {
+      ray.setFromCamera(ndc(e), camera);
       const p = ray.ray.intersectPlane(plane, new THREE.Vector3());
-      if (!p) return null;
-      return { x: Math.round(p.x * 4) / 4, y: Math.round(-p.z * 4) / 4 };
+      return p ? { x: p.x, y: -p.z } : null;
     };
-    const pick = (e: PointerEvent) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      ray.setFromCamera(new THREE.Vector2((e.clientX - rect.left) / rect.width * 2 - 1, -(e.clientY - rect.top) / rect.height * 2 + 1), camera);
-      return ray.intersectObjects(walls.children, true)[0]?.object.userData as { wallId?: string; openingId?: string } | undefined;
+    /** Snap to an existing vertex within 0.3 m, else to the 0.25 m dot grid. */
+    const snap = (p: Vec2): Vec2 => {
+      let best: Vec2 | null = null, bestD = 0.3;
+      for (const v of latest.current.doc?.vertices ?? []) {
+        const d = Math.hypot(v.position.x - p.x, v.position.y - p.y);
+        if (d < bestD) { bestD = d; best = v.position; }
+      }
+      return best ?? { x: Math.round(p.x * 4) / 4, y: Math.round(p.y * 4) / 4 };
     };
-    const outline = (a: Vec2, b: Vec2, box: boolean) => {
-      clear(preview);
-      const path = box ? [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a] : [a, b];
-      preview.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(path.map(p => new THREE.Vector3(p.x, .06, -p.y))), new THREE.LineBasicMaterial({ color: '#f1bd66', depthTest: false })));
+    const constrain = (a: Vec2, b: Vec2, free: boolean): Vec2 => free ? b : Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
+    const pick = (e: PointerEvent): SceneHit | null => {
+      ray.setFromCamera(ndc(e), camera);
+      const hits = ray.intersectObjects(walls.children, true);
+      const hit = hits.find(h => h.object.userData.openingId) ?? hits[0];
+      return hit ? (hit.object.userData as SceneHit) : null;
     };
-    const endPoint = (a: Vec2, b: Vec2, free: boolean) => free ? b : Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
+    const showDim = (e: PointerEvent, text: string) => {
+      const el = dim.current; if (!el) return;
+      const rect = node.getBoundingClientRect();
+      el.hidden = false; el.textContent = text;
+      el.style.transform = `translate(${e.clientX - rect.left + 16}px, ${e.clientY - rect.top + 14}px)`;
+    };
+    const line = (points: Vec2[], color = '#ffffff') => {
+      preview.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => toWorld(p, 0.06))), new THREE.LineBasicMaterial({ color, depthTest: false })));
+    };
+    const nearestWall = (p: Vec2) => {
+      const doc = latest.current.doc; if (!doc) return null;
+      const vertices = new Map(doc.vertices.map(v => [v.id, v.position]));
+      let best: { wallId: string; a: Vec2; b: Vec2; t: number; distance: number; length: number; thickness: number } | null = null;
+      for (const w of doc.walls) {
+        const a = vertices.get(w.startVertexId), b = vertices.get(w.endVertexId);
+        if (!a || !b) continue;
+        const hit = projectOnSegment(p, a, b);
+        if (!best || hit.distance < best.distance) best = { wallId: w.id, a, b, t: hit.t, distance: hit.distance, length: Math.hypot(b.x - a.x, b.y - a.y), thickness: w.thicknessM };
+      }
+      return best && best.distance < 0.65 ? best : null;
+    };
+    const openingPlacement = (p: Vec2, kind: 'door' | 'window' | 'exit') => {
+      const w = nearestWall(p); if (!w) return null;
+      const width = Math.min(OPENING_WIDTH[kind], w.length - 0.1);
+      if (width < 0.5) return null;
+      const offset = THREE.MathUtils.clamp(Math.round(w.t * w.length * 20) / 20, width / 2 + 0.05, w.length - width / 2 - 0.05);
+      return { ...w, offset, width };
+    };
+
     const onDown = (e: PointerEvent) => {
-      if (!latest.current.editing || latest.current.tool === 'pan' || e.button !== 0 || transition) return;
-      down = ground(e); downPixels = { x: e.clientX, y: e.clientY };
+      if (!latest.current.editing || transition) return;
+      if (e.button === 1 || (e.button === 0 && spaceHeld)) return; // OrbitControls pans
+      down = { at: groundAt(e), px: { x: e.clientX, y: e.clientY }, button: e.button };
       renderer.domElement.setPointerCapture(e.pointerId);
     };
     const onMove = (e: PointerEvent) => {
-      if (!latest.current.editing) return;
-      const p = ground(e); if (!p) return;
-      const { tool } = latest.current;
-      if (tool === 'wall' && (anchor || down)) outline(anchor ?? down!, endPoint(anchor ?? down!, p, e.shiftKey), false);
-      if ((tool === 'box' || tool === 'erase') && down) outline(down, p, tool === 'box');
+      const state = latest.current;
+      if (!state.editing) { ring.visible = false; return; }
+      const raw = groundAt(e); if (!raw) return;
+      const p = snap(raw), tool = state.tool;
+      ring.visible = tool !== 'select' && !spaceHeld;
+      ring.position.set(p.x, 0.02, -p.y);
+      disposeChildren(preview);
+      if (dim.current) dim.current.hidden = true;
+      const dragging = down?.button === 0 && down.at ? snap(down.at) : null;
+      if (tool === 'wall' && (anchor || dragging)) {
+        const a = anchor ?? dragging!, b = constrain(a, p, e.shiftKey);
+        line([a, b]); showDim(e, `${Math.hypot(b.x - a.x, b.y - a.y).toFixed(2)} m`);
+      } else if (tool === 'box' && dragging) {
+        line([dragging, { x: p.x, y: dragging.y }, p, { x: dragging.x, y: p.y }, dragging]);
+        showDim(e, `${Math.abs(p.x - dragging.x).toFixed(2)} × ${Math.abs(p.y - dragging.y).toFixed(2)} m`);
+      } else if (tool === 'erase' && dragging) {
+        line([dragging, p], '#ff8a80');
+      } else if (tool === 'door' || tool === 'window' || tool === 'exit') {
+        const o = openingPlacement(raw, tool);
+        if (o) {
+          const ux = (o.b.x - o.a.x) / o.length, uy = (o.b.y - o.a.y) / o.length;
+          const c = { x: o.a.x + ux * o.offset, y: o.a.y + uy * o.offset };
+          const half = o.width / 2, n = { x: -uy * (o.thickness / 2 + 0.08), y: ux * (o.thickness / 2 + 0.08) };
+          line([{ x: c.x - ux * half + n.x, y: c.y - uy * half + n.y }, { x: c.x + ux * half + n.x, y: c.y + uy * half + n.y }, { x: c.x + ux * half - n.x, y: c.y + uy * half - n.y }, { x: c.x - ux * half - n.x, y: c.y - uy * half - n.y }, { x: c.x - ux * half + n.x, y: c.y - uy * half + n.y }], tool === 'exit' ? '#7dffa8' : '#ffffff');
+          showDim(e, `${o.width.toFixed(2)} m`);
+          ring.visible = false;
+        }
+      }
     };
     const onUp = (e: PointerEvent) => {
-      const state = latest.current, p = ground(e), start = down;
-      const moved = downPixels ? Math.hypot(e.clientX - downPixels.x, e.clientY - downPixels.y) > 6 : false;
-      down = null; downPixels = null;
-      if (!state.editing || e.button !== 0 || state.tool === 'pan' || !p || !state.doc || transition) return;
-      const floorId = state.doc.floors[0]?.id; if (!floorId) return;
-      const spec = { floorId, thicknessM: state.material === 'reinforced' ? .3 : state.material === 'glass' ? .12 : .2, heightM: 2.8, material: state.material };
-      if (state.tool === 'wall') {
-        const a = anchor ?? (moved ? start : null);
-        if (!a) { anchor = p; return; }
-        const b = endPoint(a, p, e.shiftKey);
-        if (Math.hypot(b.x - a.x, b.y - a.y) >= .5) state.onEdit([{ kind: 'createWallChain', points: [a, b], ...spec }]);
-        anchor = null;
-      } else if (state.tool === 'box' && start && moved) {
-        state.onEdit([{ kind: 'createBox', min: { x: Math.min(start.x, p.x), y: Math.min(start.y, p.y) }, max: { x: Math.max(start.x, p.x), y: Math.max(start.y, p.y) }, ...spec }]);
-      } else if (state.tool === 'erase') {
-        if (start && moved) state.onEdit([{ kind: 'eraseByLine', floorId, from: start, to: p }]);
-        else { const hit = pick(e); if (hit?.openingId || hit?.wallId) state.onEdit([{ kind: 'deleteEntities', ids: [hit.openingId ?? hit.wallId!] }]); }
-      } else if (state.tool === 'select') state.onSelect(pick(e)?.wallId ?? null);
-      else if (state.tool === 'door' || state.tool === 'exit' || state.tool === 'window') {
-        const vertices = new Map(state.doc.vertices.map(v => [v.id, v.position]));
-        const nearest = state.doc.walls.map(w => {
-          const a = vertices.get(w.startVertexId)!, b = vertices.get(w.endVertexId)!;
-          const hit = projectOnSegment(p, a, b);
-          return { wall: w, distance: hit.distance, offset: hit.t * Math.hypot(b.x - a.x, b.y - a.y) };
-        }).sort((a, b) => a.distance - b.distance)[0];
-        if (nearest && nearest.distance < .65) state.onEdit([{ kind: 'createOpening', wallId: nearest.wall.id, openingKind: state.tool, offsetM: nearest.offset, widthM: state.tool === 'door' ? .9 : 1.2 }]);
+      const state = latest.current, start = down;
+      down = null;
+      if (!state.editing || !start || transition) return;
+      const moved = Math.hypot(e.clientX - start.px.x, e.clientY - start.px.y) > 5;
+      const raw = groundAt(e);
+      if (start.button === 2) {
+        if (anchor) { r.cancel(); return; } // right-click ends a wall chain
+        if (!moved) {
+          const rect = node.getBoundingClientRect();
+          state.onContext?.({ x: e.clientX - rect.left, y: e.clientY - rect.top }, pick(e));
+        }
+        return;
       }
-      clear(preview);
+      if (start.button !== 0 || !raw || !state.doc) return;
+      const p = snap(raw), floorId = state.doc.floors[0]?.id;
+      if (!floorId) return;
+      const spec = { floorId, thicknessM: WALL_STYLE[state.wallType].thicknessM, heightM: 2.8, material: state.wallType };
+      const from = start.at ? snap(start.at) : null;
+      if (state.tool === 'wall') {
+        if (!anchor && moved && from) {
+          const b = constrain(from, p, e.shiftKey);
+          if (Math.hypot(b.x - from.x, b.y - from.y) >= 0.25) state.onEdit([{ kind: 'createWallChain', points: [from, b], ...spec }]);
+          return;
+        }
+        if (!anchor) { anchor = p; chainStart = p; return; }
+        const b = constrain(anchor, p, e.shiftKey);
+        if (Math.hypot(b.x - anchor.x, b.y - anchor.y) >= 0.25) state.onEdit([{ kind: 'createWallChain', points: [anchor, b], ...spec }]);
+        const closed = chainStart && Math.hypot(b.x - chainStart.x, b.y - chainStart.y) < 0.01;
+        if (closed) r.cancel(); else anchor = b;
+      } else if (state.tool === 'box' && from && moved) {
+        if (Math.abs(p.x - from.x) >= 0.5 && Math.abs(p.y - from.y) >= 0.5) {
+          state.onEdit([{ kind: 'createBox', min: { x: Math.min(from.x, p.x), y: Math.min(from.y, p.y) }, max: { x: Math.max(from.x, p.x), y: Math.max(from.y, p.y) }, ...spec }]);
+        }
+      } else if (state.tool === 'erase') {
+        if (from && moved) state.onEdit([{ kind: 'eraseByLine', floorId, from, to: p }]);
+        else { const hit = pick(e); const id = hit?.openingId ?? hit?.wallId; if (id) state.onEdit([{ kind: 'deleteEntities', ids: [id] }]); }
+      } else if (state.tool === 'select') {
+        const hit = pick(e); state.onSelect(hit?.openingId ?? hit?.wallId ?? null);
+      } else if (state.tool === 'door' || state.tool === 'window' || state.tool === 'exit') {
+        const o = openingPlacement(raw, state.tool);
+        if (o) state.onEdit([{ kind: 'createOpening', wallId: o.wallId, openingKind: state.tool, offsetM: o.offset, widthM: o.width }]);
+      }
+      disposeChildren(preview);
+      if (dim.current && state.tool !== 'wall') dim.current.hidden = true;
     };
-    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') r.cancel(); };
-    renderer.domElement.addEventListener('pointerdown', onDown); renderer.domElement.addEventListener('pointermove', onMove); renderer.domElement.addEventListener('pointerup', onUp);
-    const context = (e: Event) => e.preventDefault(); renderer.domElement.addEventListener('contextmenu', context); window.addEventListener('keydown', escape);
+    const onLeave = () => { ring.visible = false; };
+    const keydown = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
+      if (e.key === 'Escape') r.cancel();
+      if (e.code === 'Space' && latest.current.editing && !spaceHeld) { spaceHeld = true; controls.mouseButtons.LEFT = THREE.MOUSE.PAN; renderer.domElement.style.cursor = 'grab'; }
+    };
+    const keyup = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && spaceHeld) { spaceHeld = false; controls.mouseButtons.LEFT = latest.current.editing ? (null as unknown as THREE.MOUSE) : THREE.MOUSE.ROTATE; renderer.domElement.style.cursor = ''; }
+    };
+    const noMenu = (e: Event) => e.preventDefault();
+    const el = renderer.domElement;
+    el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove); el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointerleave', onLeave); el.addEventListener('contextmenu', noMenu);
+    window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
+
     const resize = new ResizeObserver(() => {
       renderer.setSize(node.clientWidth, node.clientHeight);
       const half = camera.top, aspect = node.clientWidth / Math.max(1, node.clientHeight);
       camera.left = -half * aspect; camera.right = half * aspect; camera.updateProjectionMatrix();
-      renderer.render(scene, camera);
-    }); resize.observe(node);
-    let raf = 0, lastFade = 0;
+    });
+    resize.observe(node);
+
+    const matrix = new THREE.Matrix4(), color = new THREE.Color(), screen = new THREE.Vector3();
+    const amber = new THREE.Color('#ffc65c'), queued = new THREE.Color('#ff6a3d');
+    let raf = 0, lastHatch = 0;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
+      const state = latest.current;
       if (transition) {
-        const t = Math.min(1, (now - transition.start) / 650), eased = t * t * (3 - 2 * t);
-        camera.position.lerpVectors(transition.from, transition.to, eased); controls.target.lerpVectors(transition.targetFrom, transition.targetTo, eased);
+        const t = Math.min(1, (now - transition.start) / 600), k = t * t * (3 - 2 * t);
+        const a = transition.from.clone().sub(transition.targetFrom), b = transition.to.clone().sub(transition.targetTo);
+        const q = new THREE.Quaternion().setFromUnitVectors(a.clone().normalize(), b.clone().normalize());
+        const dir = a.clone().normalize().applyQuaternion(new THREE.Quaternion().slerp(q, k));
+        controls.target.lerpVectors(transition.targetFrom, transition.targetTo, k);
+        camera.position.copy(controls.target).addScaledVector(dir, THREE.MathUtils.lerp(a.length(), b.length(), k));
+        camera.zoom = THREE.MathUtils.lerp(transition.zoomFrom, transition.zoomTo, k); camera.updateProjectionMatrix();
         if (t === 1) transition = null;
       }
-      controls.target.y = 0; controls.update(); camera.position.y = Math.max(.3, camera.position.y);
-      if (cube.current) {
-        const dir = camera.position.clone().sub(controls.target).normalize();
-        cube.current.style.transform = `rotateX(${-Math.asin(dir.y) * 180 / Math.PI}deg) rotateZ(${Math.atan2(dir.x, dir.z) * 180 / Math.PI}deg)`;
-      }
-      if (now - lastFade > 160) {
-        lastFade = now;
-        const fade = new Set<string>();
-        if (!latest.current.editing && latest.current.doc) {
+      controls.update();
+      cube.sync(camera, controls.target);
+
+      // Cross-hatch walls that hide the floor; never in top-down views (D57).
+      if (now - lastHatch > 150) {
+        lastHatch = now;
+        const offset = camera.position.clone().sub(controls.target).normalize();
+        const topDown = offset.y > Math.cos(THREE.MathUtils.degToRad(14));
+        const hide = new Set<string>();
+        if (!state.editing && !topDown && state.doc) {
           const direction = camera.getWorldDirection(new THREE.Vector3());
-          for (const room of deriveLayout(latest.current.doc).topology.rooms) {
-            const center = room.polygon.reduce((a, p) => ({ x: a.x + p.x / room.polygon.length, y: a.y + p.y / room.polygon.length }), { x: 0, y: 0 });
-            const samples = [center, ...room.polygon.slice(0, 8).map(p => ({ x: (p.x + center.x) / 2, y: (p.y + center.y) / 2 }))];
+          for (const room of deriveLayout(state.doc).topology.rooms) {
+            const c = room.polygon.reduce((s, p) => ({ x: s.x + p.x / room.polygon.length, y: s.y + p.y / room.polygon.length }), { x: 0, y: 0 });
+            const samples = [c, ...room.polygon.slice(0, 12).map(p => ({ x: p.x * 0.8 + c.x * 0.2, y: p.y * 0.8 + c.y * 0.2 }))];
             for (const p of samples) {
-              const target = new THREE.Vector3(p.x, .03, -p.y);
-              ray.set(target.clone().addScaledVector(direction, -100), direction); ray.far = 99.9;
-              for (const hit of ray.intersectObjects(walls.children, true)) if (hit.object.userData.wallId) fade.add(hit.object.userData.wallId);
+              const target = toWorld(p, 0.05);
+              ray.set(target.clone().addScaledVector(direction, -200), direction); ray.far = 199.9;
+              for (const h of ray.intersectObjects(walls.children, true)) if (h.object.userData.wallId) hide.add(h.object.userData.wallId);
             }
           }
+          ray.far = Infinity;
         }
-        walls.traverse(object => {
-          if (!(object instanceof THREE.Mesh)) return;
-          const m = object.material as THREE.MeshStandardMaterial;
-          m.opacity = (object.userData.baseOpacity ?? 1) * (fade.has(object.userData.wallId) ? .22 : 1);
-          object.castShadow = !latest.current.editing && !fade.has(object.userData.wallId) && m.opacity > .8;
+        walls.traverse(o => {
+          if (!(o instanceof THREE.Mesh)) return;
+          const hatched = hide.has(o.userData.wallId) && !o.userData.highlight;
+          const u = (o.material as THREE.Material).userData.hatch as { value: number } | undefined;
+          if (u) u.value = hatched ? 1 : 0;
+          o.castShadow = !state.editing && !hatched && !o.userData.glass;
         });
       }
-      const actors = latest.current.playback?.actorsNow(); people.count = actors?.actorFlags.length ?? 0;
+
+      // People layer.
+      const playback = state.playback;
+      const actors = playback && state.layer.people === 'discrete' ? playback.actorsNow() : null;
+      people.count = actors ? Math.min(actors.actorFlags.length, 4000) : 0;
       if (actors) {
         for (let i = 0; i < people.count; i++) {
-          matrix.makeScale(actors.actorFlags[i] === 3 ? 0 : 1, actors.actorFlags[i] === 3 ? 0 : 1, actors.actorFlags[i] === 3 ? 0 : 1);
-          matrix.setPosition(actors.actorXY[i * 2], .22, -actors.actorXY[i * 2 + 1]); people.setMatrixAt(i, matrix);
-          people.setColorAt(i, new THREE.Color(actors.actorFlags[i] === 1 ? '#f19c63' : '#f7e4ad'));
+          const gone = actors.actorFlags[i] === 3;
+          matrix.makeScale(gone ? 0 : 1, gone ? 0 : 1, gone ? 0 : 1);
+          matrix.setPosition(actors.actorXY[i * 2], 0.2, -actors.actorXY[i * 2 + 1]);
+          people.setMatrixAt(i, matrix);
+          people.setColorAt(i, color.copy(actors.actorFlags[i] === 1 ? queued : amber));
         }
-        people.instanceMatrix.needsUpdate = true; if (people.instanceColor) people.instanceColor.needsUpdate = true;
-      }
-      renderer.render(scene, camera);
-    }; raf = requestAnimationFrame(loop);
-    return () => {
-      cancelAnimationFrame(raf); resize.disconnect(); controls.dispose();
-      renderer.domElement.removeEventListener('pointerdown', onDown); renderer.domElement.removeEventListener('pointermove', onMove); renderer.domElement.removeEventListener('pointerup', onUp); renderer.domElement.removeEventListener('contextmenu', context); window.removeEventListener('keydown', escape);
-      clear(walls); clear(floors); clear(preview); grid.geometry.dispose(); (grid.material as THREE.Material).dispose(); dots.geometry.dispose(); (dots.material as THREE.Material).dispose(); people.geometry.dispose(); (people.material as THREE.Material).dispose(); renderer.dispose(); renderer.domElement.remove(); runtime.current = null; framed.current = null;
-    };
-  }, []);
+        people.instanceMatrix.needsUpdate = true;
+        if (people.instanceColor) people.instanceColor.needsUpdate = true;
+      } else if (playback && state.layer.people === 'heatmap') playback.actorsNow(); // keeps the playhead moving
 
+      // Heatmap layer (or an explicit overlay such as a difference map).
+      if (now - lastHeat > 250) {
+        lastHeat = now;
+        const overlay = state.overlay;
+        const field = overlay?.field ?? (playback && state.layer.people === 'heatmap' ? playback.field(state.layer.field, state.layer.stat) : null);
+        heat.visible = !!field;
+        if (field) {
+          const g = field.grid, key = `${g.origin.x},${g.origin.y},${g.width},${g.height},${g.cellSizeM}`;
+          const pixels = paint(field, overlay?.diverging ?? false, HEAT_MAX[state.layer.field] ?? 2);
+          if (key !== heatKey || !heatTexture) {
+            heatTexture?.dispose();
+            heatTexture = new THREE.DataTexture(pixels, g.width, g.height, THREE.RGBAFormat);
+            heatTexture.magFilter = THREE.LinearFilter; heatTexture.minFilter = THREE.LinearFilter;
+            (heat.material as THREE.MeshBasicMaterial).map = heatTexture; (heat.material as THREE.MeshBasicMaterial).needsUpdate = true;
+            heat.scale.set(g.width * g.cellSizeM, g.height * g.cellSizeM, 1);
+            heat.position.set(g.origin.x + g.width * g.cellSizeM / 2, 0.03, -(g.origin.y + g.height * g.cellSizeM / 2));
+            heatKey = key;
+          } else { (heatTexture.image.data as Uint8Array).set(pixels); }
+          heatTexture.needsUpdate = true;
+        }
+      }
+
+      renderer.render(scene, camera);
+
+      // Reason bubbles follow their entities.
+      const w = node.clientWidth, h = node.clientHeight;
+      for (const [key, anchorPoint] of r.anchors) {
+        const bubble = noteEls.current.get(key); if (!bubble) continue;
+        screen.copy(anchorPoint).project(camera);
+        const visible = screen.z < 1 && Math.abs(screen.x) < 1.1 && Math.abs(screen.y) < 1.1;
+        bubble.style.visibility = visible ? 'visible' : 'hidden';
+        bubble.style.transform = `translate(${(screen.x + 1) / 2 * w}px, ${(1 - screen.y) / 2 * h}px)`;
+      }
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(raf); resize.disconnect(); controls.dispose(); cube.dispose();
+      el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointerleave', onLeave); el.removeEventListener('contextmenu', noMenu);
+      window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup);
+      disposeChildren(walls); disposeChildren(floors); disposeChildren(preview);
+      for (const m of [ground, shadowCatcher, ring, people, heat]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
+      heatTexture?.dispose(); library.dispose(); renderer.dispose(); el.remove();
+      runtime.current = null; framedProject.current = null;
+    };
+  }, [library]);
+
+  // ── Mode: Edit is locked top-down ─────────────────────────────────────────
   useEffect(() => {
     const r = runtime.current; if (!r) return;
-    r.cancel(); r.controls.enableRotate = !props.editing;
+    r.cancel();
+    r.controls.enableRotate = !props.editing;
+    r.controls.mouseButtons = props.editing
+      ? { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.PAN, RIGHT: null as unknown as THREE.MOUSE }
+      : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.PAN };
     r.controls.touches.ONE = props.editing ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+    r.cube.setLocked(props.editing);
     r.frame(props.editing ? 'top' : 'iso');
-  }, [props.editing]);
+  }, [props.editing, library]);
+  useEffect(() => { runtime.current?.cancel(); }, [props.tool, props.wallType]);
+
+  // ── Geometry ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const r = runtime.current; if (!r) return;
-    r.cancel(); r.controls.enablePan = !props.editing || props.tool === 'pan';
-    r.controls.mouseButtons.LEFT = !props.editing || props.tool === 'pan' ? THREE.MOUSE.PAN : null;
-  }, [props.tool, props.editing, props.material]);
-  useEffect(() => {
-    const r = runtime.current; if (!r) return;
-    clear(r.walls); clear(r.floors);
+    disposeChildren(r.walls); disposeChildren(r.floors);
     const doc = props.doc; if (!doc) return;
-    const derived = deriveLayout(doc), byWall = new Map(doc.walls.map(w => [w.id, w]));
+    const derived = deriveLayout(doc), highlight = props.highlight ?? new Set<string>();
+    const byWall = new Map(doc.walls.map(w => [w.id, w]));
     const groups = new Map<string, THREE.Group>();
-    const material = (color: string) => new THREE.MeshStandardMaterial({ color, roughness: .8, alphaHash: true });
+    const style = (m: THREE.MeshStandardMaterial, ids: string[]) => {
+      if (ids.some(id => highlight.has(id))) { m.color.set(SUGGEST); m.emissive.set(SUGGEST); m.emissiveIntensity = 0.55; m.map = null; }
+      else if (props.selected && ids.includes(props.selected)) { m.emissive.set(SELECT); m.emissiveIntensity = 0.45; }
+      return m;
+    };
     const tag = (mesh: THREE.Mesh, wallId: string, openingId?: string, glass = false) => {
-      mesh.userData = { wallId, openingId, baseOpacity: glass ? .42 : 1 };
-      (mesh.material as THREE.MeshStandardMaterial).opacity = glass ? .42 : 1;
-      if (wallId === props.selected) { const m = mesh.material as THREE.MeshStandardMaterial; m.emissive.set('#429e83'); m.emissiveIntensity = .32; }
-      mesh.castShadow = !glass; mesh.receiveShadow = true; return mesh;
+      mesh.userData = { wallId, openingId, glass, highlight: highlight.has(wallId) || (!!openingId && highlight.has(openingId)) };
+      mesh.receiveShadow = true;
+      return mesh;
     };
     for (const wall of doc.walls) { const g = new THREE.Group(); groups.set(wall.id, g); r.walls.add(g); }
+    const wallMaterial = (wallId: string) => {
+      const wall = byWall.get(wallId)!;
+      return style(hatchable(r.library.material(wall)), [wallId]);
+    };
     for (const piece of derived.walls.pieces) {
-      const wall = byWall.get(piece.wallId)!;
-      groups.get(wall.id)!.add(tag(polygon(piece.polygon, wall.heightM, 0, material(COLORS[wall.material])), wall.id, undefined, wall.material === 'glass'));
+      const wall = byWall.get(piece.wallId); if (!wall) continue;
+      groups.get(wall.id)!.add(tag(extrude(piece.polygon, wall.heightM, wallMaterial(wall.id)), wall.id, undefined, wall.material === 'glass'));
     }
     for (const hub of derived.walls.hubs) {
       const wall = doc.walls.find(w => w.startVertexId === hub.vertexId || w.endVertexId === hub.vertexId);
-      if (wall) groups.get(wall.id)!.add(tag(polygon(hub.polygon, wall.heightM, 0, material(COLORS[wall.material])), wall.id, undefined, wall.material === 'glass'));
+      if (wall) groups.get(wall.id)!.add(tag(extrude(hub.polygon, wall.heightM, wallMaterial(wall.id)), wall.id, undefined, wall.material === 'glass'));
     }
     const vertices = new Map(doc.vertices.map(v => [v.id, v.position]));
+    const anchors = new Map<string, THREE.Vector3>();
+    const entityAnchor = new Map<string, THREE.Vector3>();
+    for (const wall of doc.walls) {
+      const a = vertices.get(wall.startVertexId), b = vertices.get(wall.endVertexId);
+      if (a && b) entityAnchor.set(wall.id, toWorld({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, wall.heightM + 0.2));
+    }
     for (const o of doc.openings) {
       const wall = byWall.get(o.wallId); if (!wall) continue;
       const a = vertices.get(wall.startVertexId)!, b = vertices.get(wall.endVertexId)!;
       const angle = Math.atan2(b.y - a.y, b.x - a.x), length = Math.hypot(b.x - a.x, b.y - a.y);
-      const group = new THREE.Group(); group.position.set(a.x + (b.x - a.x) * o.offsetM / length, 0, -a.y - (b.y - a.y) * o.offsetM / length); group.rotation.y = angle;
+      const center = { x: a.x + (b.x - a.x) * o.offsetM / length, y: a.y + (b.y - a.y) * o.offsetM / length };
+      entityAnchor.set(o.id, toWorld(center, wall.heightM + 0.2));
+      const group = new THREE.Group(); group.position.copy(toWorld(center)); group.rotation.y = angle;
       groups.get(wall.id)!.add(group);
-      const box = (width: number, height: number, depth: number, x: number, y: number, color: string, glass = false) => {
-        const mesh = tag(new THREE.Mesh(new THREE.BoxGeometry(width, Math.max(.005, height), depth), material(color)), wall.id, o.id, glass);
+      const lit = highlight.has(o.id);
+      const box = (width: number, height: number, depth: number, x: number, y: number, look: string | null, glass = false) => {
+        const m = look ? new THREE.MeshStandardMaterial({ color: look, roughness: 0.6, transparent: glass, opacity: glass ? 0.35 : 1 }) : r.library.material(wall);
+        const mesh = tag(new THREE.Mesh(new THREE.BoxGeometry(width, Math.max(0.005, height), depth), style(hatchable(m), lit ? [o.id] : [wall.id, o.id])), wall.id, o.id, glass);
         mesh.position.set(x, y, 0); group.add(mesh); return mesh;
       };
-      const top = o.sillHeightM + o.openingHeightM, frameColor = o.openingKind === 'exit' ? '#68b49a' : o.openingKind === 'door' ? '#c2a47b' : '#e4edf0';
-      if (o.sillHeightM > 0) box(o.widthM, o.sillHeightM, wall.thicknessM, 0, o.sillHeightM / 2, COLORS[wall.material], wall.material === 'glass');
-      if (wall.heightM > top) box(o.widthM, wall.heightM - top, wall.thicknessM, 0, (wall.heightM + top) / 2, COLORS[wall.material], wall.material === 'glass');
-      for (const x of [-o.widthM / 2 + .025, o.widthM / 2 - .025]) box(.05, o.openingHeightM, wall.thicknessM + .03, x, o.sillHeightM + o.openingHeightM / 2, frameColor);
-      box(o.widthM, .05, wall.thicknessM + .03, 0, top - .025, frameColor);
+      const top = o.sillHeightM + o.openingHeightM;
+      const frame = o.openingKind === 'exit' ? '#3ddc84' : o.openingKind === 'door' ? '#d9c3a0' : '#eef3f8';
+      if (o.sillHeightM > 0) box(o.widthM, o.sillHeightM, wall.thicknessM, 0, o.sillHeightM / 2, null, wall.material === 'glass');
+      if (wall.heightM > top) box(o.widthM, wall.heightM - top, wall.thicknessM, 0, (wall.heightM + top) / 2, null, wall.material === 'glass');
+      for (const x of [-o.widthM / 2 + 0.025, o.widthM / 2 - 0.025]) box(0.05, o.openingHeightM, wall.thicknessM + 0.03, x, o.sillHeightM + o.openingHeightM / 2, frame);
+      box(o.widthM, 0.05, wall.thicknessM + 0.03, 0, top - 0.025, frame);
       if (o.openingKind === 'window') {
-        box(o.widthM, .05, wall.thicknessM + .03, 0, o.sillHeightM + .025, frameColor);
-        box(o.widthM - .1, o.openingHeightM - .1, .03, 0, o.sillHeightM + o.openingHeightM / 2, '#83bac9', true);
+        box(o.widthM, 0.05, wall.thicknessM + 0.03, 0, o.sillHeightM + 0.025, frame);
+        box(o.widthM - 0.1, o.openingHeightM - 0.1, 0.03, 0, o.sillHeightM + o.openingHeightM / 2, '#9fd6f0', true);
       } else {
-        const leaf = box(o.widthM - .08, o.openingHeightM - .05, .055, 0, o.openingHeightM / 2, frameColor);
-        if (o.state === 'open') { leaf.rotation.y = Math.PI * .43; leaf.position.x = -o.widthM / 2 + .04 + Math.cos(leaf.rotation.y) * (o.widthM - .08) / 2; leaf.position.z = -Math.sin(leaf.rotation.y) * (o.widthM - .08) / 2; }
+        const leaf = box(o.widthM - 0.08, o.openingHeightM - 0.05, 0.055, 0, o.openingHeightM / 2, frame);
+        if (o.state === 'open') { leaf.rotation.y = Math.PI * 0.43; leaf.position.x = -o.widthM / 2 + 0.04 + Math.cos(leaf.rotation.y) * (o.widthM - 0.08) / 2; leaf.position.z = -Math.sin(leaf.rotation.y) * (o.widthM - 0.08) / 2; }
+      }
+      if (lit) { // a glowing volume so a changed opening reads at any zoom
+        const glow = new THREE.Mesh(new THREE.BoxGeometry(o.widthM + 0.12, o.openingHeightM + 0.1, wall.thicknessM + 0.25), new THREE.MeshBasicMaterial({ color: SUGGEST, transparent: true, opacity: 0.35, depthWrite: false }));
+        glow.position.set(0, o.sillHeightM + o.openingHeightM / 2, 0); glow.userData = { wallId: wall.id, openingId: o.id, highlight: true };
+        group.add(glow);
       }
     }
-    for (const room of derived.topology.rooms) r.floors.add(polygon(room.polygon, .12, -.12, material('#28556d')));
-    if (framed.current !== doc.projectId) {
-      framed.current = doc.projectId;
-      const xs = doc.vertices.map(v => v.position.x), ys = doc.vertices.map(v => v.position.y);
-      const minX = xs.length ? Math.min(...xs) : -8, maxX = xs.length ? Math.max(...xs) : 8;
-      const minY = ys.length ? Math.min(...ys) : -6, maxY = ys.length ? Math.max(...ys) : 6;
-      r.center.set((minX + maxX) / 2, 0, -(minY + maxY) / 2); r.extent = Math.max(maxX - minX, maxY - minY, 12); r.frame(latest.current.editing ? 'top' : 'iso', false);
+    for (const room of derived.topology.rooms) {
+      const shape = new THREE.Shape(room.polygon.map(p => new THREE.Vector2(p.x, p.y)));
+      const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.07, depthWrite: false }));
+      mesh.rotation.x = -Math.PI / 2; mesh.position.y = 0.004; r.floors.add(mesh);
     }
-  }, [props.doc, props.selected]);
+    for (const note of props.notes ?? []) { const at = entityAnchor.get(note.entityId); if (at) anchors.set(note.key, at); }
+    r.anchors = anchors;
+    if (framedProject.current !== doc.projectId) { framedProject.current = doc.projectId; r.frame(latest.current.editing ? 'top' : 'iso', false); }
+  }, [props.doc, props.selected, props.highlight, props.notes, library]);
 
-  return <div className={`egress-scene scene-tool-${props.tool}`} ref={host} aria-label="3D floor plan workspace">
+  return <div className={`egress-scene tool-${props.editing ? props.tool : 'view'}`} ref={host} aria-label="Building model">
     {error && <p className="scene-error" role="alert">{error}</p>}
-    <div className="viewcube-panel" aria-label="Camera orientation">
-      <span>{props.editing ? 'TOP-DOWN · EDIT LOCKED' : 'FREE VIEW'}</span>
-      <div className="cube-stage"><div className="orientation-cube" ref={cube}>
-        <button className="cube-face cube-top" aria-label="View cube top" onClick={() => runtime.current?.frame('top')}>TOP</button>
-        <button className="cube-face cube-front" aria-label="View cube south" disabled={props.editing} onClick={() => runtime.current?.frame('front')}>SOUTH</button>
-        <button className="cube-face cube-side" aria-label="View cube east" disabled={props.editing} onClick={() => runtime.current?.frame('right')}>EAST</button>
-        <button className="cube-face cube-back" aria-label="View cube north" disabled={props.editing} onClick={() => runtime.current?.frame('back')}>NORTH</button>
-        <button className="cube-face cube-west" aria-label="View cube west" disabled={props.editing} onClick={() => runtime.current?.frame('left')}>WEST</button>
-      </div></div>
-      <div><button onClick={() => runtime.current?.frame('top')} aria-label="Top view">Top</button><button disabled={props.editing} onClick={() => runtime.current?.frame('iso')} aria-label="Isometric view">Iso</button><button disabled={props.editing} onClick={() => runtime.current?.frame('front')} aria-label="Front view">Front</button></div>
-    </div>
+    <div className="viewcube-host" ref={cubeHost} title={props.editing ? 'Edit is top-down' : 'Drag to orbit · click a face, edge or corner'} />
+    <div className="scene-dim" ref={dim} hidden />
+    {(props.notes ?? []).map(n => <div key={n.key} className="scene-note" ref={el => { if (el) noteEls.current.set(n.key, el); else noteEls.current.delete(n.key); }}><span>{n.text}</span></div>)}
   </div>;
 });
+
 export default EgressScene;

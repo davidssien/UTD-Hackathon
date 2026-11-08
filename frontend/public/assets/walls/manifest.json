@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "materials": {
+    "normal": { "color": "#f2f5f8", "repeatM": 1 },
+    "reinforced": { "color": "#b4c2d1", "repeatM": 1 },
+    "glass": { "color": "#bfe8ff", "opacity": 0.35, "repeatM": 1 }
+  },
+  "finishes": {}
+}

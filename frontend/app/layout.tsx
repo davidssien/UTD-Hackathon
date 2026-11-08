@@ -3,8 +3,8 @@ import "./globals.css";
 import "./studio.css";
 
 export const metadata: Metadata = {
-  title: "Egress — Flow Studio",
-  description: "Draw your space, explore it in 3D, and understand pedestrian flow with Egress.",
+  title: "Egress",
+  description: "Egress building flow studio.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
