@@ -97,6 +97,41 @@ await expectError(raw.reducers.runnerHeartbeat({ agentModel: 'x', activeRuns: 0,
 await expectError(raw.reducers.registerService({ secret: 'wrong' }), 'UNAUTHORIZED', 'register_service with a wrong secret');
 raw.disconnect();
 
+// Collaboration (PLAN.md §3 K, D89): presence by mode, one shared live run, and the edit lock.
+await a.setMode('simulate');
+await b.setMode('edit');
+await until(() => a.members.get().find(m => !m.me)?.mode === 'edit' && b.members.get().find(m => !m.me)?.mode === 'simulate', 10_000, 'modes reach the other person');
+ok('presence by mode: A sees B editing, B sees A simulating');
+const liveId = await a.startRun({
+  scenarioVersion: 1, id: 's-live', projectId, name: 'Evacuate', durationSeconds: 300,
+  population: { count: 30, distribution: 'uniform', strokes: [], seed: 9 }, goal: { kind: 'evacuate', blockedExitIds: [] },
+}, 'x1');
+await until(() => ['queued', 'running'].includes(b.runs.get().find(r => r.id === liveId)?.status ?? ''), 10_000, 'B sees the shared run start');
+const followB = b.playback(liveId);
+await until(() => followB.state.get().liveTick > 0, 20_000, 'B receives live frames');
+ok(`shared live run: B follows A's run without starting anything (live edge at tick ${followB.state.get().liveTick})`);
+const lockedEdit = await b.edit([{ kind: 'createWallChain', floorId, points: [{ x: 3, y: 2 }, { x: 3, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'normal' }]);
+if (lockedEdit.ok || lockedEdit.error.code !== 'PROJECT_LOCKED') throw new Error(`B's edit during the run: expected PROJECT_LOCKED, got ${JSON.stringify(lockedEdit)}`);
+ok('B\'s client refuses an edit during the run (PROJECT_LOCKED) without touching the document');
+const rawB = await new Promise<DbConnection>((resolve, reject) => {
+  DbConnection.builder().withUri(uri).withDatabaseName(db).withToken(tokenB.token).onConnect(conn => resolve(conn)).onConnectError((_c, e) => reject(e)).build();
+});
+const wire = JSON.stringify({ projectId, requestId: 'locked-raw', baseRevision: b.document.get().doc!.revision, commands: [{ kind: 'createWallChain', floorId, points: [{ x: 3, y: 2 }, { x: 3, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'normal' }] });
+await expectError(rawB.reducers.applyEdit({ request: wire }), 'PROJECT_LOCKED', 'the server refuses a raw apply_edit during the run');
+rawB.disconnect();
+await expectError(b.startRun({
+  scenarioVersion: 1, id: 's-second', projectId, name: 'Evacuate', durationSeconds: 300,
+  population: { count: 10, distribution: 'uniform', strokes: [], seed: 1 }, goal: { kind: 'evacuate', blockedExitIds: [] },
+}, 'x4'), 'PROJECT_LOCKED', 'a second run while one is live');
+await b.cancelRun(liveId);
+await until(() => a.runs.get().find(r => r.id === liveId)?.status === 'cancelled', 10_000, 'A sees B stop the run');
+const unlocked = await b.edit([{ kind: 'createWallChain', floorId, points: [{ x: 3, y: 2 }, { x: 3, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'normal' }]);
+if (!unlocked.ok) throw new Error(`edit after the run was stopped: ${unlocked.error.message}`);
+await until(() => (a.document.get().doc?.walls.length ?? 0) > 5, 10_000, 'A receives B\'s edit after the unlock');
+ok('B stopped the shared run; editing unlocked for both');
+await b.undo();
+await until(() => b.document.get().pending === 0 && (a.document.get().doc?.walls.length ?? 0) === 5, 10_000, 'undo of the unlock check');
+
 // Run, then edit the layout, then reconnect: replay survives and uses the run's frozen layout.
 const runLayout = layoutHash(a.document.get().doc!);
 const runId = await a.startRun({

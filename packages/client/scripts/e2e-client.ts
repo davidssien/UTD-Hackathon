@@ -44,6 +44,24 @@ await client.undo();
 await until(() => client.document.get().pending === 0 && client.document.get().doc!.walls.length === 4, 10_000, 'undo confirmed');
 ok('undo round-trips through the server');
 
+// Floors, floor surfaces and stairs (D74, D75) persist on the server, not just in the optimistic copy.
+const up = await client.edit([{ kind: 'createFloor', name: 'First floor' }]);
+if (!up.ok) throw new Error(up.error.message);
+await until(() => client.document.get().pending === 0, 10_000, 'floor confirmed');
+const upper = client.document.get().doc!.floors.find(f => f.name === 'First floor')!;
+const built = await client.edit([
+  { kind: 'createSlab', floorId: upper.id, polygon: [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 }], material: 'tile' },
+  { kind: 'createStair', floorId, min: { x: 1, y: 1 }, max: { x: 2.2, y: 5 }, upEdge: 'n' },
+]);
+if (!built.ok) throw new Error(built.error.message);
+await until(() => client.document.get().pending === 0, 10_000, 'surface and stair confirmed');
+const fresh = await client.previewProject(projectId); // read back from the server's rows
+if (fresh.slabs.length !== 1 || fresh.stairs.length !== 1 || fresh.floors.length !== 2) throw new Error(`server rows: ${fresh.floors.length} floors, ${fresh.slabs.length} slabs, ${fresh.stairs.length} stairs`);
+ok(`floors persist: ${fresh.floors.length} floors (upper at ${upper.elevationM} m), a ${fresh.slabs[0].material} surface and a stair to ${fresh.stairs[0].toFloorId === upper.id ? 'the floor above' : 'the wrong floor'}`);
+await client.edit([{ kind: 'deleteEntities', ids: [upper.id] }]);
+await client.edit([{ kind: 'deleteEntities', ids: [fresh.stairs[0].id] }]).catch(() => {});
+await until(() => client.document.get().pending === 0 && client.document.get().doc!.floors.length === 1 && client.document.get().doc!.stairs.length === 0, 10_000, 'floor removed');
+
 const runId = await client.startRun({
   scenarioVersion: 1, id: 's-client', projectId, name: 'Evacuate', durationSeconds: 300,
   population: { count: 50, distribution: 'uniform', strokes: [], seed: 2 }, goal: { kind: 'evacuate', blockedExitIds: [] },
