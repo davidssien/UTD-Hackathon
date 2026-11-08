@@ -90,6 +90,19 @@ test('if the model fails, the agent finishes with the real heuristic sequence', 
   assert.equal(outcome.proposalIds.length, 1);
 });
 
+test('heuristic agent confirms the winner on three different crowds before proposing', async () => {
+  const { env, tools } = setup('two-rooms-corridor.json', 90);
+  await runHeuristicAgent(tools);
+  assert.ok(env.steps.some(s => s.kind === 'tool_call' && s.toolName === 'confirm_candidate'));
+  const proposal = env.proposals[0];
+  assert.ok(proposal, 'still proposes a robust improvement');
+  assert.equal(proposal.delta.seedsTested, 3);
+  assert.ok(proposal.delta.robustMeanSeconds < -0.5, JSON.stringify(proposal.delta));
+  assert.match(proposal.notes.byCommand['0'], /different crowds/);
+  const seeds = new Set([...env.runs.values()].map(r => r.scenario.population.seed));
+  assert.equal(seeds.size, 3, 'baselines and candidates ran on three seeds');
+});
+
 let callCounter = 0;
 function call(name: string, args: unknown): ChatMessage {
   return { role: 'assistant', content: null, tool_calls: [{ id: `c${callCounter++}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] };

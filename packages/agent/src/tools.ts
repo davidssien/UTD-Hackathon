@@ -15,9 +15,11 @@ export interface AgentBudget {
   maxToolCalls: number;
   maxScenarios: number;
   maxCandidates: number;
+  /** Extra-seed confirmations (each runs 2 baseline + 2 candidate simulations). */
+  maxConfirmations?: number;
 }
 
-export const DEFAULT_BUDGET: AgentBudget = { maxToolCalls: 12, maxScenarios: 2, maxCandidates: 3 };
+export const DEFAULT_BUDGET: AgentBudget = { maxToolCalls: 12, maxScenarios: 2, maxCandidates: 3, maxConfirmations: 1 };
 
 /** OpenAI-style function tool spec (what Nemotron sees). */
 export interface ToolSpec {
@@ -33,6 +35,7 @@ const ARGS = {
   get_hotspots: z.object({ runId: id, topK: z.number().int().min(1).max(5).optional() }).strict(),
   test_edit_batch: z.object({ baselineRunId: id, suggestionId: z.string().max(20).optional(), commands: z.array(EditCommandSchema).min(1).max(5).optional() }).strict(),
   compare_runs: z.object({ baselineRunId: id, candidateRunId: id }).strict(),
+  confirm_candidate: z.object({ candidateRunId: id }).strict(),
   submit_proposal: z.object({ baselineRunId: id, candidateRunId: id, summary: z.string().min(1).max(1500) }).strict(),
 } as const;
 export type ToolName = keyof typeof ARGS;
@@ -51,6 +54,9 @@ export const TOOL_SPECS: ToolSpec[] = [
     baselineRunId: { type: 'string' }, suggestionId: { type: 'string' },
   }, ['baselineRunId']),
   spec('compare_runs', 'Metric differences (candidate minus baseline) between two runs.', { baselineRunId: { type: 'string' }, candidateRunId: { type: 'string' } }, ['baselineRunId', 'candidateRunId']),
+  spec('confirm_candidate', 'Re-test a tested candidate on 2 more random seeds (fresh crowds, same layouts) to check the improvement is not a fluke of one population. Budget: 1. Do this before submit_proposal.', {
+    candidateRunId: { type: 'string' },
+  }, ['candidateRunId']),
   spec('submit_proposal', 'Submit a tested candidate for human approval. Only tested candidates can be submitted; the change is not applied until a person accepts it.', {
     baselineRunId: { type: 'string' }, candidateRunId: { type: 'string' }, summary: { type: 'string', description: 'Plain explanation citing measured numbers; say "modeled".' },
   }, ['baselineRunId', 'candidateRunId', 'summary']),
@@ -58,6 +64,16 @@ export const TOOL_SPECS: ToolSpec[] = [
 
 function spec(name: ToolName, description: string, properties: Record<string, unknown>, required: string[] = []): ToolSpec {
   return { type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } };
+}
+
+/** Result of re-testing a candidate on extra seeds (spec P1: three random-seed comparison). */
+export interface Robustness {
+  seeds: number[];
+  /** effectiveTime delta per seed (candidate − baseline, seconds). */
+  effectiveTimeDeltas: number[];
+  meanSeconds: number;
+  worstSeconds: number;
+  improvedOnAll: boolean;
 }
 
 export interface Candidate {
@@ -73,6 +89,8 @@ export class ToolBox {
   readonly candidates = new Map<ID, Candidate>();
   readonly suggestions = new Map<string, Suggestion>();
   readonly proposals: ID[] = [];
+  readonly robustness = new Map<ID, Robustness>();
+  confirmed = 0;
   calls = 0;
   scenarios = 0;
   tested = 0;
@@ -154,6 +172,33 @@ export class ToolBox {
         const [a, b] = [await this.run(args.baselineRunId as string), await this.run(args.candidateRunId as string)];
         return { delta: delta(a.metrics, b.metrics), samePopulation: b.respawned === 0, sameSeed: a.scenario.population.seed === b.scenario.population.seed };
       }
+      case 'confirm_candidate': {
+        if (this.confirmed >= (this.budget.maxConfirmations ?? 1)) throw new DomainError('RUN_LIMIT_EXCEEDED', 'Confirmation budget is used up.');
+        const candidate = this.candidates.get(args.candidateRunId as string);
+        if (!candidate) throw new DomainError('NOT_FOUND', 'Only candidates tested with test_edit_batch can be confirmed.');
+        this.confirmed++;
+        const baseline = await this.run(candidate.baselineRunId);
+        const applied = applyEdit(this.env.document(), { requestId: `${this.jobId}.confirm`, commands: candidate.commands });
+        if (!applied.ok) throw new DomainError(applied.error.code, applied.error.message);
+        const seed0 = baseline.scenario.population.seed;
+        const trials = [{ seed: seed0, delta: delta(baseline.metrics, candidate.run.metrics) }];
+        for (const seed of [(seed0 + 1) >>> 0, (seed0 + 2) >>> 0]) {
+          const scenario = { ...baseline.scenario, population: { ...baseline.scenario.population, seed } };
+          const b = await this.env.runScenario({ document: this.env.document(), scenario, label: `baseline, seed ${seed}` });
+          const c = await this.env.runScenario({ document: applied.doc, scenario, label: `${candidate.suggestion?.title ?? 'candidate'}, seed ${seed}`, initialActors: b.initialActors });
+          trials.push({ seed, delta: delta(b.metrics, c.metrics) });
+        }
+        const times = trials.map(t => t.delta.effectiveTimeSeconds ?? 0);
+        const result: Robustness = {
+          seeds: trials.map(t => t.seed),
+          effectiveTimeDeltas: times,
+          meanSeconds: round(times.reduce((a, b) => a + b, 0) / times.length),
+          worstSeconds: round(Math.max(...times)),
+          improvedOnAll: times.every(t => t < -0.5),
+        };
+        this.robustness.set(candidate.run.runId, result);
+        return result;
+      }
       case 'submit_proposal': {
         const candidate = this.candidates.get(args.candidateRunId as string);
         if (!candidate) throw new DomainError('NOT_FOUND', 'Only candidates tested with test_edit_batch can be proposed.');
@@ -163,9 +208,17 @@ export class ToolBox {
         if ((d.effectiveTimeSeconds ?? 0) + 0.1 * (d.maxQueueLength ?? 0) >= -0.5) {
           throw new DomainError('INVALID_INPUT', 'This candidate does not measurably improve the modeled outcome. Test another suggestion or explain that no improvement was found.');
         }
+        const robust = this.robustness.get(candidate.run.runId);
+        if (robust && robust.meanSeconds >= -0.5) {
+          throw new DomainError('INVALID_INPUT', `The improvement did not hold across seeds (mean change ${robust.meanSeconds} s). Do not propose it.`);
+        }
+        const across = robust
+          ? ` Re-tested on ${robust.seeds.length} different crowds: mean ${signed(robust.meanSeconds)} s, worst ${signed(robust.worstSeconds)} s${robust.improvedOnAll ? ', better every time' : ''}.`
+          : '';
+        if (robust) Object.assign(d, { seedsTested: robust.seeds.length, robustMeanSeconds: robust.meanSeconds, robustWorstSeconds: robust.worstSeconds });
         const why = candidate.suggestion
-          ? `${candidate.suggestion.rationale} Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.`
-          : `Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.`;
+          ? `${candidate.suggestion.rationale} Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.${across}`
+          : `Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.${across}`;
         const proposalId = await this.env.submitProposal({
           commands: candidate.commands,
           notes: { summary: String(args.summary), byCommand: Object.fromEntries(candidate.commands.map((_, i) => [String(i), why])) },

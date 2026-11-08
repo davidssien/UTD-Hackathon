@@ -48,7 +48,13 @@ export async function runHeuristicAgent(tools: ToolBox, context: AgentContext = 
   if (!best || score(best) >= -0.5) {
     return finish(tools, 'heuristic', `I tested ${results.length} change(s) against a baseline that ${describeBaseline(baseline)}; none improved the modeled evacuation enough to propose.`);
   }
-  const summary = `${best.change}: ${describeDelta(best.delta)} versus the baseline, with the same people and seed. This is a modeled change, not a safety certification.`;
+  // Make sure the win is not a quirk of one crowd: re-test on two more seeds before proposing.
+  const robust = (await tools.call('confirm_candidate', { candidateRunId: best.runId })) as { meanSeconds?: number; worstSeconds?: number; seeds?: number[]; improvedOnAll?: boolean; error?: string };
+  if (!robust.error && (robust.meanSeconds ?? 0) >= -0.5) {
+    return finish(tools, 'heuristic', `${best.change} looked better with one crowd (${describeDelta(best.delta)}), but across ${robust.seeds?.length ?? 3} different crowds the mean change was ${robust.meanSeconds} s, so I am not proposing it.`);
+  }
+  const across = robust.error ? '' : ` Across ${robust.seeds?.length} different crowds: mean ${robust.meanSeconds} s, worst ${robust.worstSeconds} s.`;
+  const summary = `${best.change}: ${describeDelta(best.delta)} versus the baseline, with the same people and seed.${across} This is a modeled change, not a safety certification.`;
   await tools.call('submit_proposal', { baselineRunId: baseline.runId, candidateRunId: best.runId, summary });
   return finish(tools, 'heuristic', `Worst bottleneck: ${hot.hotspots[0]?.description ?? 'unknown'}. ${summary} Review the highlighted change and accept it if you agree.`);
 }
@@ -79,8 +85,8 @@ export const SYSTEM_PROMPT = `You are Egress's building-flow analysis agent. You
 
 Rules:
 - Every number you state must come from a tool result in this conversation. Say "modeled", never claim real-world safety or code compliance.
-- Work in steps: inspect_layout, get a baseline (inspect_run if a run id is given, else run_scenario), get_hotspots, then test_edit_batch on the most promising suggestionIds (same people, same seed), then submit_proposal for the best tested candidate if it measurably helps.
-- Budgets: 12 tool calls, 2 scenarios, 3 candidates. Do not repeat identical calls.
+- Work in steps: inspect_layout, get a baseline (inspect_run if a run id is given, else run_scenario), get_hotspots, then test_edit_batch on the most promising suggestionIds (same people, same seed), then confirm_candidate on the best one (two more random crowds), then submit_proposal if it measurably helps on average.
+- Budgets: 12 tool calls, 2 scenarios, 3 candidates, 1 confirmation. Do not repeat identical calls.
 - If the first candidate does not improve the measured outcome, test another suggestion within the budget. Never submit a worse or unchanged candidate.
 - When a tested candidate helps, you MUST call submit_proposal before your final summary. Describing an edit does not save a proposal. Only say a proposal was saved after submit_proposal succeeds.
 - Proposals are applied only if a human accepts them.
