@@ -453,6 +453,15 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
 ## 8. UI contract — modes, toolbars, `@egress/client`
 
+### UI direction (Cody, Sat 19:10) — for the frontend lane
+
+- **Edit is always top-down.** Every layout edit happens in an orthographic plan view, with no orbit or tilt while editing. Free-look 3D is for viewing the result after editing, and it is never an editing surface.
+- **Blueprint look:** the floor is blueprint blue. Walls, and anything added from now on (openings, furniture, guides), are drawn in white lines.
+- **Custom wall textures are coming.**
+  - Walls carry an optional per-side `finish: { left?, right? }` holding texture IDs from a future finishes registry, where left and right are relative to start→end.
+  - Physics never reads `finish`; it uses `material` and geometry only.
+  - The 3D view should texture each side of the extruded `wallPolygons` piece from it, falling back to the material colour.
+
 Mode tabs sit at the top, and the toolbar switches with the mode.
 
 | Mode | Toolbar |
@@ -774,4 +783,5 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D28 | 11-07 | **The mock client runs the real model.** It runs `@egress/sim` and `@egress/agent` in the browser (client-cpu). This is the guaranteed demo path if SpacetimeDB or Nemotron are unavailable. The runner runs the same code server-side. |
 | D29 | 11-07 | **Agent design:**<br>• `get_hotspots` returns validated `suggestionId`s, and the model picks among them rather than authoring geometry.<br>• `test_edit_batch` reruns the baseline's exact people.<br>• Candidates are ranked by effective time: a timed-out run counts 10 s per person still inside.<br>• `runLlmAgent` falls back to the heuristic sequence on model errors. |
 | D30 | 11-07 | **Painting** sets per-cell relative weights in [0, 4]. Strokes apply per cell (no blur through walls), erase restores 1, and N never changes. |
+| D32 | 11-07 | **Editing and textures:** editing is top-down only, with free-look 3D for viewing after editing, in a blueprint style (blue floor, white lines). Walls gain an optional per-side `finish` (texture IDs) for future textures; it is visual only, and older documents stay valid. |
 | D31 | 11-07 | **Edit-mode estimate:** route demand is the floor area whose shortest route passes through each cell, smoothed within rooms; exit distance is also available. It is labelled a potential-bottleneck estimate, never congestion. |

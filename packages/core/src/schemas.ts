@@ -43,6 +43,11 @@ export const WallSchema = z.object({
   thicknessM: z.number().positive().max(2),
   heightM: z.number().positive().max(50),
   material: WallMaterialSchema,
+  /**
+   * Visual finish (texture) id from a future finishes registry, per side of the
+   * wall relative to start→end. Purely visual: physics uses `material` and geometry only.
+   */
+  finish: z.object({ left: z.string().max(80).optional(), right: z.string().max(80).optional() }).optional(),
 });
 
 export const OpeningSchema = z.object({
@@ -92,7 +97,12 @@ export const EditCommandSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('updateWall'),
     wallId: IdSchema,
-    patch: z.object({ thicknessM: WallStyle.thicknessM.optional(), heightM: WallStyle.heightM.optional(), material: WallMaterialSchema.optional() }),
+    patch: z.object({
+      thicknessM: WallStyle.thicknessM.optional(),
+      heightM: WallStyle.heightM.optional(),
+      material: WallMaterialSchema.optional(),
+      finish: WallSchema.shape.finish,
+    }),
   }),
   z.object({
     kind: z.literal('createOpening'),
