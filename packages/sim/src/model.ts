@@ -17,10 +17,20 @@ import { ActorHash, closestOnSegment, segmentsIntersect } from './spatial.ts';
 export const MODEL_ID = 'egress-pedestrian';
 export const MODEL_VERSION = '0.1.0';
 
+/** Starting people, reusable across layouts for controlled before/after comparisons. */
+export interface InitialActors {
+  x: number[];
+  y: number[];
+  r: number[];
+  vPref: number[];
+}
+
 export interface FrozenSimulationInput {
   runId: string;
   document: EgressDocument;
   scenario: SimulationScenario;
+  /** Reuse these people (same index = same person). Anyone whose spot is now blocked is respawned and counted. */
+  initialActors?: InitialActors;
 }
 
 export const PARAMS = {
@@ -84,6 +94,10 @@ export interface SimState {
   lastExitTick: number;
   exited: number;
   unreachable: number;
+  /** The people as spawned, for rerunning a candidate layout with the same population. */
+  readonly initial: InitialActors;
+  /** How many given initial actors had to be respawned because the layout changed under them. */
+  readonly respawned: number;
 }
 
 // ── initialize ──────────────────────────────────────────────────────────────
@@ -110,10 +124,34 @@ export function initialize(input: FrozenSimulationInput): SimState {
   const x = new Float64Array(n), y = new Float64Array(n), r = new Float64Array(n), vPref = new Float64Array(n);
   const placed = new Map<number, number[]>();
   const key = (px: number, py: number) => Math.floor(px) * 100_003 + Math.floor(py);
+  const given = input.initialActors && input.initialActors.x.length === n ? input.initialActors : null;
+  let respawned = 0;
+  const fits = (a: number, px: number, py: number) => {
+    if (!clearOfWalls(compiled, px, py, r[a] + 0.02)) return false;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      for (const b of placed.get(key(px + dx, py + dy)) ?? []) {
+        if (Math.hypot(px - x[b], py - y[b]) < r[a] + r[b] + 0.02) return false;
+      }
+    }
+    const cell = compiled.nav.cellAt(px, py);
+    return cell >= 0 && compiled.navigable[cell] === 1 && compiled.room[cell] >= 0;
+  };
+  const place = (a: number, px: number, py: number) => {
+    x[a] = px; y[a] = py;
+    const k = key(px, py);
+    placed.set(k, [...(placed.get(k) ?? []), a]);
+  };
   for (let a = 0; a < n; a++) {
     r[a] = rng.range(PARAMS.radiusMin, PARAMS.radiusMax);
     vPref[a] = Math.min(PARAMS.speedMax, Math.max(PARAMS.speedMin, rng.normal(PARAMS.speedMean, PARAMS.speedSd)));
     let ok = false;
+    if (given) {
+      // Controlled comparison: reuse the baseline's people exactly where the geometry still allows it.
+      r[a] = given.r[a];
+      vPref[a] = given.vPref[a];
+      if (fits(a, given.x[a], given.y[a])) { place(a, given.x[a], given.y[a]); ok = true; }
+      else respawned++;
+    }
     for (let attempt = 0; attempt < PARAMS.spawnAttempts && !ok; attempt++) {
       const pick = rng.next() * total;
       let lo = 0, hi = cdf.length - 1;
@@ -121,17 +159,9 @@ export function initialize(input: FrozenSimulationInput): SimState {
       const cell = cells[lo];
       const cx = cell % grid.width, cy = (cell - cx) / grid.width;
       const px = grid.origin.x + (cx + rng.next()) * grid.cellSizeM, py = grid.origin.y + (cy + rng.next()) * grid.cellSizeM;
-      if (!clearOfWalls(compiled, px, py, r[a] + 0.02)) continue;
-      let clash = false;
-      for (let dx = -1; dx <= 1 && !clash; dx++) for (let dy = -1; dy <= 1 && !clash; dy++) {
-        for (const b of placed.get(key(px + dx, py + dy)) ?? []) {
-          if (Math.hypot(px - x[b], py - y[b]) < r[a] + r[b] + 0.02) { clash = true; break; }
-        }
-      }
-      if (clash) continue;
-      x[a] = px; y[a] = py; ok = true;
-      const k = key(px, py);
-      placed.set(k, [...(placed.get(k) ?? []), a]);
+      if (!fits(a, px, py)) continue;
+      place(a, px, py);
+      ok = true;
     }
     if (!ok) {
       throw new DomainError('POPULATION_INFEASIBLE', `Only ${a} of ${n} people fit with the minimum spacing. Lower the head count or add floor space.`, { placed: a, requested: n });
@@ -152,6 +182,8 @@ export function initialize(input: FrozenSimulationInput): SimState {
     throughput: new Int32Array(compiled.exits.length), queueAtExit: new Int32Array(compiled.exits.length),
     hash: new ActorHash(grid, n), fields: new FieldAccumulator(compiled),
     maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, exited: 0, unreachable: 0,
+    initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref) },
+    respawned,
   };
   for (let a = 0; a < n; a++) {
     chooseExit(state, a, true);
