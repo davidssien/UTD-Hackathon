@@ -11,7 +11,7 @@ import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
   CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon, SignalSlashIcon,
-  SparklesIcon, Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
+  Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
@@ -102,6 +102,18 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const [runId, setRunId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [diffMap, setDiffMap] = useState(false);
+  // Right pane collapse, remembered per mode in this browser only (a viewer convenience, not project data).
+  const [collapsed, setCollapsed] = useState<Record<Mode, boolean>>(() => {
+    const none = { edit: false, simulate: false, analysis: false };
+    try { return { ...none, ...JSON.parse(localStorage.getItem('egress.paneCollapsed') ?? '{}') }; } catch { return none; }
+  });
+  const paneCollapsed = collapsed[mode];
+  const setPaneCollapsed = (value: boolean) => setCollapsed(c => {
+    const next = { ...c, [mode]: value };
+    try { localStorage.setItem('egress.paneCollapsed', JSON.stringify(next)); } catch { /* storage unavailable */ }
+    return next;
+  });
+  const theme = useMemo(() => (new URLSearchParams(location.search).get('theme') === 'blueprint' ? 'blueprint' : 'black'), []);
   const [error, setError] = useState(bootError);
   const scene = useRef<SceneHandle>(null);
 
@@ -203,8 +215,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
   const saving = view.pending > 0;
 
-  return <main className={`studio mode-${mode}`} onContextMenu={e => e.preventDefault()}>
-    <Scene ref={scene} doc={sceneDoc} editing={mode === 'edit'} tool={canEdit ? tool : 'select'} wallType={wallType} selected={selected}
+  return <main className={`studio mode-${mode} theme-${theme} ${menu || typeMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
+    <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={canEdit ? tool : 'select'} wallType={wallType} selected={selected}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
       onContext={(at, hit) => { setTypeMenu(null); setMenu(hit && canEdit ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null } : null); if (hit) setSelected(hit.openingId ?? hit.wallId ?? null); }} />
@@ -222,12 +234,22 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       {MODES.map(m => <button key={m.id} aria-pressed={mode === m.id} onClick={() => switchMode(m.id)} data-tip={`${m.name} (${m.key})`}>{m.name}</button>)}
     </nav>
 
-    {/* Top right: server state, layers */}
-    <div className="hud-right">
-      {!runner.online && backend !== 'mock' && <span className="chip warn" data-tip="Runs and the agent wait until the simulation server is back"><SignalSlashIcon />Sim server offline</span>}
-      <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
-      {layersOpen && <LayersMenu layer={layer} onChange={setLayer} onClose={() => setLayersOpen(false)} />}
+    {/* Right column: server state and Layers on top, Layers panel, then the context pane; nothing overlaps (D70) */}
+    <div className="right-column">
+      <div className="hud-right">
+        {!runner.online && backend !== 'mock' && <span className="chip warn" data-tip="Runs and the agent wait until the simulation server is back"><SignalSlashIcon />Sim server offline</span>}
+        <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
+      </div>
+      {layersOpen && <LayersPanel layer={layer} onChange={setLayer} />}
+      {showPane && !paneCollapsed && <aside className="pane" aria-label="Details">
+        <button className="pane-collapse" aria-label="Collapse panel" data-tip="Collapse" data-tip-side="left" onClick={() => setPaneCollapsed(true)}><ChevronRightIcon /></button>
+        {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
+        {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
+        {mode === 'simulate' && <SimulatePane client={client} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }} hasDoc={!!doc} />}
+        {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} onError={fail} />}
+      </aside>}
     </div>
+    {showPane && paneCollapsed && <button className="pane-tab" aria-label="Open panel" onClick={() => setPaneCollapsed(false)}><ChevronLeftIcon /></button>}
 
     {/* Left: pull tab → meta rail */}
     {rail ? <nav className="rail" aria-label="Project">
@@ -245,14 +267,6 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <span className="rail-sep" />
       <RailButton tip="Collapse" onClick={() => { setRail(false); setExportOpen(false); }}><ChevronLeftIcon /></RailButton>
     </nav> : <button className="rail-tab" aria-label="Open project menu" onClick={() => setRail(true)}><ChevronRightIcon /></button>}
-
-    {/* Right: context pane */}
-    {showPane && <aside className="pane" aria-label="Details">
-      {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
-      {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
-      {mode === 'simulate' && <SimulatePane client={client} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }} hasDoc={!!doc} />}
-      {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} onError={fail} />}
-    </aside>}
 
     {/* Bottom: context toolbar */}
     <footer className="dock" aria-label={`${mode} tools`}>
@@ -314,8 +328,8 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: { v
   return <div className="segmented">{options.map(o => <button key={o.id} aria-pressed={value === o.id} disabled={disabled || o.disabled} onClick={() => onChange(o.id)}>{o.name}</button>)}</div>;
 }
 
-function LayersMenu({ layer, onChange, onClose }: { layer: SceneLayer; onChange(l: SceneLayer): void; onClose(): void }) {
-  return <div className="menu layers-menu" onMouseLeave={onClose}>
+function LayersPanel({ layer, onChange }: { layer: SceneLayer; onChange(l: SceneLayer): void }) {
+  return <div className="layers-panel" aria-label="Layers">
     <div className="menu-label">Layer</div>
     <button aria-pressed><CheckIcon />People</button>
     <button disabled>Airflow</button>
@@ -456,7 +470,6 @@ function ChatBar({ client, playback, disabled, onError }: { client: EgressClient
     void client.askAgent(text, runId ? { runId } : undefined).then(() => setPrompt('')).catch(onError);
   };
   return <form className="chat" onSubmit={e => { e.preventDefault(); if (!working) send(); }}>
-    <SparklesIcon className="chat-icon" />
     <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ask about this layout" disabled={disabled} aria-label="Message the agent" />
     <button className="tool" type="submit" disabled={disabled || working} data-tip={working ? 'Working' : 'Send'}>{working ? <ArrowPathIcon className="spin" /> : <PaperAirplaneIcon />}</button>
   </form>;

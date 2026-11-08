@@ -35,13 +35,16 @@ interface Props {
   notes?: SceneNote[];
   playback?: PlaybackController | null;
   layer: SceneLayer;
+  /** Scene background: black (default) or the original blueprint blue (D70). */
+  theme?: SceneTheme;
   overlay?: HeatOverlay | null;
   onSelect(id: string | null): void;
   onEdit(commands: EditCommand[]): void;
   onContext?(at: { x: number; y: number }, hit: SceneHit | null): void;
 }
 
-const BLUEPRINT = '#1c446f';
+export type SceneTheme = 'black' | 'blueprint';
+const THEMES: Record<SceneTheme, { ground: string; dots: number }> = { black: { ground: '#0b0c0e', dots: 0.7 }, blueprint: { ground: '#1c446f', dots: 1 } };
 const SUGGEST = '#3d9bff';
 const SELECT = '#ffb020';
 const WALL_STYLE: Record<WallMaterial, { thicknessM: number }> = { normal: { thicknessM: 0.2 }, reinforced: { thicknessM: 0.3 }, glass: { thicknessM: 0.12 } };
@@ -90,12 +93,12 @@ function hatchable<M extends THREE.Material>(m: M): M {
   return m;
 }
 
-function groundMaterial() {
+function groundMaterial(theme: SceneTheme) {
   return new THREE.ShaderMaterial({
-    uniforms: { uBase: { value: new THREE.Color(BLUEPRINT) }, uDot: { value: new THREE.Color('#ffffff') } },
+    uniforms: { uBase: { value: new THREE.Color(THEMES[theme].ground) }, uDot: { value: new THREE.Color('#ffffff') }, uGain: { value: THEMES[theme].dots } },
     vertexShader: `varying vec2 vPlan;
       void main() { vec4 w = modelMatrix * vec4(position, 1.0); vPlan = vec2(w.x, -w.z); gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `uniform vec3 uBase; uniform vec3 uDot; varying vec2 vPlan;
+    fragmentShader: `uniform vec3 uBase; uniform vec3 uDot; uniform float uGain; varying vec2 vPlan;
       float dots(vec2 p, float spacing, float radiusPx) {
         vec2 px = max(fwidth(p), vec2(1e-5));
         vec2 d = (fract(p / spacing + 0.5) - 0.5) * spacing;
@@ -106,7 +109,7 @@ function groundMaterial() {
         float minor = dots(vPlan, 0.25, 0.85) * 0.30 * (1.0 - smoothstep(0.035, 0.07, mpp));
         float major = dots(vPlan, 1.0, 1.25) * 0.62 * (1.0 - smoothstep(0.15, 0.3, mpp));
         float coarse = dots(vPlan, 5.0, 1.5) * 0.55;
-        gl_FragColor = vec4(mix(uBase, uDot, max(max(minor, major), coarse)), 1.0);
+        gl_FragColor = vec4(mix(uBase, uDot, uGain * max(max(minor, major), coarse)), 1.0);
         #include <colorspace_fragment>
       }`,
   });
@@ -176,7 +179,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     catch { queueMicrotask(() => setError('3D rendering is unavailable in this browser.')); return; }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-    renderer.setClearColor(BLUEPRINT);
+    const theme = latest.current.theme ?? 'black';
+    renderer.setClearColor(THEMES[theme].ground);
     node.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -185,7 +189,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40 }); sun.shadow.normalBias = 0.03;
     scene.add(sun);
 
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMaterial());
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), groundMaterial(theme));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -0.01; ground.renderOrder = -1;
     const shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.ShadowMaterial({ opacity: 0.22 }));
     shadowCatcher.rotation.x = -Math.PI / 2; shadowCatcher.position.y = -0.005; shadowCatcher.receiveShadow = true;
@@ -300,7 +304,10 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       const el = dim.current; if (!el) return;
       const rect = node.getBoundingClientRect();
       el.hidden = false; el.textContent = text;
-      el.style.transform = `translate(${e.clientX - rect.left + 16}px, ${e.clientY - rect.top + 14}px)`;
+      // Keep the label inside the viewport.
+      const x = Math.min(e.clientX - rect.left + 16, rect.width - el.offsetWidth - 8);
+      const y = Math.min(e.clientY - rect.top + 14, rect.height - el.offsetHeight - 8);
+      el.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
     };
     const line = (points: Vec2[], color = '#ffffff') => {
       preview.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => toWorld(p, 0.06))), new THREE.LineBasicMaterial({ color, depthTest: false })));
