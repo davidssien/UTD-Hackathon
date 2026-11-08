@@ -1761,7 +1761,7 @@
         "x": 2.6,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1772,7 +1772,7 @@
         "x": 2.6,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1783,7 +1783,7 @@
         "x": 2.6,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1794,7 +1794,7 @@
         "x": 2.6,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1805,7 +1805,7 @@
         "x": 7.4,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1816,7 +1816,7 @@
         "x": 7.4,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1838,7 +1838,7 @@
         "x": 7.4,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1849,7 +1849,7 @@
         "x": 7.4,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1860,7 +1860,7 @@
         "x": 12.6,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1871,7 +1871,7 @@
         "x": 12.6,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1882,7 +1882,7 @@
         "x": 12.6,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1893,7 +1893,7 @@
         "x": 12.6,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1904,7 +1904,7 @@
         "x": 17.4,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1915,7 +1915,7 @@
         "x": 17.4,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1926,7 +1926,7 @@
         "x": 17.4,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1937,7 +1937,7 @@
         "x": 17.4,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1959,7 +1959,7 @@
         "x": 30.6,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1970,7 +1970,7 @@
         "x": 30.6,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1981,7 +1981,7 @@
         "x": 30.6,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1992,7 +1992,7 @@
         "x": 30.6,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2003,7 +2003,7 @@
         "x": 35.4,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2014,7 +2014,7 @@
         "x": 35.4,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2025,7 +2025,7 @@
         "x": 35.4,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2036,7 +2036,7 @@
         "x": 35.4,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2047,7 +2047,7 @@
         "x": 40.6,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2058,7 +2058,7 @@
         "x": 40.6,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2080,7 +2080,7 @@
         "x": 40.6,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2091,7 +2091,7 @@
         "x": 40.6,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2102,7 +2102,7 @@
         "x": 45.4,
         "y": 5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2113,7 +2113,7 @@
         "x": 45.4,
         "y": 5.75
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2124,7 +2124,7 @@
         "x": 45.4,
         "y": 2.6
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -2135,7 +2135,7 @@
         "x": 45.4,
         "y": 3.35
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",

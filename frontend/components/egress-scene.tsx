@@ -17,6 +17,16 @@ import type { PlaybackController } from '@egress/client';
 import { WallLibrary } from '@/lib/wall-textures';
 import { encodeField, fieldScale } from '@/lib/heatmap';
 import { stairSteps, upEdgeOf } from '@/lib/stairs';
+import { placeableModel, type PartTone } from '@/lib/placeable-models';
+
+/** Part colours per placeable: warm wood for tables and desks, fabric chairs, pale counters, metal vents. */
+const PLACEABLE_TONES: Record<PlaceableItem, Partial<Record<PartTone, string>>> = {
+  table: { top: '#c79a6a', frame: '#5a4535' },
+  desk: { top: '#d9b88f', frame: '#7d6047' },
+  chair: { seat: '#3e4a5a', frame: '#23272e' },
+  counter: { body: '#d7dce2', top: '#7f8a96' },
+  vent: { frame: '#dfe6ee', grille: '#9db2c7' },
+};
 import { floorSurface, slabCutouts } from '@/lib/floor-surfaces';
 import { ViewCube } from './scene/viewcube';
 
@@ -960,20 +970,28 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       mesh.userData = { slabId: slab.id, floorId: slab.floorId, below: below(slab.floorId) };
       r.floors.add(mesh);
     }
-    // Placeables: furniture as 0.5 m blocks, HVAC vents as ceiling grilles.
-    const PLACEABLE_COLOR: Record<PlaceableItem, string> = { table: '#b98b5e', desk: '#c9a27a', chair: '#8a6a4c', counter: '#9aa7b4', vent: '#6fc3ff' };
+    // Placeables: simple part-built models (tables on legs, chairs with backs, grilled ceiling vents).
     for (const p of doc.placeables ?? []) {
       const f = shown.get(p.floorId); if (!f) continue;
-      const spec = PLACEABLES[p.item];
-      const top = spec.maxZ ?? f.ceilingHeightM - 0.05, bottom = spec.suppliesAir ? top - 0.06 : spec.minZ;
-      const m = dimmed(style(new THREE.MeshStandardMaterial({ color: PLACEABLE_COLOR[p.item], roughness: 0.75 }), [p.id]), p.floorId);
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(spec.widthM, Math.max(0.03, top - bottom), spec.depthM), m);
-      mesh.position.set(p.position.x, f.elevationM + (top + bottom) / 2, -p.position.y);
-      mesh.rotation.y = (p.rotationDeg * Math.PI) / 180;
-      mesh.castShadow = !below(p.floorId) && !spec.suppliesAir; mesh.receiveShadow = true;
-      mesh.userData = { placeableId: p.id, floorId: p.floorId, below: below(p.floorId) };
-      r.floors.add(mesh);
-      entityAnchor.set(p.id, toWorld(p.position, f.elevationM + top + 0.2));
+      const spec = PLACEABLES[p.item], tones = PLACEABLE_TONES[p.item];
+      const materials = new Map<PartTone, THREE.MeshStandardMaterial>();
+      const material = (tone: PartTone) => {
+        let m = materials.get(tone);
+        if (!m) { m = dimmed(style(new THREE.MeshStandardMaterial({ color: tones[tone] ?? '#9aa3ad', roughness: tone === 'top' ? 0.55 : 0.8 }), [p.id]), p.floorId); materials.set(tone, m); }
+        return m;
+      };
+      const group = new THREE.Group();
+      group.position.set(p.position.x, f.elevationM, -p.position.y);
+      group.rotation.y = (p.rotationDeg * Math.PI) / 180;
+      for (const part of placeableModel(p.item, f.ceilingHeightM)) {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(...part.size), material(part.tone));
+        mesh.position.set(...part.at);
+        mesh.castShadow = !below(p.floorId) && !spec.suppliesAir; mesh.receiveShadow = true;
+        mesh.userData = { placeableId: p.id, floorId: p.floorId, below: below(p.floorId) };
+        group.add(mesh);
+      }
+      r.floors.add(group);
+      entityAnchor.set(p.id, toWorld(p.position, f.elevationM + (spec.maxZ ?? f.ceilingHeightM) + 0.2));
     }
     // Stairs (D75): solid steps from the lower floor up to the next.
     for (const stair of doc.stairs ?? []) {

@@ -1535,7 +1535,7 @@
         "x": 3.5,
         "y": 1.4
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1546,7 +1546,7 @@
         "x": 3.5,
         "y": 2.15
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1557,7 +1557,7 @@
         "x": 10.5,
         "y": 1.4
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1568,7 +1568,7 @@
         "x": 10.5,
         "y": 2.15
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1579,7 +1579,7 @@
         "x": 17,
         "y": 1.4
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1590,7 +1590,7 @@
         "x": 17,
         "y": 2.15
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",

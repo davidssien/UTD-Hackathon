@@ -54,8 +54,11 @@ const line = (floorId: string, ...points: Vec2[]): EditCommand => ({ kind: 'crea
 /** A placeable (furniture or a ceiling HVAC vent). */
 const put = (floorId: string, item: PlaceableItem, x: number, y: number, rotationDeg = 0): EditCommand =>
   ({ kind: 'createPlaceable', floorId, item, position: p(x, y), rotationDeg });
-/** A desk with its chair on the side facing `chairDy` (metres in y). */
-const workstation = (floorId: string, x: number, y: number, chairDy = -0.75): EditCommand[] => [put(floorId, 'desk', x, y), put(floorId, 'chair', x, y + chairDy)];
+/** A desk with its chair `chairDy` metres away in y; both turn so the sitter faces the desk. */
+const workstation = (floorId: string, x: number, y: number, chairDy = -0.75): EditCommand[] => {
+  const turn = chairDy > 0 ? 180 : 0;
+  return [put(floorId, 'desk', x, y, turn), put(floorId, 'chair', x, y + chairDy, turn)];
+};
 
 // ── Office Floor (24 × 16 m): open plan, three offices, a meeting room, a corridor ──
 const office = build('office', [
@@ -81,7 +84,7 @@ const office = build('office', [
     // Private offices: a desk against the window wall.
     ...[2.5, 7.5, 12.5].flatMap(x => workstation(f(0), x, 14.6)),
     // Meeting room: a table and four chairs.
-    put(f(0), 'table', 19.5, 13), ...[[18.8, 12.2], [20.2, 12.2], [18.8, 13.8], [20.2, 13.8]].map(([x, y]) => put(f(0), 'chair', x, y)),
+    put(f(0), 'table', 19.5, 13), ...[[18.8, 12.2], [20.2, 12.2], [18.8, 13.8], [20.2, 13.8]].map(([x, y]) => put(f(0), 'chair', x, y, y > 13 ? 180 : 0)),
     // Open plan: two rows of desks, aisles left clear to both doors and the south exit.
     ...[2, 5.5, 10.5, 14].flatMap(x => [...workstation(f(0), x, 2.5, 0.75), ...workstation(f(0), x, 5, -0.75)]),
     // Kitchen counter, and ceiling supply vents in the open plan and the corridor.

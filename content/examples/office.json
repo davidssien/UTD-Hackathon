@@ -861,7 +861,7 @@
         "x": 20.2,
         "y": 13.8
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -872,7 +872,7 @@
         "x": 2,
         "y": 2.5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -883,7 +883,7 @@
         "x": 2,
         "y": 3.25
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -916,7 +916,7 @@
         "x": 5.5,
         "y": 2.5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -927,7 +927,7 @@
         "x": 5.5,
         "y": 3.25
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -960,7 +960,7 @@
         "x": 10.5,
         "y": 2.5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -982,7 +982,7 @@
         "x": 10.5,
         "y": 3.25
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1015,7 +1015,7 @@
         "x": 14,
         "y": 2.5
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1026,7 +1026,7 @@
         "x": 14,
         "y": 3.25
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     },
     {
       "kind": "placeable",
@@ -1158,7 +1158,7 @@
         "x": 18.8,
         "y": 13.8
       },
-      "rotationDeg": 0
+      "rotationDeg": 180
     }
   ],
   "furniture": []
