@@ -5,15 +5,16 @@
  * document so the browser mock and the runner give identical answers.
  */
 import {
-  applyEdit, deriveLayout, DomainError, openingCenter, pointInPolygon,
+  applyEdit, deriveLayout, describeRooms, DomainError, openingCenter, pointInPolygon, type RoomKind,
   type EditCommand, type EgressDocument, type ID, type OpeningKind, type Vec2,
 } from '@egress/core';
 import { compileFloor } from '@egress/sim';
 
-export type RoomKind = 'room' | 'hallway' | 'closet';
+export type { RoomKind } from '@egress/core';
 
 export interface RoomInfo {
   id: string;
+  roomHash: string;
   kind: RoomKind;
   areaM2: number;
   /** Narrow and long sides of the room's bounding box (m). */
@@ -21,7 +22,7 @@ export interface RoomInfo {
   lengthM: number;
   center: Vec2;
   wallIds: ID[];
-  /** Rooms reachable through a door in one step. */
+  /** Rooms reachable through a door in one step (room hashes). */
   neighbours: string[];
   openingIds: ID[];
 }
@@ -38,14 +39,8 @@ export interface WallInfo {
 
 const round = (v: number) => Math.round(v * 100) / 100;
 
-/** Rule-based room kind; the Nemotron labels of PLAN.md §3 E refine it later. */
-export function roomKindByRules(widthM: number, lengthM: number, areaM2: number, neighbours: number): RoomKind {
-  if (areaM2 < 3) return 'closet';
-  if ((widthM <= 2.4 && lengthM / Math.max(widthM, 0.1) >= 3) || neighbours >= 3) return 'hallway';
-  return 'room';
-}
-
-export function describeLayout(doc: EgressDocument): { rooms: RoomInfo[]; walls: WallInfo[] } {
+/** `labels` (room hash → kind) lets Nemotron or user labels override the rule kinds. */
+export function describeLayout(doc: EgressDocument, labels?: ReadonlyMap<string, RoomKind>): { rooms: RoomInfo[]; walls: WallInfo[] } {
   const { topology } = deriveLayout(doc);
   const pos = new Map(doc.vertices.map(v => [v.id, v.position]));
   const roomIds = new Set(topology.rooms.map(r => r.id));
@@ -61,26 +56,11 @@ export function describeLayout(doc: EgressDocument): { rooms: RoomInfo[]; walls:
       openings: doc.openings.filter(o => o.wallId === w.id).map(o => ({ id: o.id, kind: o.openingKind, widthM: o.widthM, offsetM: round(o.offsetM) })),
     }];
   });
-  const byWall = new Map(walls.map(w => [w.id, w]));
-  const rooms: RoomInfo[] = topology.rooms.map(r => {
-    const xs = r.polygon.map(p => p.x), ys = r.polygon.map(p => p.y);
-    const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
-    const neighbours = new Set<string>(), openingIds: ID[] = [];
-    for (const id of r.wallIds) {
-      const wall = byWall.get(id);
-      if (!wall) continue;
-      for (const o of wall.openings) {
-        openingIds.push(o.id);
-        if (o.kind === 'door') for (const other of wall.roomIds) if (other !== r.id) neighbours.add(other);
-      }
-    }
-    const widthM = round(Math.min(w, h)), lengthM = round(Math.max(w, h)), areaM2 = round(r.area);
-    return {
-      id: r.id, kind: roomKindByRules(widthM, lengthM, areaM2, neighbours.size), areaM2, widthM, lengthM,
-      center: { x: round(xs.reduce((a, b) => a + b, 0) / xs.length), y: round(ys.reduce((a, b) => a + b, 0) / ys.length) },
-      wallIds: [...r.wallIds], neighbours: [...neighbours], openingIds: [...new Set(openingIds)],
-    };
-  });
+  // Rooms come from @egress/core so the agent, runner and UI agree on hashes and rule kinds (D73).
+  const rooms: RoomInfo[] = describeRooms(doc).map(d => ({
+    id: d.id, roomHash: d.roomHash, kind: labels?.get(d.roomHash) ?? d.ruleKind, areaM2: d.areaM2, widthM: d.widthM, lengthM: d.lengthM,
+    center: d.center, wallIds: d.wallIds, neighbours: d.neighbours, openingIds: d.openingIds,
+  }));
   return { rooms, walls };
 }
 

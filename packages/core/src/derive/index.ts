@@ -11,6 +11,7 @@ import { wallGeometry, type WallGeometry } from './walls.ts';
 export * from './walls.ts';
 export * from './topology.ts';
 export * from './diagnostics.ts';
+export * from './rooms.ts';
 
 export interface DerivedLayout {
   /** Every opening cut out — for rendering. */
