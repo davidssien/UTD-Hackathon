@@ -14,9 +14,9 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 ---
 
-## Status — `STABLE-V1` (`60868ea`, tagged), plus Pass 6 on `main`
+## Status — `STABLE-V1.1` (`6593cd9`, tagged); passes 7–13 on `stable-forward`
 
-**Since the tag:** Pass 6 (§3 T) is done. One root `.env` and `npm run db:*` work against Maincloud `egress-dev` without `spacetime login`, verified on Cody's machine. The database stays on Cody's Maincloud account (D84), and the home desktop will serve only the website and runner (D85).
+**Since `STABLE-V1`:** Pass 6 (§3 T) is done. One root `.env` and `npm run db:*` work against Maincloud `egress-dev` without `spacetime login`, and a partner machine has connected with the shared `.env`. The current module is published to `egress-dev`, and a current runner (heartbeats, Lightning) serves it. The database stays on Cody's Maincloud account (D84); the home desktop will serve only the website and runner (D85). `STABLE-V1.1` tags this state.
 
 **Works today**
 - **Edit:** top-down CAD editing on a planar wall graph (walls, rooms, doors, windows, exits, erase, undo/redo, snapping, dimensions, inspector, wall types).
@@ -45,7 +45,13 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 ## 1. Ground rules
 
-- **`main` is the trunk and only moves at green points.** Development happens on `backend-passes` (the dev branch). When a pass is green, fast-forward `main`. Each major milestone gets a `STABLE-Vn` tag. Never force-push. `implement-backend` is merged and retired.
+- **`main` is the trunk and only moves at green points.** Development for passes 7–13 happens on `stable-forward`, branched from `STABLE-V1.1`. When a pass is green it can fast-forward `main`, unless the partner's work needs a merge first. Major milestones get `STABLE-Vn` tags. Never force-push. `implement-backend` and `backend-passes` are retired.
+- **The partner owns CV floor-plan scanning** (the sketch/photo importer and its `frontend/lib/scan-*`, `sketch-import`, `floorplan` code). We don't build in that area. We keep its seams open and stable:
+  - `buildingToDocument(building)` in `frontend/lib/import-building.ts` turns a reviewed scan into an `EgressDocument`.
+  - "Import plan image" (rail and saves page) opens the partner's `SketchImporter`.
+  - `importProject` / `createProject(name, seed)` store the result.
+  
+  Expect manual merge work when the branches meet.
 - **One boundary:** the UI talks to the backend only through `@egress/client`. **One data model:** `@egress/core` (Zod schemas are the source of truth).
 - **Numbers come from the simulation.** The agent never invents a metric. Copy says "modeled", never "safe" or "compliant"; compliance checks are labelled as modeled checks.
 - **Server-only project storage** (D58). The browser stores only the SpacetimeDB token.
@@ -610,3 +616,4 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D84 | 11-08 | **The database stays on Cody's account.** `egress-dev` remains on Cody's personal Maincloud account; no new database. `SPACETIME_TOKEN` is his CLI token and lives only in the publisher's own `.env`; the shared copy leaves it blank, since the website, runner and visitors never need it. Before the public launch, revisit a team account or organization, which would mean a new database and a JSON move. |
 | D85 | 11-08 | **Hosting splits:** the database stays on Maincloud; the home desktop runs only the Next.js site, the runner and the Cloudflare Tunnel. This drops the self-hosted SpacetimeDB, its publisher token and the edge lockdown of database routes from the plan. |
 | D86 | 11-08 | **`Plan.md` renamed to `PLAN.md`.** References were repointed: architecture sections to `docs/ARCHITECTURE.md`, workstreams and decisions to `PLAN.md`, old passes to the archive. |
+| D87 | 11-08 | **`STABLE-V1.1` and `stable-forward`.** `STABLE-V1.1` tags the verified team setup (`6593cd9`). Passes 7–13 run on `stable-forward`. CV floor-plan scanning is the partner's area; we only keep its seams stable (`buildingToDocument`, the importer entry points, `importProject`) and expect manual merges. |
