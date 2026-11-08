@@ -270,7 +270,7 @@
 .studio.on-saves .dock{transform:translate(-50%,120px)}
 .studio.on-saves .rail,.studio.on-saves .rail-tab{transform:translate(-90px,-50%)}
 @media (max-width:900px){.saves-body{grid-template-columns:1fr;overflow:auto}.saves-detail{min-height:420px}}
-@media (prefers-reduced-motion:reduce){.saves,.project-chip,.mode-switch,.right-column,.dock,.rail,.rail-tab,.pane-tab,.viewcube-host{transition:none}}
+@media (prefers-reduced-motion:reduce){.saves,.project-chip,.mode-switch,.right-column,.dock,.rail,.rail-tab,.pane-tab,.viewcube-host,.floor-switch{transition:none}}
 
 /* Presence (D59) and the Share modal's member list */
 .presence{position:relative;height:32px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--radius);background:var(--chrome);border:1px solid var(--line);box-shadow:var(--shadow);font-weight:600;font-variant-numeric:tabular-nums;cursor:default}
@@ -303,3 +303,23 @@
 .plan-card h3{margin:0;font-size:13.5px}
 .plan-card svg{width:100%;height:auto;border:1px solid var(--chrome-3);border-radius:6px}
 .plan-card .details{margin:8px 0 0}
+
+/* Floors (D75): bottom-left switcher and its settings panel */
+.floor-switch{position:absolute;left:12px;bottom:12px;z-index:5;display:flex;align-items:center;gap:2px;height:36px;padding:0 4px;border-radius:10px;background:var(--chrome);border:1px solid var(--line);box-shadow:var(--shadow);transition:transform .45s cubic-bezier(.4,0,.2,1)}
+.floor-switch .floor-name{display:flex;align-items:baseline;gap:6px;height:28px;padding:0 8px;border-radius:6px;font-weight:600;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.floor-switch .floor-name:hover{background:var(--chrome-2)}
+.floor-switch .floor-name em{font-style:normal;font-weight:500;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.floor-panel{left:0;bottom:calc(100% + 8px);width:260px;padding:4px 10px 10px}
+.floor-panel .field input:not([type]){width:100%;height:28px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.floor-panel button.danger{margin-top:8px}
+.studio.on-saves .floor-switch{transform:translateY(120px)}
+@media (max-width:1100px){.floor-switch{bottom:70px}}
+.swatch.floor-wood{background:#b5875a}.swatch.floor-basic{background:#d6dbe1}.swatch.floor-tile{background:repeating-linear-gradient(90deg,#e4e8ec 0 3px,#8a96a5 3px 4px)}
+.field .value{font-weight:600}
+.egress-scene.tool-slab canvas,.egress-scene.tool-stair canvas{cursor:crosshair}
+
+/* Population brush (D76) */
+.paint-box{margin:4px 0 6px;padding:4px 8px 8px;border:1px solid var(--chrome-3);border-radius:8px;background:var(--chrome-2)}
+.paint-box .icon-button.on{background:var(--ink);color:#fff}
+.paint-box .field .button{height:26px;padding:0 8px;font-weight:500}
+.note:not(.warn):not(.error){background:var(--chrome-2);color:var(--ink-2)}

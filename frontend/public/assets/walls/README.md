@@ -17,7 +17,8 @@
 - **Materials** are the three wall types: `normal`, `reinforced` and `glass`. They are what the simulation and the wall-type menu know about.
 - **Finishes** are optional per-side looks. A wall's `finish.left` / `finish.right` id picks one; otherwise the material look is used.
 - `color` multiplies the base-colour texture, so use `#ffffff` with a texture. `opacity` below 1 makes the wall translucent (glass).
-- `repeatM` is how many metres one texture tile covers. Wall UVs are in metres, so the texture keeps its scale on any wall length and height.
+- **Floors** are the three floor surface finishes: `wood`, `basic` and `tile` (`"floors": { "wood": { "color": "#ffffff", "baseColor": "/assets/walls/oak/basecolor.png", "repeatM": 2 } }`). Without a `baseColor`, wood and tile get a drawn plank or tile pattern tinted by `color`.
+- `repeatM` is how many metres one texture tile covers. Wall and floor UVs are in metres, so the texture keeps its scale on any wall length and height.
 
 ## Exporting from Blender
 

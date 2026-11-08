@@ -5,5 +5,10 @@
     "reinforced": { "color": "#b4c2d1", "repeatM": 1 },
     "glass": { "color": "#bfe8ff", "opacity": 0.35, "repeatM": 1 }
   },
-  "finishes": {}
+  "finishes": {},
+  "floors": {
+    "wood": { "color": "#b5875a", "repeatM": 2 },
+    "basic": { "color": "#d6dbe1", "repeatM": 1 },
+    "tile": { "color": "#e4e8ec", "repeatM": 0.6 }
+  }
 }

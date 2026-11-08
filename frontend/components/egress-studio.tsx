@@ -9,15 +9,19 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
-  ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
-  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, ShareIcon, SignalSlashIcon, UserIcon, MapIcon,
-  Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
+  ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, BarsArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
+  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
+  SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
-import { describeRooms, parseDocument, roomFacts, type EditCommand, type RoomKind, type EgressDocument, type Opening, type Role, type SimulationMetrics, type Wall, type WallMaterial } from '@egress/core';
+import {
+  describeRooms, floorsByLevel, parseDocument, roomFacts, signedArea, type EditCommand, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
+  type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
+} from '@egress/core';
+import { compileFloor, paintWeights } from '@egress/sim';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
-import type { HeatOverlay, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
+import type { HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
 import EscapePlans from './escape-plans';
@@ -27,9 +31,11 @@ const Scene = dynamic(() => import('./egress-scene'), { ssr: false, loading: () 
 
 type Mode = 'edit' | 'simulate' | 'analysis';
 type Modal = 'share' | 'import' | 'plans' | null;
-type Menu = { x: number; y: number; wallId: string | null; openingId: string | null } | null;
+type Menu = { x: number; y: number; wallId: string | null; openingId: string | null; slabId: string | null; stairId: string | null } | null;
 
 const WALL_TYPES: { id: WallMaterial; name: string }[] = [{ id: 'normal', name: 'Normal' }, { id: 'reinforced', name: 'Reinforced' }, { id: 'glass', name: 'Glass' }];
+const SLAB_TYPES: { id: SlabMaterial; name: string }[] = [{ id: 'wood', name: 'Wood' }, { id: 'basic', name: 'Basic' }, { id: 'tile', name: 'Tile' }];
+const STAIR_EDGES: { id: Stair['upEdge']; name: string }[] = [{ id: 'n', name: 'North' }, { id: 'e', name: 'East' }, { id: 's', name: 'South' }, { id: 'w', name: 'West' }];
 const MODES: { id: Mode; name: string; key: string }[] = [{ id: 'edit', name: 'Edit', key: '1' }, { id: 'simulate', name: 'Simulate', key: '2' }, { id: 'analysis', name: 'Analysis', key: '3' }];
 const STEP_LABEL: Record<string, string> = {
   inspect_layout: 'Read layout', inspect_run: 'Read run', run_scenario: 'Baseline simulation', get_hotspots: 'Find bottlenecks',
@@ -98,6 +104,14 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   });
   const [tool, setTool] = useState<SceneTool>('select');
   const [wallType, setWallType] = useState<WallMaterial>('normal');
+  const [slabType, setSlabType] = useState<SlabMaterial>('wood');
+  const [slabMenu, setSlabMenu] = useState<{ x: number; y: number } | null>(null);
+  const [floorId, setFloorId] = useState<string | null>(null);
+  const [floorPanel, setFloorPanel] = useState(false);
+  // Population painting (D76): strokes for the next run; the run keeps its own copy.
+  const [distribution, setDistribution] = useState<'uniform' | 'painted'>('uniform');
+  const [strokes, setStrokes] = useState<PopulationBrushStroke[]>([]);
+  const [brush, setBrush] = useState<PaintBrush | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [rail, setRail] = useState(false);
   const [modal, setModal] = useState<Modal>(null);
@@ -125,6 +139,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const scene = useRef<SceneHandle>(null);
 
   const doc = view.doc;
+  // Floors (D75): the switcher picks the viewed floor; tools draw on it.
+  const floors = useMemo(() => (doc ? floorsByLevel(doc) : []), [doc]);
+  const floor: Floor | null = floors.find(f => f.id === floorId) ?? floors[0] ?? null;
   // Rooms and their labels (D73): editors ask the runner to label rooms that have none yet.
   const roomLabelRows = useEgress(client.roomLabels);
   const labelMap = useMemo(() => new Map(roomLabelRows.map(l => [l.roomHash, l])), [roomLabelRows]);
@@ -164,15 +181,29 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const openFromSaves = (projectId: string) => {
     void client.openProject(projectId).then(() => {
       setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select'); setScreen('editor');
+      setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform');
     }).catch(fail);
   };
-  const toSaves = () => { setRail(false); setMenu(null); setTypeMenu(null); setLayersOpen(false); setExportOpen(false); setScreen('saves'); };
+  const toSaves = () => { setRail(false); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); setScreen('saves'); };
   const edit = (commands: EditCommand[]) => {
     if (!canEdit) { setError('You have view access to this project.'); return; }
     void client.edit(commands).then(r => { if (!r.ok) setError(r.error.message); }).catch(fail);
   };
-  const switchMode = (next: Mode) => { setMode(next); setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); };
-  const choose = (next: SceneTool) => { setTool(next); setSelected(null); setMenu(null); setTypeMenu(null); };
+  const switchMode = (next: Mode) => { setMode(next); setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); setBrush(null); };
+  const choose = (next: SceneTool) => { setTool(next); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); };
+  const addFloor = () => {
+    if (!canEdit || !doc) return;
+    const name = `Floor ${floors.length + 1}`;
+    void client.edit([{ kind: 'createFloor', name }]).then(r => {
+      if (!r.ok) { setError(r.error.message); return; }
+      const created = client.document.get().doc?.floors.find(f => f.name === name && !floors.some(o => o.id === f.id));
+      if (created) setFloorId(created.id);
+    }).catch(fail);
+  };
+  const paintStroke = (s: PaintStroke) => {
+    if (!floors[0]) return;
+    setStrokes(list => [...list, { id: `b${Date.now().toString(36)}${list.length}`, floorId: floors[0].id, points: s.points, radiusM: s.radiusM, mode: s.mode, weight: s.mode === 'erase' ? 0 : s.mode === 'increase' ? 1.5 : -1, falloff: 'linear' as const }].slice(-500));
+  };
 
   // Analysis: preview the newest open proposal on the model.
   const openProposals = proposals.filter(p => p.status === 'proposed');
@@ -196,7 +227,18 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     client.compareRuns(preview.baselineRunId, preview.candidateRunId).then(c => { if (live) setComparison(c); }).catch(() => { if (live) setComparison(null); });
     return () => { live = false; };
   }, [client, preview?.id, preview?.baselineRunId, preview?.candidateRunId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const overlay: HeatOverlay | null = mode === 'analysis' && diffMap && comparison?.congestionDiff ? { field: comparison.congestionDiff, diverging: true } : null;
+  // While painting, the overlay shows where people will start (relative weight per cell).
+  const paintField = useMemo<ScalarField | null>(() => {
+    if (mode !== 'simulate' || distribution !== 'painted' || !brush || !doc) return null;
+    try {
+      const compiled = compileFloor(doc), weights = paintWeights(compiled, strokes);
+      const values = new Float32Array(weights.length);
+      for (let i = 0; i < weights.length; i++) values[i] = compiled.navigable[i] && compiled.room[i] >= 0 ? weights[i] * 0.9 : NaN;
+      return { fieldId: 'people.density', aggregation: 'instant', grid: compiled.grid, units: 'relative', values };
+    } catch { return null; }
+  }, [mode, distribution, brush, doc, strokes]);
+  const overlay: HeatOverlay | null = paintField ? { field: paintField, diverging: false }
+    : mode === 'analysis' && diffMap && comparison?.congestionDiff ? { field: comparison.congestionDiff, diverging: true } : null;
 
   // Keyboard: tools, history, modes.
   useEffect(() => {
@@ -208,11 +250,16 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         e.preventDefault(); void ((k === 'y' || e.shiftKey) ? client.redo() : client.undo()).catch(fail); return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Escape') { setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setLayersOpen(false); setExportOpen(false); return; }
+      if (e.key === 'Escape') { setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); return; }
+      if (e.key === 'PageUp' || e.key === 'PageDown') {
+        const i = floors.findIndex(f => f.id === floor?.id), next = floors[i + (e.key === 'PageUp' ? 1 : -1)];
+        if (next) { e.preventDefault(); setFloorId(next.id); setSelected(null); }
+        return;
+      }
       const m = MODES.find(x => x.key === e.key); if (m) { switchMode(m.id); return; }
       if (k === 'f') { scene.current?.view('fit'); return; }
       if (mode === 'edit') {
-        const tools: Record<string, SceneTool> = { v: 'select', w: 'wall', r: 'box', d: 'door', n: 'window', e: 'exit', x: 'erase' };
+        const tools: Record<string, SceneTool> = { v: 'select', w: 'wall', r: 'box', g: 'slab', t: 'stair', d: 'door', n: 'window', e: 'exit', x: 'erase' };
         if (tools[k] && (canEdit || k === 'v')) { choose(tools[k]); return; }
         if ((e.key === 'Delete' || e.key === 'Backspace') && selected && canEdit) { e.preventDefault(); edit([{ kind: 'deleteEntities', ids: [selected] }]); setSelected(null); }
       }
@@ -227,8 +274,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
 
   const startRun = (people: number, seed: number) => {
     if (!doc) return;
-    setError('');
-    void client.startRun({ scenarioVersion: 1, id: `s-${crypto.randomUUID()}`, projectId: doc.projectId, name: 'Evacuate', durationSeconds: 900, population: { count: people, distribution: 'uniform', strokes: [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] } }, 'x4')
+    setError(''); setBrush(null);
+    const painted = distribution === 'painted' && strokes.length > 0;
+    void client.startRun({ scenarioVersion: 1, id: `s-${crypto.randomUUID()}`, projectId: doc.projectId, name: 'Evacuate', durationSeconds: 900, population: { count: people, distribution: painted ? 'painted' : 'uniform', strokes: painted ? strokes : [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] } }, 'x4')
       .then(id => { setRunId(id); const p = client.playback(id); p.setSpeed(speedRef.current); p.play(); })
       .catch(fail);
   };
@@ -241,18 +289,26 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   };
 
   const sceneDoc = ghost?.doc ?? doc;
-  const tags = mode === 'edit' ? rooms.map(r => ({ key: r.roomHash, text: labelMap.get(r.roomHash)?.name ?? '…', at: r.center, muted: !labelMap.has(r.roomHash) })) : [];
+  const tags = mode === 'edit' ? rooms.filter(r => r.floorId === floor?.id).map(r => ({ key: r.roomHash, text: labelMap.get(r.roomHash)?.name ?? '…', at: r.center, muted: !labelMap.has(r.roomHash) })) : [];
   const wall = doc?.walls.find(w => w.id === selected) ?? null;
   const opening = doc?.openings.find(o => o.id === selected) ?? null;
-  const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
+  const slab = doc?.slabs.find(s => s.id === selected) ?? null;
+  const stair = doc?.stairs.find(s => s.id === selected) ?? null;
+  const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening || slab || stair)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
+  const upperContent = !!doc && floors.length > 1 && doc.walls.some(w => w.floorId !== floors[0].id);
   const saving = view.pending > 0;
 
-  return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
+  return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || slabMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
     <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={canEdit ? tool : 'select'} wallType={wallType} selected={selected}
+      floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
       tags={tags} onTag={(hash, at) => { if (canEdit) setTagMenu({ hash, ...at }); }}
-      onContext={(at, hit) => { setTypeMenu(null); setMenu(hit && canEdit ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null } : null); if (hit) setSelected(hit.openingId ?? hit.wallId ?? null); }} />
+      onContext={(at, hit) => {
+        setTypeMenu(null); setSlabMenu(null);
+        setMenu(hit && canEdit ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null, slabId: hit.slabId ?? null, stairId: hit.stairId ?? null } : null);
+        if (hit) setSelected(hit.openingId ?? hit.wallId ?? hit.stairId ?? hit.slabId ?? null);
+      }} />
 
     {/* Top left: project + sync state */}
     <button className="project-chip" onClick={toSaves} data-tip="Saves">
@@ -284,7 +340,11 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         <button className="pane-collapse" aria-label="Collapse panel" data-tip="Collapse" data-tip-side="left" onClick={() => setPaneCollapsed(true)}><ChevronRightIcon /></button>
         {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
         {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
-        {mode === 'simulate' && <SimulatePane client={client} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }} hasDoc={!!doc} />}
+        {mode === 'edit' && slab && <SlabInspector slab={slab} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [slab.id] }]); setSelected(null); }} />}
+        {mode === 'edit' && stair && doc && <StairInspector stair={stair} doc={doc} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [stair.id] }]); setSelected(null); }} />}
+        {mode === 'simulate' && <SimulatePane client={client} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }} hasDoc={!!doc}
+          distribution={distribution} onDistribution={d => { setDistribution(d); setBrush(d === 'painted' ? { radiusM: 2, mode: 'increase' } : null); }}
+          brush={brush} onBrush={setBrush} strokes={strokes.length} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent} />}
         {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} onError={fail} />}
       </aside>}
     </div>
@@ -317,6 +377,11 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
           <PencilIcon /><i className={`swatch ${wallType}`} />
         </Tool>
         <Tool tip="Room (R)" on={tool === 'box'} disabled={!canEdit} onClick={() => choose('box')}><StopIcon /></Tool>
+        <Tool tip={`Floor · ${SLAB_TYPES.find(t => t.id === slabType)!.name} (G) · click a room or drag · right-click for finish`} on={tool === 'slab'} disabled={!canEdit} onClick={() => choose('slab')}
+          onContextMenu={e => { e.preventDefault(); if (!canEdit) return; const r = e.currentTarget.getBoundingClientRect(); setMenu(null); setTypeMenu(null); setSlabMenu({ x: r.left + r.width / 2, y: r.top }); }}>
+          <Squares2X2Icon /><i className={`swatch floor-${slabType}`} />
+        </Tool>
+        <Tool tip={floor && floors.some(f => f.level === floor.level + 1) ? 'Stair (T) · drag toward the top' : 'Stair (T) · add a floor above first'} on={tool === 'stair'} disabled={!canEdit} onClick={() => choose('stair')}><BarsArrowUpIcon /></Tool>
         <span className="sep" />
         <Tool tip="Door (D)" on={tool === 'door'} disabled={!canEdit} onClick={() => choose('door')}><ArrowRightEndOnRectangleIcon /></Tool>
         <Tool tip="Window (N)" on={tool === 'window'} disabled={!canEdit} onClick={() => choose('window')}><WindowIcon /></Tool>
@@ -331,6 +396,20 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       {mode === 'analysis' && <ChatBar client={client} playback={playback} onError={fail} disabled={!doc} />}
     </footer>
 
+    {/* Bottom left: floor switcher (D75) */}
+    {doc && floor && <div className="floor-switch" aria-label="Floor">
+      <button className="icon-button" aria-label="Floor below" data-tip="Floor below (PgDn)" disabled={floors[0]?.id === floor.id} onClick={() => { const i = floors.findIndex(f => f.id === floor.id); setFloorId(floors[i - 1]?.id ?? floor.id); setSelected(null); }}><ChevronLeftIcon /></button>
+      <button className="floor-name" onClick={() => setFloorPanel(v => !v)} aria-expanded={floorPanel} data-tip="Floor settings">{floor.name || `Floor ${floor.level + 1}`}<em>{floor.elevationM.toFixed(1)} m</em></button>
+      <button className="icon-button" aria-label="Floor above" data-tip="Floor above (PgUp)" disabled={floors.at(-1)?.id === floor.id} onClick={() => { const i = floors.findIndex(f => f.id === floor.id); setFloorId(floors[i + 1]?.id ?? floor.id); setSelected(null); }}><ChevronRightIcon /></button>
+      {canEdit && mode === 'edit' && <button className="icon-button" aria-label="Add a floor on top" data-tip="Add floor on top" onClick={addFloor}><PlusIcon /></button>}
+      {floorPanel && <FloorPanel floor={floor} count={floors.length} canEdit={canEdit && mode === 'edit'} onClose={() => setFloorPanel(false)}
+        onEdit={patch => edit([{ kind: 'updateFloor', floorId: floor.id, patch }])}
+        onDelete={() => { edit([{ kind: 'deleteEntities', ids: [floor.id] }]); setFloorId(null); setFloorPanel(false); }} />}
+    </div>}
+
+    {slabMenu && <div className="menu type-menu" style={{ left: slabMenu.x, top: slabMenu.y }} onMouseLeave={() => setSlabMenu(null)}>
+      {SLAB_TYPES.map(t => <button key={t.id} aria-pressed={slabType === t.id} onClick={() => { setSlabType(t.id); setTool('slab'); setSlabMenu(null); }}><i className={`swatch floor-${t.id}`} />{t.name}{slabType === t.id && <CheckIcon />}</button>)}
+    </div>}
     {typeMenu && <div className="menu type-menu" style={{ left: typeMenu.x, top: typeMenu.y }} onMouseLeave={() => setTypeMenu(null)}>
       {WALL_TYPES.map(t => <button key={t.id} aria-pressed={wallType === t.id} onClick={() => { setWallType(t.id); setTool('wall'); setTypeMenu(null); }}><i className={`swatch ${t.id}`} />{t.name}{wallType === t.id && <CheckIcon />}</button>)}
     </div>}
@@ -338,7 +417,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       {menu.wallId && !menu.openingId && WALL_TYPES.map(t => <button key={t.id} onClick={() => { edit([{ kind: 'updateWall', wallId: menu.wallId!, patch: { material: t.id } }]); setMenu(null); }}>
         <i className={`swatch ${t.id}`} />{t.name}{doc?.walls.find(w => w.id === menu.wallId)?.material === t.id && <CheckIcon />}</button>)}
       {menu.wallId && !menu.openingId && <hr />}
-      <button className="danger" onClick={() => { edit([{ kind: 'deleteEntities', ids: [menu.openingId ?? menu.wallId!] }]); setSelected(null); setMenu(null); }}><TrashIcon />Delete</button>
+      {!menu.wallId && menu.slabId && !menu.stairId && <>{SLAB_TYPES.map(t => <button key={t.id} onClick={() => { edit([{ kind: 'updateSlab', slabId: menu.slabId!, patch: { material: t.id } }]); setMenu(null); }}>
+        <i className={`swatch floor-${t.id}`} />{t.name}{doc?.slabs.find(s => s.id === menu.slabId)?.material === t.id && <CheckIcon />}</button>)}<hr /></>}
+      <button className="danger" onClick={() => { edit([{ kind: 'deleteEntities', ids: [menu.openingId ?? menu.wallId ?? menu.stairId ?? menu.slabId!] }]); setSelected(null); setMenu(null); }}><TrashIcon />Delete</button>
     </div>}
 
     {(error || view.lastError || (status === 'error' && connectionError)) && <div className="toast" role="alert"><span>{error || view.lastError?.message || connectionError}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
@@ -428,11 +509,49 @@ function OpeningInspector({ opening, canEdit, onEdit, onDelete }: { opening: Ope
   </>;
 }
 
+function SlabInspector({ slab, canEdit, onEdit, onDelete }: { slab: Slab; canEdit: boolean; onEdit(c: EditCommand[]): void; onDelete(): void }) {
+  return <>
+    <header className="pane-head"><h2>Floor surface</h2><span>{Math.abs(signedArea(slab.polygon)).toFixed(1)} m²</span></header>
+    <div className="pane-body">
+      <div className="field"><span>Finish</span><Segmented value={slab.material} disabled={!canEdit} options={SLAB_TYPES} onChange={material => onEdit([{ kind: 'updateSlab', slabId: slab.id, patch: { material } }])} /></div>
+    </div>
+    <div className="pane-actions"><button className="button danger" disabled={!canEdit} onClick={onDelete}><TrashIcon />Delete</button></div>
+  </>;
+}
+
+function StairInspector({ stair, doc, canEdit, onEdit, onDelete }: { stair: Stair; doc: EgressDocument; canEdit: boolean; onEdit(c: EditCommand[]): void; onDelete(): void }) {
+  const from = doc.floors.find(f => f.id === stair.floorId), to = doc.floors.find(f => f.id === stair.toFloorId);
+  const w = stair.max.x - stair.min.x, d = stair.max.y - stair.min.y;
+  return <>
+    <header className="pane-head"><h2>Stair</h2><span>{w.toFixed(2)} × {d.toFixed(2)} m</span></header>
+    <div className="pane-body">
+      <div className="field"><span>Connects</span><b className="value">{from?.name ?? '?'} → {to?.name ?? '?'}</b></div>
+      <div className="field"><span>Top side</span><Segmented value={stair.upEdge} disabled={!canEdit} options={STAIR_EDGES} onChange={upEdge => onEdit([{ kind: 'updateStair', stairId: stair.id, patch: { upEdge } }])} /></div>
+    </div>
+    <div className="pane-actions"><button className="button danger" disabled={!canEdit} onClick={onDelete}><TrashIcon />Delete</button></div>
+  </>;
+}
+
+function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
+  floor: Floor; count: number; canEdit: boolean; onEdit(p: { name?: string; ceilingHeightM?: number }): void; onDelete(): void; onClose(): void;
+}) {
+  return <div className="menu floor-panel" onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
+    <div className="menu-label">Floor {floor.level + 1} of {count}</div>
+    <label className="field"><span>Name</span><input key={floor.name} defaultValue={floor.name} maxLength={80} disabled={!canEdit}
+      onBlur={e => { const v = e.target.value.trim(); if (v && v !== floor.name) onEdit({ name: v }); }} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></label>
+    <NumberField label="Floor to floor" unit="m" value={floor.ceilingHeightM} step={0.1} min={2} max={50} disabled={!canEdit} onCommit={ceilingHeightM => onEdit({ ceilingHeightM })} />
+    <p className="fine">Changing the height moves every floor above.</p>
+    {canEdit && count > 1 && <button className="danger" onClick={onDelete}><TrashIcon />Delete floor and its contents</button>}
+  </div>;
+}
+
 // ── Simulate ────────────────────────────────────────────────────────────────
 
-function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasDoc, onRun, onStop }: {
+function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasDoc, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors }: {
   client: EgressClient; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; hasDoc: boolean;
   onRun(people: number, seed: number): void; onStop(): void;
+  distribution: 'uniform' | 'painted'; onDistribution(d: 'uniform' | 'painted'): void;
+  brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: number; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
 }) {
   const [people, setPeople] = useState(150), [seed, setSeed] = useState(1);
   void client;
@@ -443,7 +562,22 @@ function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasD
         <input type="range" min={10} max={1000} step={10} value={people} disabled={running} onChange={e => setPeople(Number(e.target.value))} />
         <input type="number" className="narrow" min={1} max={2000} value={people} disabled={running} onChange={e => setPeople(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))} />
       </label>
-      <div className="field"><span>Distribution</span><Segmented value="uniform" options={[{ id: 'uniform', name: 'Uniform' }, { id: 'painted', name: 'Painted', disabled: true }]} onChange={() => {}} disabled={running} /></div>
+      <div className="field"><span>Distribution</span><Segmented value={distribution} options={[{ id: 'uniform', name: 'Uniform' }, { id: 'painted', name: 'Painted' }]} onChange={onDistribution} disabled={running} /></div>
+      {distribution === 'painted' && <div className="paint-box">
+        <div className="field"><span>Brush</span>
+          <button className={`icon-button ${brush ? 'on' : ''}`} aria-pressed={!!brush} data-tip={brush ? 'Put the brush away' : 'Paint on the floor plan'} disabled={running} onClick={() => onBrush(brush ? null : { radiusM: 2, mode: 'increase' })}><PaintBrushIcon /></button>
+          <Segmented value={brush?.mode ?? 'increase'} disabled={running || !brush} options={[{ id: 'increase', name: 'More' }, { id: 'decrease', name: 'Fewer' }, { id: 'erase', name: 'Reset' }]} onChange={mode => brush && onBrush({ ...brush, mode })} />
+        </div>
+        <label className="field"><span>Size</span>
+          <input type="range" min={0.5} max={8} step={0.25} value={brush?.radiusM ?? 2} disabled={running || !brush} onChange={e => brush && onBrush({ ...brush, radiusM: Number(e.target.value) })} />
+          <em>{(brush?.radiusM ?? 2).toFixed(2)} m</em>
+        </label>
+        <div className="field"><span>{strokes} stroke{strokes === 1 ? '' : 's'}</span>
+          <button className="button" disabled={!strokes || running} onClick={onUndoStroke}><ArrowUturnLeftIcon />Undo</button>
+          <button className="button" disabled={!strokes || running} onClick={onClearStrokes}><XMarkIcon />Clear</button>
+        </div>
+        <p className="fine">Painting changes where people start, not how many. Left-drag on the plan while the brush is out.</p>
+      </div>}
       <label className="field"><span>Seed</span>
         <input type="number" className="narrow" min={0} value={seed} disabled={running} onChange={e => setSeed(Math.max(0, Number(e.target.value) || 0))} />
         <button className="icon-button" data-tip="New seed" disabled={running} onClick={() => setSeed(Math.floor(Math.random() * 100000))}><ArrowPathIcon /></button>
@@ -451,6 +585,7 @@ function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasD
       {playback && <RunReadout playback={playback} />}
       {runFailed && <p className="note error">{runFailed}</p>}
       {!runnerOnline && <p className="note warn">Simulation server offline</p>}
+      {upperFloors && <p className="note">The evacuation covers the ground floor; upper floors and stairs join the simulation in a later pass.</p>}
     </div>
     <div className="pane-actions">
       {running ? <button className="button danger" onClick={onStop}><StopIcon />Stop</button>
