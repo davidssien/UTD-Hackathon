@@ -31,6 +31,9 @@ export type ActiveMembers = __Infer<typeof ActiveMembers>;
 export const ActivePresence = __t.object("ActivePresence", {});
 export type ActivePresence = __Infer<typeof ActivePresence>;
 
+export const ActivePresenceModes = __t.object("ActivePresenceModes", {});
+export type ActivePresenceModes = __Infer<typeof ActivePresenceModes>;
+
 export const ActiveProposals = __t.object("ActiveProposals", {});
 export type ActiveProposals = __Infer<typeof ActiveProposals>;
 
@@ -142,6 +145,14 @@ export const OnlineConnections = __t.object("OnlineConnections", {
   since: __t.timestamp(),
 });
 export type OnlineConnections = __Infer<typeof OnlineConnections>;
+
+export const PresenceModes = __t.object("PresenceModes", {
+  identity: __t.identity(),
+  projectId: __t.string(),
+  mode: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type PresenceModes = __Infer<typeof PresenceModes>;
 
 export const PreviewEntities = __t.object("PreviewEntities", {});
 export type PreviewEntities = __Infer<typeof PreviewEntities>;

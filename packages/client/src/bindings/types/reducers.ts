@@ -42,6 +42,7 @@ import RunnerHeartbeatReducer from "../runner_heartbeat_reducer.ts";
 import SaveScenarioReducer from "../save_scenario_reducer.ts";
 import SetDisplayNameReducer from "../set_display_name_reducer.ts";
 import SetMemberRoleReducer from "../set_member_role_reducer.ts";
+import SetModeReducer from "../set_mode_reducer.ts";
 import SetRoomLabelReducer from "../set_room_label_reducer.ts";
 import StartAgentRunReducer from "../start_agent_run_reducer.ts";
 
@@ -81,6 +82,7 @@ export type RunnerHeartbeatParams = __Infer<typeof RunnerHeartbeatReducer>;
 export type SaveScenarioParams = __Infer<typeof SaveScenarioReducer>;
 export type SetDisplayNameParams = __Infer<typeof SetDisplayNameReducer>;
 export type SetMemberRoleParams = __Infer<typeof SetMemberRoleReducer>;
+export type SetModeParams = __Infer<typeof SetModeReducer>;
 export type SetRoomLabelParams = __Infer<typeof SetRoomLabelReducer>;
 export type StartAgentRunParams = __Infer<typeof StartAgentRunReducer>;
 

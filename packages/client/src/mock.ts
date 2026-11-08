@@ -5,8 +5,8 @@
  * the runner (one 2 s chunk every 2 s ÷ pace) so the LIVE edge behaves the same.
  */
 import {
-  applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, metricsDelta,
-  ruleLabels, type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type Role, type RoomFacts, type RoomKind, type RoomLabel, type SimulationScenario,
+  applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, LOCKED_MESSAGE, locksEditing, metricsDelta,
+  ruleLabels, type PresenceMode, type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type Role, type RoomFacts, type RoomKind, type RoomLabel, type SimulationScenario,
 } from '@egress/core';
 import { initialize, simulateChunks, type RunChunk, type SimState } from '@egress/sim';
 import { LocalEnvironment, runHeuristicAgent, ToolBox, type RunRecord } from '@egress/agent';
@@ -135,7 +135,7 @@ class MockEgressClient implements EgressClient {
 
   async openProject(projectId: ID | null) {
     this.active = projectId;
-    this.members.set(projectId ? [{ identity: 'mock-identity', role: 'owner', joinedAt: Date.now(), online: true, me: true }] : []);
+    this.members.set(projectId ? [{ identity: 'mock-identity', role: 'owner', joinedAt: Date.now(), online: true, me: true, mode: null }] : []);
     this.roomLabels.set(projectId ? [...(this.labels.get(projectId)?.values() ?? [])] : []);
     this.publishDocument(null);
     this.runs.set([]);
@@ -213,11 +213,22 @@ class MockEgressClient implements EgressClient {
     throw new DomainError('INVALID_INPUT', 'A project needs at least one owner.');
   }
 
+  async setMode(mode: PresenceMode | null) {
+    this.members.update(list => list.map(m => (m.me ? { ...m, mode } : m)));
+  }
+
   // ── editing ──
+
+  /** The shared live run locks the layout (D89), exactly as the server does. */
+  private locked(): boolean {
+    const now = Date.now();
+    return this.runs.get().some(r => r.projectId === this.active && locksEditing({ status: r.status, agentJobId: r.agentJobId, updatedAtMs: r.updatedAt }, now));
+  }
 
   async edit(commands: EditCommand[]): Promise<EditResult> {
     const project = this.current();
     if (!project) return { ok: false, error: { code: 'NOT_FOUND', message: 'Open a project first.' } };
+    if (this.locked()) return { ok: false, error: { code: 'PROJECT_LOCKED', message: LOCKED_MESSAGE } };
     const result = applyEdit(project.doc, { requestId: uuid(), commands });
     if (!result.ok) {
       this.publishDocument(result.error);
@@ -239,6 +250,7 @@ class MockEgressClient implements EgressClient {
 
   private history(direction: 'undo' | 'redo'): EditResult | null {
     const project = this.current();
+    if (project && this.locked()) return { ok: false, error: { code: 'PROJECT_LOCKED', message: LOCKED_MESSAGE } };
     const patch = project?.[direction].pop();
     if (!project || !patch) return null;
     const result = applyEdit(project.doc, { requestId: uuid(), commands: [patch] });
@@ -280,16 +292,17 @@ class MockEgressClient implements EgressClient {
   async startRun(scenario: SimulationScenario, pace: Pace): Promise<ID> {
     const project = this.current();
     if (!project) throw new Error('Open a project first.');
+    if (this.locked()) throw new DomainError('PROJECT_LOCKED', 'A simulation is already running on this project. Everyone on Simulate is following it.');
     const runId = `run-${uuid().slice(0, 8)}`;
     const summary: RunSummary = {
       id: runId, projectId: project.summary.id, status: 'running', pace, seed: scenario.population.seed, scenarioName: scenario.name,
-      population: scenario.population.count, layoutRevision: project.doc.revision, progressTick: 0, agentJobId: null, createdAt: Date.now(), error: null,
+      population: scenario.population.count, layoutRevision: project.doc.revision, progressTick: 0, agentJobId: null, createdAt: Date.now(), updatedAt: Date.now(), error: null,
     };
     this.runs.update(list => [summary, ...list]);
     this.lastScenario.set(project.summary.id, scenario);
     const playback = this.playback(runId);
     playback.setLayout(project.doc);
-    const update = (patch: Partial<RunSummary>) => this.runs.update(list => list.map(r => (r.id === runId ? { ...r, ...patch } : r)));
+    const update = (patch: Partial<RunSummary>) => this.runs.update(list => list.map(r => (r.id === runId ? { ...r, ...patch, updatedAt: Date.now() } : r)));
 
     // The real model, in the browser (client-cpu). The runner uses the same code server-side.
     let chunks: Generator<RunChunk>;
@@ -331,7 +344,7 @@ class MockEgressClient implements EgressClient {
 
   async cancelRun(runId: ID) {
     this.cancelled.add(runId);
-    this.runs.update(list => list.map(r => (r.id === runId ? { ...r, status: 'cancelled' } : r)));
+    this.runs.update(list => list.map(r => (r.id === runId ? { ...r, status: 'cancelled', updatedAt: Date.now() } : r)));
     this.playbacks.get(runId)?.setStatus('cancelled');
   }
 
@@ -366,7 +379,7 @@ class MockEgressClient implements EgressClient {
         this.runRecords.set(run.runId, { ...run, projectId });
         this.runs.update(list => [{
           id: run.runId, projectId, status: 'complete', pace: 'unpaced', seed: run.scenario.population.seed, scenarioName: run.label,
-          population: run.metrics.initialPeople, layoutRevision: document.revision, progressTick: run.metrics.tick, agentJobId: jobId, createdAt: Date.now(), error: null,
+          population: run.metrics.initialPeople, layoutRevision: document.revision, progressTick: run.metrics.tick, agentJobId: jobId, createdAt: Date.now(), updatedAt: Date.now(), error: null,
         }, ...list]);
       },
     });
@@ -400,6 +413,7 @@ class MockEgressClient implements EgressClient {
     const project = this.current();
     const proposal = this.proposals.get().find(p => p.id === proposalId);
     if (!project || !proposal || proposal.status !== 'proposed') return;
+    if (this.locked()) throw new DomainError('PROJECT_LOCKED', LOCKED_MESSAGE);
     const result = applyEdit(project.doc, { requestId: proposalId, commands: proposal.commands });
     if (!result.ok) {
       this.setProposalStatus(proposalId, 'stale');

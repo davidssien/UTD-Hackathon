@@ -8,8 +8,8 @@
  * Edits are optimistic (OptimisticDocument), replay chunks feed Playback.
  */
 import {
-  ACTOR_EXITED, canonicalJson, decodeChunk, decodeFieldBundle, DomainError, entitiesToDocument, fieldDifference, metricsDelta, parseDocumentJson,
-  sha256Hex, TICK_RATE_HZ, type ScalarField,
+  ACTOR_EXITED, canonicalJson, decodeChunk, decodeFieldBundle, DomainError, entitiesToDocument, fieldDifference, LOCKED_MESSAGE, locksEditing, metricsDelta,
+  parseDocumentJson, sha256Hex, TICK_RATE_HZ, type PresenceMode, type ScalarField,
   type AgentContext, type DomainErrorData, type EditCommand, type EgressDocument, type Entity, type ID, type Pace, type Role, type RoomFacts, type RoomKind, type RoomLabel,
   type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
@@ -101,6 +101,7 @@ class SpacetimeEgressClient implements EgressClient {
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
               tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus, tables.activeCompareResults,
               tables.myProjectStats, tables.previewEntities, tables.activeShareLink, tables.activePresence, tables.activeRoomLabels,
+              tables.activePresenceModes,
             ]);
         })
         .onConnectError((_ctx, error) => {
@@ -140,6 +141,7 @@ class SpacetimeEgressClient implements EgressClient {
       conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
       conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities, conn.db.activeShareLink, conn.db.activePresence, conn.db.activeRoomLabels,
+      conn.db.activePresenceModes,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
@@ -173,10 +175,11 @@ class SpacetimeEgressClient implements EgressClient {
     })));
 
     const online = new Set([...conn.db.activePresence.iter()].map(p => p.identity.toHexString()));
+    const modes = new Map([...conn.db.activePresenceModes.iter()].filter(p => p.projectId === this.activeProjectId).map(p => [p.identity.toHexString(), p.mode as PresenceMode]));
     const myIdentity = profile?.identity.toHexString();
     this.members.set([...conn.db.activeMembers.iter()].filter(m => m.projectId === this.activeProjectId).map(m => {
-      const identity = m.identity.toHexString();
-      return { identity, role: m.role as Role, joinedAt: ms(m.joinedAt), online: online.has(identity), me: identity === myIdentity };
+      const identity = m.identity.toHexString(), isOnline = online.has(identity);
+      return { identity, role: m.role as Role, joinedAt: ms(m.joinedAt), online: isOnline, me: identity === myIdentity, mode: isOnline ? modes.get(identity) ?? null : null };
     }).sort((a, b) => Number(b.me) - Number(a.me) || Number(b.online) - Number(a.online) || a.joinedAt - b.joinedAt));
 
     this.roomLabels.set([...conn.db.activeRoomLabels.iter()].filter(l => l.projectId === this.activeProjectId).map(l => ({
@@ -205,7 +208,7 @@ class SpacetimeEgressClient implements EgressClient {
       return {
         id: r.id, projectId: r.projectId, status: r.status as RunSummary['status'], pace: r.pace as Pace, seed: r.seed,
         scenarioName: scenario.name ?? 'Run', population: scenario.population?.count ?? 0, layoutRevision: Number(r.layoutRevision),
-        progressTick: r.progressTick, agentJobId: r.agentJobId || null, createdAt: ms(r.createdAt),
+        progressTick: r.progressTick, agentJobId: r.agentJobId || null, createdAt: ms(r.createdAt), updatedAt: ms(r.updatedAt),
         error: r.errorCode ? { code: r.errorCode as DomainErrorData['code'], message: r.errorMessage } : null,
       };
     }).sort((a, b) => b.createdAt - a.createdAt));
@@ -411,7 +414,19 @@ class SpacetimeEgressClient implements EgressClient {
     return patch ? this.send([patch], 'redo') : null;
   }
 
+  /** The open project's shared live run locks the layout (D89); refuse locally before any optimistic change. */
+  private locked(): boolean {
+    const now = Date.now();
+    return this.runs.get().some(r => r.projectId === this.activeProjectId && locksEditing({ status: r.status, agentJobId: r.agentJobId, updatedAtMs: r.updatedAt }, now));
+  }
+
+  async setMode(mode: PresenceMode | null) {
+    const projectId = mode ? this.activeProjectId : null;
+    await this.call(c => c.reducers.setMode({ projectId: projectId ?? '', mode: mode ?? '' }));
+  }
+
   private async send(commands: EditCommand[], history: 'record' | 'undo' | 'redo'): Promise<EditResult> {
+    if (this.locked()) return { ok: false, error: { code: 'PROJECT_LOCKED', message: LOCKED_MESSAGE } };
     const projectId = this.activeProjectId;
     const requestId = uuid();
     const local = this.od.propose(requestId, commands, history);

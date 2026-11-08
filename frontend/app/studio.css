@@ -323,3 +323,12 @@
 .paint-box .icon-button.on{background:var(--ink);color:#fff}
 .paint-box .field .button{height:26px;padding:0 8px;font-weight:500}
 .note:not(.warn):not(.error){background:var(--chrome-2);color:var(--ink-2)}
+
+/* Shared live simulation (D89): the presence chip turns red with a lock, and Edit shows a banner */
+.presence.locked{background:#fdecea;border-color:#f2b8b0;color:var(--bad)}
+.presence.locked svg{color:var(--bad)}
+.presence-pop .lock-note{margin:2px 4px 6px;padding:6px 8px;border-radius:6px;background:#fdecea;color:var(--bad);font-size:12px;white-space:normal}
+.lock-banner{position:absolute;top:56px;left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:8px;height:38px;padding:0 6px 0 12px;border-radius:10px;background:#fdecea;border:1px solid #f2b8b0;color:var(--bad);box-shadow:var(--shadow);font-weight:600;white-space:nowrap}
+.lock-banner>svg{width:16px;height:16px}
+.lock-banner .button{height:28px;padding:0 10px}
+.studio.on-saves .lock-banner{display:none}

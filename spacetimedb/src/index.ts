@@ -10,8 +10,8 @@
 import { schema, SenderError, t, table, type InferSchema, type ReducerCtx } from 'spacetimedb/server';
 import { Timestamp, type Identity } from 'spacetimedb';
 import {
-  applyEdit, canonicalJson, DomainError, emptyDocument, entitiesToDocument, documentToEntities, layoutHash, parseDocumentJson,
-  parseEditRequestJson, parseScenarioJson, parseWith, PaceSchema, RoleSchema, sha256Hex, EditCommandSchema,
+  applyEdit, canonicalJson, DomainError, emptyDocument, entitiesToDocument, documentToEntities, layoutHash, LOCKED_MESSAGE, locksEditing,
+  parseDocumentJson, parseEditRequestJson, parseScenarioJson, parseWith, PaceSchema, PRESENCE_MODES, RoleSchema, sha256Hex, EditCommandSchema,
   type EgressDocument, type Entity, type Role,
 } from '@egress/core';
 
@@ -184,6 +184,14 @@ const online_connections = table({ name: 'online_connections' }, {
   since: t.timestamp(),
 });
 
+/** What each connected person is doing on their open project (PLAN.md §3 K): edit, simulate or analysis. */
+const presence_modes = table({ name: 'presence_modes' }, {
+  identity: t.identity().primaryKey(),
+  projectId: t.string(),
+  mode: t.string(),
+  updatedAt: t.timestamp(),
+});
+
 /** Which project the caller previews on the saves page without opening it (`preview_entities`). */
 const session_preview = table({ name: 'session_preview' }, {
   identity: t.identity().primaryKey(),
@@ -269,7 +277,7 @@ const session_compare = table({ name: 'session_compare' }, {
 const spacetimedb = schema({
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
   layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats, session_compare,
-  project_stats, session_preview, project_links, online_connections, room_labels, label_requests,
+  project_stats, session_preview, project_links, online_connections, room_labels, label_requests, presence_modes,
 });
 export default spacetimedb;
 
@@ -355,6 +363,19 @@ function freezeSnapshot(ctx: Ctx, doc: EgressDocument): string {
   return hash;
 }
 
+/** The project's shared live run, if one locks editing right now (D89). */
+function lockingRun(ctx: Ctx, projectId: string) {
+  const now = Number(ctx.timestamp.microsSinceUnixEpoch / 1000n);
+  for (const run of ctx.db.sim_runs.projectId.filter(projectId)) {
+    if (locksEditing({ status: run.status, agentJobId: run.agentJobId, updatedAtMs: Number(run.updatedAt.microsSinceUnixEpoch / 1000n) }, now)) return run;
+  }
+  return null;
+}
+
+function requireUnlocked(ctx: Ctx, projectId: string): void {
+  if (lockingRun(ctx, projectId)) fail('PROJECT_LOCKED', LOCKED_MESSAGE);
+}
+
 function deleteRun(ctx: Ctx, runId: string): void {
   for (const c of [...ctx.db.replay_chunks.runId.filter(runId)]) ctx.db.replay_chunks.id.delete(c.id);
   ctx.db.sim_results.runId.delete(runId);
@@ -381,8 +402,10 @@ export const onConnect = spacetimedb.clientConnected(ctx => {
 export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
   const online = ctx.db.online_connections.identity.find(ctx.sender);
   if (!online) return;
-  if (online.connections <= 1) ctx.db.online_connections.identity.delete(ctx.sender);
-  else ctx.db.online_connections.identity.update({ ...online, connections: online.connections - 1 });
+  if (online.connections <= 1) {
+    ctx.db.online_connections.identity.delete(ctx.sender);
+    ctx.db.presence_modes.identity.delete(ctx.sender);
+  } else ctx.db.online_connections.identity.update({ ...online, connections: online.connections - 1 });
 });
 
 // ── Identity ────────────────────────────────────────────────────────────────
@@ -441,6 +464,7 @@ export const delete_project = spacetimedb.reducer({ projectId: t.string() }, (ct
   if (ctx.db.project_links.projectId.find(projectId)) ctx.db.project_links.projectId.delete(projectId);
   for (const l of [...ctx.db.room_labels.projectId.filter(projectId)]) ctx.db.room_labels.id.delete(l.id);
   if (ctx.db.label_requests.projectId.find(projectId)) ctx.db.label_requests.projectId.delete(projectId);
+  for (const p of [...ctx.db.presence_modes.iter()]) if (p.projectId === projectId) ctx.db.presence_modes.identity.delete(p.identity);
   ctx.db.projects.id.delete(projectId);
 }));
 
@@ -611,6 +635,16 @@ export const open_project = spacetimedb.reducer({ projectId: t.string() }, (ctx,
   setSession(ctx, { activeProjectId: projectId, activeRunId: '' });
 }));
 
+/** Presence by mode (PLAN.md §3 K). '' clears it, for example when going back to the saves page. */
+export const set_mode = spacetimedb.reducer({ projectId: t.string(), mode: t.string() }, (ctx, { projectId, mode }) => guard(() => {
+  if (!projectId) { ctx.db.presence_modes.identity.delete(ctx.sender); return; }
+  requireRole(ctx, projectId, 'viewer');
+  if (!(PRESENCE_MODES as readonly string[]).includes(mode)) fail('INVALID_INPUT', `Mode must be one of ${PRESENCE_MODES.join(', ')}.`);
+  const row = { identity: ctx.sender, projectId, mode, updatedAt: ctx.timestamp };
+  if (ctx.db.presence_modes.identity.find(ctx.sender)) ctx.db.presence_modes.identity.update(row);
+  else ctx.db.presence_modes.insert(row);
+}));
+
 export const open_run = spacetimedb.reducer({ runId: t.string() }, (ctx, { runId }) => guard(() => {
   if (runId) {
     const run = ctx.db.sim_runs.id.find(runId) ?? fail('NOT_FOUND', `Run ${runId} does not exist.`);
@@ -626,6 +660,7 @@ export const open_run = spacetimedb.reducer({ runId: t.string() }, (ctx, { runId
 export const apply_edit = spacetimedb.reducer({ request: t.string() }, (ctx, { request }) => guard(() => {
   const req = parseEditRequestJson(request);
   requireRole(ctx, req.projectId, 'editor');
+  requireUnlocked(ctx, req.projectId);
   const doc = loadDocument(ctx, req.projectId);
   const result = applyEdit(doc, req);
   if (!result.ok) throw new DomainError(result.error.code, result.error.message, result.error.details);
@@ -638,8 +673,9 @@ export const apply_edit = spacetimedb.reducer({ request: t.string() }, (ctx, { r
   });
 }));
 
+/** Any entity kind, floor surfaces and stairs included (D74, D75). */
 function findIn(doc: EgressDocument, id: string): Entity | undefined {
-  return doc.floors.find(e => e.id === id) ?? doc.vertices.find(e => e.id === id) ?? doc.walls.find(e => e.id === id) ?? doc.openings.find(e => e.id === id);
+  return documentToEntities(doc).find(e => e.id === id);
 }
 
 function dedupe(list: Entity[]): Entity[] {
@@ -666,6 +702,8 @@ export const request_simulation = spacetimedb.reducer(
     requireRole(ctx, s.projectId, 'editor');
     const parsedPace = parseWith(PaceSchema, pace, 'pace');
     if (!/^[A-Za-z0-9_.:-]{6,80}$/.test(runId) || ctx.db.sim_runs.id.find(runId)) fail('INVALID_INPUT', 'Run id must be new and URL-safe.');
+    // One shared live simulation per project (D89).
+    if (lockingRun(ctx, s.projectId)) fail('PROJECT_LOCKED', 'A simulation is already running on this project. Everyone on Simulate is following it.');
     const doc = loadDocument(ctx, s.projectId);
     const hash = freezeSnapshot(ctx, doc);
     ctx.db.sim_runs.insert({
@@ -844,6 +882,7 @@ export const accept_proposal = spacetimedb.reducer({ proposalId: t.string() }, (
   const proposal = ctx.db.proposals.id.find(proposalId) ?? fail('NOT_FOUND', `Proposal ${proposalId} does not exist.`);
   requireRole(ctx, proposal!.projectId, 'editor');
   if (proposal!.status !== 'proposed') fail('INVALID_INPUT', `Proposal is already ${proposal!.status}.`);
+  requireUnlocked(ctx, proposal!.projectId);
   const doc = loadDocument(ctx, proposal!.projectId);
   const commands = JSON.parse(proposal!.commands);
   const result = applyEdit(doc, { requestId: proposalId, commands });
@@ -993,6 +1032,19 @@ export const active_share_link = spacetimedb.view({ name: 'active_share_link', p
 });
 
 /** Who is online on the caller's active project right now: members whose session has it open. */
+/** What the people on the caller's open project are doing (members only). */
+export const active_presence_modes = spacetimedb.view({ name: 'active_presence_modes', public: true }, t.array(presence_modes.rowType), ctx => {
+  const session = ctx.db.sessions.identity.find(ctx.sender);
+  const projectId = session?.activeProjectId;
+  if (!projectId || !isMember(ctx, projectId)) return [];
+  const out = [];
+  for (const m of ctx.db.project_members.projectId.filter(projectId)) {
+    const row = ctx.db.presence_modes.identity.find(m.identity);
+    if (row && row.projectId === projectId) out.push(row);
+  }
+  return out;
+});
+
 export const active_presence = spacetimedb.view({ name: 'active_presence', public: true }, t.array(online_connections.rowType), ctx => {
   const session = ctx.db.sessions.identity.find(ctx.sender);
   const projectId = session?.activeProjectId;

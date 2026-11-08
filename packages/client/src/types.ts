@@ -5,7 +5,7 @@
  */
 import type {
   ActorFrame, AgentContext, AgentStepKind, Aggregation, DomainErrorData, EditCommand, EgressDocument, FieldId, ID, Pace,
-  ProposalNotes, ProposalStatus, Role, RoomFacts, RoomKind, RoomLabel, RunStatus, ScalarField, SimulationMetrics, SimulationScenario,
+  PresenceMode, ProposalNotes, ProposalStatus, Role, RoomFacts, RoomKind, RoomLabel, RunStatus, ScalarField, SimulationMetrics, SimulationScenario,
 } from '@egress/core';
 
 /** Minimal observable value; plugs straight into React's useSyncExternalStore (see `useEgress`). */
@@ -47,6 +47,8 @@ export interface Member {
   /** Connected with this project open right now. */
   online: boolean;
   me: boolean;
+  /** What they are doing on the project while online (PLAN.md §3 K); null when unknown. */
+  mode: PresenceMode | null;
 }
 
 /** Saves page details for one project (PLAN.md §3 B). */
@@ -91,6 +93,8 @@ export interface RunSummary {
   progressTick: number;
   agentJobId: ID | null;
   createdAt: number;
+  /** Last progress (ms). A queued or running user run locks editing until it goes stale (D89). */
+  updatedAt: number;
   error: DomainErrorData | null;
 }
 
@@ -212,8 +216,10 @@ export interface EgressClient {
   /** Editors: correct a room's kind and name; the model never overwrites it afterwards. */
   setRoomLabel(roomHash: string, kind: RoomKind, name: string): Promise<void>;
 
-  /** Members of the open project, with who is online now (presence). */
+  /** Members of the open project, with who is online now and in which mode (presence). */
   readonly members: Store<Member[]>;
+  /** Tell the others which mode this person is in on the open project; null clears it. */
+  setMode(mode: PresenceMode | null): Promise<void>;
   /** The open project's permanent share link code; created on first use. */
   shareLink(): Promise<string>;
   /** Owners only: replace the link. The old one stops working; members keep access. */

@@ -10,13 +10,13 @@ import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, BarsArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
-  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
+  CursorArrowRaysIcon, EyeIcon, FolderIcon, ForwardIcon, LinkIcon, LockClosedIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
   SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import {
-  describeRooms, floorsByLevel, parseDocument, roomFacts, signedArea, type EditCommand, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
+  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
   type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
 } from '@egress/core';
 import { compileFloor, paintWeights } from '@egress/sim';
@@ -36,6 +36,7 @@ type Menu = { x: number; y: number; wallId: string | null; openingId: string | n
 const WALL_TYPES: { id: WallMaterial; name: string }[] = [{ id: 'normal', name: 'Normal' }, { id: 'reinforced', name: 'Reinforced' }, { id: 'glass', name: 'Glass' }];
 const SLAB_TYPES: { id: SlabMaterial; name: string }[] = [{ id: 'wood', name: 'Wood' }, { id: 'basic', name: 'Basic' }, { id: 'tile', name: 'Tile' }];
 const STAIR_EDGES: { id: Stair['upEdge']; name: string }[] = [{ id: 'n', name: 'North' }, { id: 'e', name: 'East' }, { id: 's', name: 'South' }, { id: 'w', name: 'West' }];
+const MODE_LABEL: Record<PresenceMode, string> = { edit: 'Editing', simulate: 'Simulating', analysis: 'Analysis' };
 const MODES: { id: Mode; name: string; key: string }[] = [{ id: 'edit', name: 'Edit', key: '1' }, { id: 'simulate', name: 'Simulate', key: '2' }, { id: 'analysis', name: 'Analysis', key: '3' }];
 const STEP_LABEL: Record<string, string> = {
   inspect_layout: 'Read layout', inspect_run: 'Read run', run_scenario: 'Baseline simulation', get_hotspots: 'Find bottlenecks',
@@ -150,8 +151,29 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const [tagMenu, setTagMenu] = useState<{ hash: string; x: number; y: number } | null>(null);
   const project = projects.find(p => p.id === view.projectId);
   const role = project?.role ?? 'viewer';
-  const canEdit = role !== 'viewer';
   const userRuns = runs.filter(r => !r.agentJobId);
+  // Shared live simulation (D89): one user run per project locks the layout while it runs.
+  // `now` ticks so a stalled run stops locking without any row changing.
+  const [now, setNow] = useState(() => Date.now());
+  const pendingRun = userRuns.some(r => r.status === 'queued' || r.status === 'running');
+  useEffect(() => {
+    if (!pendingRun) return;
+    const timer = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(timer);
+  }, [pendingRun]);
+  const liveRun = userRuns.find(r => locksEditing({ status: r.status, agentJobId: r.agentJobId, updatedAtMs: r.updatedAt }, Math.max(now, r.updatedAt))) ?? null;
+  const locked = !!liveRun;
+  const canEdit = role !== 'viewer';
+  const editable = canEdit && !locked;
+  // Everyone follows a new shared run as soon as it appears, whoever started it. Speed stays per person.
+  const speedRef = useRef(1);
+  const followed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!liveRun || followed.current === liveRun.id) return;
+    followed.current = liveRun.id;
+    setRunId(liveRun.id);
+    const p = client.playback(liveRun.id); p.setSpeed(speedRef.current); p.play(); p.goLive();
+  }, [liveRun?.id, client]); // eslint-disable-line react-hooks/exhaustive-deps
   const activeRunId = runId && runs.some(r => r.id === runId) ? runId : userRuns[0]?.id ?? null;
   const playback = useMemo(() => (activeRunId ? client.playback(activeRunId) : null), [client, activeRunId]);
   const activeRun = runs.find(r => r.id === activeRunId);
@@ -161,6 +183,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     const timer = setTimeout(() => { void client.requestRoomLabels(rooms.map(roomFacts)).catch(() => { /* labels are optional */ }); }, 1500);
     return () => clearTimeout(timer);
   }, [roomKey, canEdit, screen, client]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Presence by mode (PLAN.md §3 K): tell the others where this person is.
+  useEffect(() => {
+    if (status !== 'connected') return;
+    void client.setMode(screen === 'editor' && view.projectId ? mode : null).catch(() => { /* presence is best-effort */ });
+  }, [client, status, screen, mode, view.projectId]);
 
   // Keep the URL pointing at the open project while editing, so it can be shared or reloaded.
   useEffect(() => {
@@ -187,6 +215,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const toSaves = () => { setRail(false); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); setScreen('saves'); };
   const edit = (commands: EditCommand[]) => {
     if (!canEdit) { setError('You have view access to this project.'); return; }
+    if (locked) { setError(LOCKED_MESSAGE); return; }
     void client.edit(commands).then(r => { if (!r.ok) setError(r.error.message); }).catch(fail);
   };
   const switchMode = (next: Mode) => { setMode(next); setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); setBrush(null); };
@@ -243,11 +272,13 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   // Keyboard: tools, history, modes.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (screen === 'saves' || (e.target as HTMLElement)?.closest('input, textarea, select, dialog')) return;
+      if (screen === 'saves' || (e.target as HTMLElement)?.closest?.('input, textarea, select, dialog')) return;
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) {
         if (mode !== 'edit') return;
-        e.preventDefault(); void ((k === 'y' || e.shiftKey) ? client.redo() : client.undo()).catch(fail); return;
+        e.preventDefault();
+        if (locked) { setError(LOCKED_MESSAGE); return; }
+        void ((k === 'y' || e.shiftKey) ? client.redo() : client.undo()).catch(fail); return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Escape') { setTool('select'); setSelected(null); setMenu(null); setTypeMenu(null); setSlabMenu(null); setFloorPanel(false); setLayersOpen(false); setExportOpen(false); setBrush(null); return; }
@@ -260,8 +291,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       if (k === 'f') { scene.current?.view('fit'); return; }
       if (mode === 'edit') {
         const tools: Record<string, SceneTool> = { v: 'select', w: 'wall', r: 'box', g: 'slab', t: 'stair', d: 'door', n: 'window', e: 'exit', x: 'erase' };
-        if (tools[k] && (canEdit || k === 'v')) { choose(tools[k]); return; }
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selected && canEdit) { e.preventDefault(); edit([{ kind: 'deleteEntities', ids: [selected] }]); setSelected(null); }
+        if (tools[k] && (editable || k === 'v')) { choose(tools[k]); return; }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selected && editable) { e.preventDefault(); edit([{ kind: 'deleteEntities', ids: [selected] }]); setSelected(null); }
       }
       if (mode === 'simulate' && playback) {
         if (e.code === 'Space') { e.preventDefault(); playback.toggle(); }
@@ -275,12 +306,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const startRun = (people: number, seed: number) => {
     if (!doc) return;
     setError(''); setBrush(null);
+    followed.current = null;
     const painted = distribution === 'painted' && strokes.length > 0;
     void client.startRun({ scenarioVersion: 1, id: `s-${crypto.randomUUID()}`, projectId: doc.projectId, name: 'Evacuate', durationSeconds: 900, population: { count: people, distribution: painted ? 'painted' : 'uniform', strokes: painted ? strokes : [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] } }, 'x4')
-      .then(id => { setRunId(id); const p = client.playback(id); p.setSpeed(speedRef.current); p.play(); })
+      .then(id => { followed.current = id; setRunId(id); const p = client.playback(id); p.setSpeed(speedRef.current); p.play(); })
       .catch(fail);
   };
-  const speedRef = useRef(1);
 
   const exportJson = () => {
     if (!doc) return;
@@ -299,14 +330,14 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const saving = view.pending > 0;
 
   return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || slabMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
-    <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={canEdit ? tool : 'select'} wallType={wallType} selected={selected}
+    <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={editable ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
       tags={tags} onTag={(hash, at) => { if (canEdit) setTagMenu({ hash, ...at }); }}
       onContext={(at, hit) => {
         setTypeMenu(null); setSlabMenu(null);
-        setMenu(hit && canEdit ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null, slabId: hit.slabId ?? null, stairId: hit.stairId ?? null } : null);
+        setMenu(hit && editable ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null, slabId: hit.slabId ?? null, stairId: hit.stairId ?? null } : null);
         if (hit) setSelected(hit.openingId ?? hit.wallId ?? hit.stairId ?? hit.slabId ?? null);
       }} />
 
@@ -323,14 +354,22 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       {MODES.map(m => <button key={m.id} aria-pressed={mode === m.id} onClick={() => switchMode(m.id)} data-tip={`${m.name} (${m.key})`}>{m.name}</button>)}
     </nav>
 
+    {locked && mode !== 'simulate' && <div className="lock-banner" role="status"><LockClosedIcon /><span>Simulation running · editing locked</span>
+      <button className="button" onClick={() => switchMode('simulate')}><EyeIcon />Watch</button>
+      {canEdit && <button className="button danger" onClick={() => { if (liveRun) void client.cancelRun(liveRun.id).catch(fail); }}><StopIcon />Stop</button>}
+    </div>}
+
     {/* Right column: server state and Layers on top, Layers panel, then the context pane; nothing overlaps (D70) */}
     <div className="right-column">
       <div className="hud-right">
         {!runner.online && backend !== 'mock' && <span className="chip warn" data-tip="Runs and the agent wait until the simulation server is back"><SignalSlashIcon />Sim server offline</span>}
-        {members.length > 0 && <div className="presence" tabIndex={0} aria-label={`${members.filter(m => m.online).length} people on this project`}>
-          <UserIcon /><span>{members.filter(m => m.online).length}</span>
+        {members.length > 0 && <div className={`presence ${locked ? 'locked' : ''}`} tabIndex={0}
+          aria-label={`${members.filter(m => m.online).length} people on this project${locked ? '; editing is locked while a simulation runs' : ''}`}>
+          {locked ? <LockClosedIcon /> : <UserIcon />}<span>{members.filter(m => m.online).length}</span>
           <div className="presence-pop" role="tooltip">
-            {members.filter(m => m.online).map(m => <div key={m.identity}><i className="dot on" /><code>{m.identity.slice(0, 10)}…</code>{m.me && <em>You</em>}<span>{m.role}</span></div>)}
+            {locked && <p className="lock-note">Simulation running. Editing unlocks when it ends or someone stops it.</p>}
+            {members.filter(m => m.online).map(m => <div key={m.identity}><i className="dot on" /><code>{m.identity.slice(0, 10)}…</code>{m.me && <em>You</em>}
+              <span>{m.mode ? MODE_LABEL[m.mode] : ''}{m.mode ? ' · ' : ''}{m.role}</span></div>)}
           </div>
         </div>}
         <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
@@ -338,14 +377,15 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       {layersOpen && <LayersPanel layer={layer} onChange={setLayer} />}
       {showPane && !paneCollapsed && <aside className="pane" aria-label="Details">
         <button className="pane-collapse" aria-label="Collapse panel" data-tip="Collapse" data-tip-side="left" onClick={() => setPaneCollapsed(true)}><ChevronRightIcon /></button>
-        {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
-        {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
-        {mode === 'edit' && slab && <SlabInspector slab={slab} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [slab.id] }]); setSelected(null); }} />}
-        {mode === 'edit' && stair && doc && <StairInspector stair={stair} doc={doc} canEdit={canEdit} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [stair.id] }]); setSelected(null); }} />}
+        {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
+        {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
+        {mode === 'edit' && slab && <SlabInspector slab={slab} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [slab.id] }]); setSelected(null); }} />}
+        {mode === 'edit' && stair && doc && <StairInspector stair={stair} doc={doc} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [stair.id] }]); setSelected(null); }} />}
         {mode === 'simulate' && <SimulatePane client={client} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }} hasDoc={!!doc}
           distribution={distribution} onDistribution={d => { setDistribution(d); setBrush(d === 'painted' ? { radiusM: 2, mode: 'increase' } : null); }}
-          brush={brush} onBrush={setBrush} strokes={strokes.length} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent} />}
-        {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} onError={fail} />}
+          brush={brush} onBrush={setBrush} strokes={strokes.length} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent}
+          canRun={canEdit} />}
+        {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} locked={locked} onError={fail} />}
       </aside>}
     </div>
     {showPane && paneCollapsed && <button className="pane-tab" aria-label="Open panel" onClick={() => setPaneCollapsed(false)}><ChevronLeftIcon /></button>}
@@ -372,25 +412,25 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     <footer className="dock" aria-label={`${mode} tools`}>
       {mode === 'edit' && <>
         <Tool tip="Select (V)" on={tool === 'select'} onClick={() => choose('select')}><CursorArrowRaysIcon /></Tool>
-        <Tool tip={`Wall · ${WALL_TYPES.find(t => t.id === wallType)!.name} (W) · right-click for type`} on={tool === 'wall'} disabled={!canEdit} onClick={() => choose('wall')}
-          onContextMenu={e => { e.preventDefault(); if (!canEdit) return; const r = e.currentTarget.getBoundingClientRect(); setMenu(null); setTypeMenu({ x: r.left + r.width / 2, y: r.top }); }}>
+        <Tool tip={`Wall · ${WALL_TYPES.find(t => t.id === wallType)!.name} (W) · right-click for type`} on={tool === 'wall'} disabled={!editable} onClick={() => choose('wall')}
+          onContextMenu={e => { e.preventDefault(); if (!editable) return; const r = e.currentTarget.getBoundingClientRect(); setMenu(null); setTypeMenu({ x: r.left + r.width / 2, y: r.top }); }}>
           <PencilIcon /><i className={`swatch ${wallType}`} />
         </Tool>
-        <Tool tip="Room (R)" on={tool === 'box'} disabled={!canEdit} onClick={() => choose('box')}><StopIcon /></Tool>
-        <Tool tip={`Floor · ${SLAB_TYPES.find(t => t.id === slabType)!.name} (G) · click a room or drag · right-click for finish`} on={tool === 'slab'} disabled={!canEdit} onClick={() => choose('slab')}
-          onContextMenu={e => { e.preventDefault(); if (!canEdit) return; const r = e.currentTarget.getBoundingClientRect(); setMenu(null); setTypeMenu(null); setSlabMenu({ x: r.left + r.width / 2, y: r.top }); }}>
+        <Tool tip="Room (R)" on={tool === 'box'} disabled={!editable} onClick={() => choose('box')}><StopIcon /></Tool>
+        <Tool tip={`Floor · ${SLAB_TYPES.find(t => t.id === slabType)!.name} (G) · click a room or drag · right-click for finish`} on={tool === 'slab'} disabled={!editable} onClick={() => choose('slab')}
+          onContextMenu={e => { e.preventDefault(); if (!editable) return; const r = e.currentTarget.getBoundingClientRect(); setMenu(null); setTypeMenu(null); setSlabMenu({ x: r.left + r.width / 2, y: r.top }); }}>
           <Squares2X2Icon /><i className={`swatch floor-${slabType}`} />
         </Tool>
-        <Tool tip={floor && floors.some(f => f.level === floor.level + 1) ? 'Stair (T) · drag toward the top' : 'Stair (T) · add a floor above first'} on={tool === 'stair'} disabled={!canEdit} onClick={() => choose('stair')}><BarsArrowUpIcon /></Tool>
+        <Tool tip={floor && floors.some(f => f.level === floor.level + 1) ? 'Stair (T) · drag toward the top' : 'Stair (T) · add a floor above first'} on={tool === 'stair'} disabled={!editable} onClick={() => choose('stair')}><BarsArrowUpIcon /></Tool>
         <span className="sep" />
-        <Tool tip="Door (D)" on={tool === 'door'} disabled={!canEdit} onClick={() => choose('door')}><ArrowRightEndOnRectangleIcon /></Tool>
-        <Tool tip="Window (N)" on={tool === 'window'} disabled={!canEdit} onClick={() => choose('window')}><WindowIcon /></Tool>
-        <Tool tip="Exit (E)" on={tool === 'exit'} disabled={!canEdit} onClick={() => choose('exit')}><ArrowRightStartOnRectangleIcon /></Tool>
+        <Tool tip="Door (D)" on={tool === 'door'} disabled={!editable} onClick={() => choose('door')}><ArrowRightEndOnRectangleIcon /></Tool>
+        <Tool tip="Window (N)" on={tool === 'window'} disabled={!editable} onClick={() => choose('window')}><WindowIcon /></Tool>
+        <Tool tip="Exit (E)" on={tool === 'exit'} disabled={!editable} onClick={() => choose('exit')}><ArrowRightStartOnRectangleIcon /></Tool>
         <span className="sep" />
-        <Tool tip="Erase (X) · click or drag across walls" on={tool === 'erase'} disabled={!canEdit} onClick={() => choose('erase')}><BackspaceIcon /></Tool>
+        <Tool tip="Erase (X) · click or drag across walls" on={tool === 'erase'} disabled={!editable} onClick={() => choose('erase')}><BackspaceIcon /></Tool>
         <span className="sep" />
-        <Tool tip="Undo (Ctrl+Z)" disabled={!view.canUndo || !canEdit} onClick={() => void client.undo().catch(fail)}><ArrowUturnLeftIcon /></Tool>
-        <Tool tip="Redo (Ctrl+Shift+Z)" disabled={!view.canRedo || !canEdit} onClick={() => void client.redo().catch(fail)}><ArrowUturnRightIcon /></Tool>
+        <Tool tip="Undo (Ctrl+Z)" disabled={!view.canUndo || !editable} onClick={() => void client.undo().catch(fail)}><ArrowUturnLeftIcon /></Tool>
+        <Tool tip="Redo (Ctrl+Shift+Z)" disabled={!view.canRedo || !editable} onClick={() => void client.redo().catch(fail)}><ArrowUturnRightIcon /></Tool>
       </>}
       {mode === 'simulate' && <Transport playback={playback} running={running} onSpeed={s => { speedRef.current = s; }} />}
       {mode === 'analysis' && <ChatBar client={client} playback={playback} onError={fail} disabled={!doc} />}
@@ -401,8 +441,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <button className="icon-button" aria-label="Floor below" data-tip="Floor below (PgDn)" disabled={floors[0]?.id === floor.id} onClick={() => { const i = floors.findIndex(f => f.id === floor.id); setFloorId(floors[i - 1]?.id ?? floor.id); setSelected(null); }}><ChevronLeftIcon /></button>
       <button className="floor-name" onClick={() => setFloorPanel(v => !v)} aria-expanded={floorPanel} data-tip="Floor settings">{floor.name || `Floor ${floor.level + 1}`}<em>{floor.elevationM.toFixed(1)} m</em></button>
       <button className="icon-button" aria-label="Floor above" data-tip="Floor above (PgUp)" disabled={floors.at(-1)?.id === floor.id} onClick={() => { const i = floors.findIndex(f => f.id === floor.id); setFloorId(floors[i + 1]?.id ?? floor.id); setSelected(null); }}><ChevronRightIcon /></button>
-      {canEdit && mode === 'edit' && <button className="icon-button" aria-label="Add a floor on top" data-tip="Add floor on top" onClick={addFloor}><PlusIcon /></button>}
-      {floorPanel && <FloorPanel floor={floor} count={floors.length} canEdit={canEdit && mode === 'edit'} onClose={() => setFloorPanel(false)}
+      {editable && mode === 'edit' && <button className="icon-button" aria-label="Add a floor on top" data-tip="Add floor on top" onClick={addFloor}><PlusIcon /></button>}
+      {floorPanel && <FloorPanel floor={floor} count={floors.length} canEdit={editable && mode === 'edit'} onClose={() => setFloorPanel(false)}
         onEdit={patch => edit([{ kind: 'updateFloor', floorId: floor.id, patch }])}
         onDelete={() => { edit([{ kind: 'deleteEntities', ids: [floor.id] }]); setFloorId(null); setFloorPanel(false); }} />}
     </div>}
@@ -547,8 +587,8 @@ function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
 
 // ── Simulate ────────────────────────────────────────────────────────────────
 
-function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasDoc, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors }: {
-  client: EgressClient; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; hasDoc: boolean;
+function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasDoc, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun }: {
+  client: EgressClient; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; hasDoc: boolean; canRun: boolean;
   onRun(people: number, seed: number): void; onStop(): void;
   distribution: 'uniform' | 'painted'; onDistribution(d: 'uniform' | 'painted'): void;
   brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: number; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
@@ -585,11 +625,12 @@ function SimulatePane({ client, playback, running, runFailed, runnerOnline, hasD
       {playback && <RunReadout playback={playback} />}
       {runFailed && <p className="note error">{runFailed}</p>}
       {!runnerOnline && <p className="note warn">Simulation server offline</p>}
+      {running && <p className="note">Everyone on this project sees this run live, and editing is locked until it ends.</p>}
       {upperFloors && <p className="note">The evacuation covers the ground floor; upper floors and stairs join the simulation in a later pass.</p>}
     </div>
     <div className="pane-actions">
-      {running ? <button className="button danger" onClick={onStop}><StopIcon />Stop</button>
-        : <button className="button primary" disabled={!hasDoc} onClick={() => onRun(people, seed)}><PlayIcon />{playback ? 'Run again' : 'Run evacuation'}</button>}
+      {running ? <button className="button danger" disabled={!canRun} onClick={onStop}><StopIcon />Stop</button>
+        : <button className="button primary" disabled={!hasDoc || !canRun} onClick={() => onRun(people, seed)}><PlayIcon />{playback ? 'Run again' : 'Run evacuation'}</button>}
     </div>
   </>;
 }
@@ -669,8 +710,8 @@ function stepValue(step: AgentStep): string | null {
   return null;
 }
 
-function AnalysisPane({ client, preview, comparison, diffMap, canEdit, onDiffMap, onPreview, onError }: {
-  client: EgressClient; preview: ProposalView | null; comparison: RunComparison | null; diffMap: boolean; canEdit: boolean;
+function AnalysisPane({ client, preview, comparison, diffMap, canEdit, locked, onDiffMap, onPreview, onError }: {
+  client: EgressClient; preview: ProposalView | null; comparison: RunComparison | null; diffMap: boolean; canEdit: boolean; locked: boolean;
   onDiffMap(v: boolean): void; onPreview(id: string | null): void; onError(e: unknown): void;
 }) {
   const jobs = useEgress(client.agentJobs), steps = useEgress(client.agentSteps), proposals = useEgress(client.proposals);
@@ -704,7 +745,7 @@ function AnalysisPane({ client, preview, comparison, diffMap, canEdit, onDiffMap
     </div>
     {preview?.status === 'proposed' && <div className="pane-actions two">
       <button className="button" disabled={!canEdit} onClick={() => void client.rejectProposal(preview.id).catch(onError)}><XMarkIcon />Reject</button>
-      <button className="button primary" disabled={!canEdit || !preview.ghost} onClick={() => void client.acceptProposal(preview.id).catch(onError)}><CheckIcon />Accept</button>
+      <button className="button primary" disabled={!canEdit || !preview.ghost || locked} data-tip={locked ? 'Editing is locked while a simulation runs' : undefined} onClick={() => void client.acceptProposal(preview.id).catch(onError)}><CheckIcon />Accept</button>
     </div>}
   </>;
 }

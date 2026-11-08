@@ -70,6 +70,7 @@ import RunnerHeartbeatReducer from "./runner_heartbeat_reducer.ts";
 import SaveScenarioReducer from "./save_scenario_reducer.ts";
 import SetDisplayNameReducer from "./set_display_name_reducer.ts";
 import SetMemberRoleReducer from "./set_member_role_reducer.ts";
+import SetModeReducer from "./set_mode_reducer.ts";
 import SetRoomLabelReducer from "./set_room_label_reducer.ts";
 import StartAgentRunReducer from "./start_agent_run_reducer.ts";
 
@@ -83,6 +84,7 @@ import ActiveEditLogRow from "./active_edit_log_table.ts";
 import ActiveEntitiesRow from "./active_entities_table.ts";
 import ActiveMembersRow from "./active_members_table.ts";
 import ActivePresenceRow from "./active_presence_table.ts";
+import ActivePresenceModesRow from "./active_presence_modes_table.ts";
 import ActiveProposalsRow from "./active_proposals_table.ts";
 import ActiveReplayRow from "./active_replay_table.ts";
 import ActiveResultRow from "./active_result_table.ts";
@@ -156,6 +158,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ActivePresenceRow),
+  activePresenceModes: __table({
+    name: 'active_presence_modes',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ActivePresenceModesRow),
   activeProposals: __table({
     name: 'active_proposals',
     indexes: [
@@ -329,6 +338,7 @@ const reducersSchema = __reducers(
   __reducerSchema("save_scenario", SaveScenarioReducer),
   __reducerSchema("set_display_name", SetDisplayNameReducer),
   __reducerSchema("set_member_role", SetMemberRoleReducer),
+  __reducerSchema("set_mode", SetModeReducer),
   __reducerSchema("set_room_label", SetRoomLabelReducer),
   __reducerSchema("start_agent_run", StartAgentRunReducer),
 );
@@ -353,6 +363,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "active_members": Omit<typeof tablesSchema.schemaType.tables["activeMembers"], "accessorName"> & { readonly accessorName: "active_members" };
     /** @deprecated Use `activePresence` instead. This alias will be removed in the next major version. */
     readonly "active_presence": Omit<typeof tablesSchema.schemaType.tables["activePresence"], "accessorName"> & { readonly accessorName: "active_presence" };
+    /** @deprecated Use `activePresenceModes` instead. This alias will be removed in the next major version. */
+    readonly "active_presence_modes": Omit<typeof tablesSchema.schemaType.tables["activePresenceModes"], "accessorName"> & { readonly accessorName: "active_presence_modes" };
     /** @deprecated Use `activeProposals` instead. This alias will be removed in the next major version. */
     readonly "active_proposals": Omit<typeof tablesSchema.schemaType.tables["activeProposals"], "accessorName"> & { readonly accessorName: "active_proposals" };
     /** @deprecated Use `activeReplay` instead. This alias will be removed in the next major version. */
@@ -416,6 +428,7 @@ const tableAccessorAliases = {
   "active_entities": "activeEntities",
   "active_members": "activeMembers",
   "active_presence": "activePresence",
+  "active_presence_modes": "activePresenceModes",
   "active_proposals": "activeProposals",
   "active_replay": "activeReplay",
   "active_result": "activeResult",
@@ -469,6 +482,8 @@ export type DbView = __DbViewBase & {
   readonly "active_members": __DbViewBase["activeMembers"];
   /** @deprecated Use `activePresence` instead. This alias will be removed in the next major version. */
   readonly "active_presence": __DbViewBase["activePresence"];
+  /** @deprecated Use `activePresenceModes` instead. This alias will be removed in the next major version. */
+  readonly "active_presence_modes": __DbViewBase["activePresenceModes"];
   /** @deprecated Use `activeProposals` instead. This alias will be removed in the next major version. */
   readonly "active_proposals": __DbViewBase["activeProposals"];
   /** @deprecated Use `activeReplay` instead. This alias will be removed in the next major version. */
@@ -525,6 +540,8 @@ export type Tables = __TablesBase & {
   readonly "active_members": __TablesBase["activeMembers"];
   /** @deprecated Use `activePresence` instead. This alias will be removed in the next major version. */
   readonly "active_presence": __TablesBase["activePresence"];
+  /** @deprecated Use `activePresenceModes` instead. This alias will be removed in the next major version. */
+  readonly "active_presence_modes": __TablesBase["activePresenceModes"];
   /** @deprecated Use `activeProposals` instead. This alias will be removed in the next major version. */
   readonly "active_proposals": __TablesBase["activeProposals"];
   /** @deprecated Use `activeReplay` instead. This alias will be removed in the next major version. */
