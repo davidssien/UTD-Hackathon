@@ -76,9 +76,11 @@ export async function startRunner(options: { uri?: string; db?: string; token?: 
   };
   conn.db.runnerQueue.onInsert(() => pump());
   conn.db.runnerAgentQueue.onInsert(() => pump());
+  let labelsReady = false;
+  backend.subscribeLabels().then(() => { labelsReady = true; labelling(); }).catch(e => log(`[runner] room labelling off: ${e instanceof Error ? e.message : String(e)}`));
   conn.db.runnerLabelQueue.onInsert(() => labelling());
   conn.db.runnerLabelQueue.onUpdate(() => labelling());
-  const labelTimer = setInterval(labelling, 1000);
+  const labelTimer = setInterval(() => { if (labelsReady) labelling(); }, 1000);
   const timer = setInterval(pump, 1000); // belt and braces in case an insert callback is missed
   pump();
 

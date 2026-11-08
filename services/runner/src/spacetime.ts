@@ -60,7 +60,20 @@ export class SpacetimeBackend implements RunnerBackend {
       this.conn.subscriptionBuilder()
         .onApplied(() => resolve())
         .onError(ctx => reject(new Error(`runner subscription failed: ${String((ctx as { event?: unknown }).event ?? 'unknown')}`)))
-        .subscribe([tables.runnerQueue, tables.runnerAgentQueue, tables.runnerInputs, tables.runnerLabelQueue]);
+        .subscribe([tables.runnerQueue, tables.runnerAgentQueue, tables.runnerInputs]);
+    });
+  }
+
+  /**
+   * Room labelling is optional: a database published before labels existed has no
+   * runner_label_queue, and that must not stop runs and agent jobs.
+   */
+  subscribeLabels(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.conn.subscriptionBuilder()
+        .onApplied(() => resolve())
+        .onError(ctx => reject(new Error(`label queue unavailable: ${String((ctx as { event?: unknown }).event ?? 'unknown')}`)))
+        .subscribe([tables.runnerLabelQueue]);
     });
   }
 
