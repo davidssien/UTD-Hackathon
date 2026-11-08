@@ -14,6 +14,8 @@
 .scene-loading,.egress-scene{position:absolute;inset:0}
 .egress-scene canvas{display:block;touch-action:none}
 .egress-scene.tool-wall canvas,.egress-scene.tool-box canvas,.egress-scene.tool-door canvas,.egress-scene.tool-window canvas,.egress-scene.tool-exit canvas{cursor:crosshair}
+.egress-scene.tool-pan canvas{cursor:grab}
+.egress-scene.tool-pan canvas:active{cursor:grabbing}
 .egress-scene.tool-erase canvas{cursor:cell}
 .scene-error{position:absolute;top:40%;left:50%;transform:translateX(-50%);background:var(--chrome);padding:12px 16px;border-radius:var(--radius)}
 
@@ -327,8 +329,9 @@
 
 @media (prefers-reduced-motion:no-preference){
   .menu,.layers-panel,.presence-pop,.paint-box{animation:studio-flyout .16s ease-out}
-  .pane{animation:studio-pane-in .2s ease-out}
-  .rail{animation:studio-rail-in .2s ease-out}
+  .pane,.rail{transition:translate .2s ease,opacity .2s ease,visibility 0s}
+  .pane[aria-hidden=true],.rail[aria-hidden=true]{transition-delay:0s,0s,.2s}
+  @starting-style{.pane[aria-hidden=false]{opacity:0;translate:24px 0}}
   .rail-tab,.pane-tab{transition:transform .45s cubic-bezier(.4,0,.2,1),width .16s ease,opacity .3s}
   .mode-switch button,.speeds button{transition:background-color .16s,color .16s}
   @supports (interpolate-size:allow-keywords){
@@ -337,8 +340,9 @@
   }
 }
 @keyframes studio-flyout{from{opacity:0;translate:0 4px}to{opacity:1;translate:0 0}}
-@keyframes studio-pane-in{from{opacity:0;translate:12px 0}to{opacity:1;translate:0 0}}
-@keyframes studio-rail-in{from{opacity:0;translate:-10px 0}to{opacity:1;translate:0 0}}
+.rail[aria-hidden=true],.pane[aria-hidden=true]{opacity:0;visibility:hidden;pointer-events:none}
+.rail[aria-hidden=true]{translate:calc(-100% - 12px) 0}
+.pane[aria-hidden=true]{translate:calc(100% + 32px) 0}
 
 /* Shared live simulation (D89): the presence chip turns red with a lock, and Edit shows a banner */
 .presence.locked{background:#fdecea;border-color:#f2b8b0;color:var(--bad)}

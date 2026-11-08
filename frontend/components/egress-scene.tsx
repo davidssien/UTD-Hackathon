@@ -18,7 +18,7 @@ import { encodeField, fieldScale } from '@/lib/heatmap';
 import { floorSurface, stairSteps, upEdgeOf } from '@/lib/stairs';
 import { ViewCube } from './scene/viewcube';
 
-export type SceneTool = 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'slab' | 'stair';
+export type SceneTool = 'pan' | 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'slab' | 'stair';
 /** Population brush (Simulate, D76): strokes change where people start, never how many. */
 export interface PaintBrush { radiusM: number; mode: 'increase' | 'decrease' | 'erase' }
 export interface PaintStroke { points: Vec2[]; radiusM: number; mode: PaintBrush['mode'] }
@@ -431,7 +431,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         stroke = [at]; renderer.domElement.setPointerCapture(e.pointerId); return;
       }
       if (!latest.current.editing || transition) return;
-      if (e.button === 1 || (e.button === 0 && spaceHeld)) return; // OrbitControls pans
+      if (e.button === 1 || (e.button === 0 && (spaceHeld || latest.current.tool === 'pan'))) return; // OrbitControls pans
       down = { at: groundAt(e), px: { x: e.clientX, y: e.clientY }, button: e.button };
       renderer.domElement.setPointerCapture(e.pointerId);
     };
@@ -451,7 +451,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         return;
       }
       brush.visible = false;
-      if (!state.editing) { ring.visible = false; return; }
+      if (!state.editing || spaceHeld || state.tool === 'pan') { ring.visible = false; return; }
       const raw = groundAt(e); if (!raw) return;
       const p = snap(raw), tool = state.tool;
       ring.visible = tool !== 'select' && !spaceHeld;
@@ -565,14 +565,20 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       if (e.key === 'Escape') r.cancel();
       if (e.code === 'Space' && latest.current.editing && !spaceHeld) { spaceHeld = true; controls.mouseButtons.LEFT = THREE.MOUSE.PAN; renderer.domElement.style.cursor = 'grab'; }
     };
+    const restorePointer = () => {
+      spaceHeld = false;
+      const state = latest.current;
+      if (state.editing) controls.mouseButtons.LEFT = state.tool === 'pan' ? THREE.MOUSE.PAN : null as unknown as THREE.MOUSE;
+      renderer.domElement.style.cursor = '';
+    };
     const keyup = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && spaceHeld) { spaceHeld = false; controls.mouseButtons.LEFT = latest.current.editing ? (null as unknown as THREE.MOUSE) : THREE.MOUSE.ROTATE; renderer.domElement.style.cursor = ''; }
+      if (e.code === 'Space' && spaceHeld) { restorePointer(); }
     };
     const noMenu = (e: Event) => e.preventDefault();
     const el = renderer.domElement;
     el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove); el.addEventListener('pointerup', onUp);
     el.addEventListener('pointerleave', onLeave); el.addEventListener('contextmenu', noMenu);
-    window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
+    window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup); window.addEventListener('blur', restorePointer);
 
     const resize = new ResizeObserver(() => {
       r.dirty = true;
@@ -725,7 +731,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       cancelAnimationFrame(raf); resize.disconnect(); controls.dispose(); cube.dispose();
       el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointerleave', onLeave); el.removeEventListener('contextmenu', noMenu);
-      window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup);
+      window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', restorePointer);
       disposeChildren(walls); disposeChildren(floors); disposeChildren(preview);
       for (const m of [ground, shadowCatcher, grid, brush, ring, people, heat]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
       for (const k of ['uPrev', 'uNext']) ((heat.material as THREE.ShaderMaterial).uniforms[k].value as THREE.Texture).dispose();
@@ -747,6 +753,10 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     r.frame(props.editing ? 'top' : 'iso');
   }, [props.editing, library]);
   useEffect(() => { runtime.current?.cancel(); }, [props.tool, props.wallType, props.floorId]);
+  useEffect(() => {
+    const r = runtime.current; if (!r || !props.editing) return;
+    r.controls.mouseButtons.LEFT = props.tool === 'pan' ? THREE.MOUSE.PAN : null as unknown as THREE.MOUSE;
+  }, [props.tool, props.editing, library]);
   // Painting (outside Edit) takes the left button; orbit returns when the brush is put away.
   const painting = !props.editing && !!props.paint;
   useEffect(() => {

@@ -10,8 +10,8 @@ import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, BarsArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
-  CursorArrowRaysIcon, EyeIcon, FolderIcon, ForwardIcon, LinkIcon, LockClosedIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
-  SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
+  CursorArrowRaysIcon, EyeIcon, HandRaisedIcon, ForwardIcon, LinkIcon, LockClosedIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
+  SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
@@ -293,8 +293,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       const m = MODES.find(x => x.key === e.key); if (m) { switchMode(m.id); return; }
       if (k === 'f') { scene.current?.view('fit'); return; }
       if (mode === 'edit') {
-        const tools: Record<string, SceneTool> = { v: 'select', w: 'wall', r: 'box', g: 'slab', t: 'stair', d: 'door', n: 'window', e: 'exit', x: 'erase' };
-        if (tools[k] && (editable || k === 'v')) { choose(tools[k]); return; }
+        const tools: Record<string, SceneTool> = { v: 'select', h: 'pan', w: 'wall', r: 'box', g: 'slab', t: 'stair', d: 'door', n: 'window', e: 'exit', x: 'erase' };
+        if (tools[k] && (editable || k === 'v' || k === 'h')) { choose(tools[k]); return; }
         if ((e.key === 'Delete' || e.key === 'Backspace') && selected && editable) { e.preventDefault(); edit([{ kind: 'deleteEntities', ids: [selected] }]); setSelected(null); }
       }
       if (mode === 'simulate' && playback) {
@@ -332,8 +332,16 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const upperContent = !!doc && floors.length > 1 && doc.walls.some(w => w.floorId !== floors[0].id);
   const saving = view.pending > 0;
 
-  return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || slabMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
-    <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={editable ? tool : 'select'} wallType={wallType} selected={selected}
+  return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || slabMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}
+    onPointerDownCapture={e => {
+      const target = e.target as Element;
+      if (!target.closest('.rail-anchor')) setExportOpen(false);
+      if (!target.closest('.type-menu, .dock')) { setTypeMenu(null); setSlabMenu(null); }
+      if (!target.closest('.context-menu')) setMenu(null);
+      if (!target.closest('.floor-switch')) setFloorPanel(false);
+      if (!target.closest('.layers-panel, .hud-button')) setLayersOpen(false);
+    }}>
+    <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
@@ -349,7 +357,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <i className={`sync ${status !== 'connected' ? 'off' : saving ? 'busy' : 'ok'}`} />
       <span>{project?.name ?? (status === 'connected' ? 'Untitled plan' : status === 'error' ? 'Not connected' : 'Connecting…')}</span>
       {role !== 'owner' && project && <em>{role}</em>}
-      <ChevronDownIcon />
+      <ChevronRightIcon />
     </button>
 
     {/* Top center: modes */}
@@ -378,7 +386,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
       </div>
       {layersOpen && <LayersPanel layer={layer} onChange={setLayer} />}
-      {showPane && !paneCollapsed && <aside className="pane" aria-label="Details">
+      {showPane && <aside className="pane" aria-label="Details" aria-hidden={paneCollapsed} inert={paneCollapsed}>
         <button className="pane-collapse" aria-label="Collapse panel" data-tip="Collapse" data-tip-side="left" onClick={() => setPaneCollapsed(true)}><ChevronRightIcon /></button>
         {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
         {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
@@ -394,14 +402,13 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     {showPane && paneCollapsed && <button className="pane-tab" aria-label="Open panel" onClick={() => setPaneCollapsed(false)}><ChevronLeftIcon /></button>}
 
     {/* Left: pull tab → meta rail */}
-    {rail ? <nav className="rail" aria-label="Project">
-      <RailButton tip="Saves" onClick={toSaves}><FolderIcon /></RailButton>
+    <nav className="rail" aria-label="Project" aria-hidden={!rail} inert={!rail}>
       <RailButton tip="Share" onClick={() => setModal('share')}><ShareIcon /></RailButton>
       <RailButton tip="Escape plans" onClick={() => setModal('plans')}><MapIcon /></RailButton>
       <RailButton tip="Import plan image" onClick={() => setModal('import')}><ArrowUpTrayIcon /></RailButton>
       <div className="rail-anchor">
         <RailButton tip="Export" onClick={() => setExportOpen(v => !v)}><ArrowDownTrayIcon /></RailButton>
-        {exportOpen && <div className="menu rail-menu" onMouseLeave={() => setExportOpen(false)}>
+        {exportOpen && <div className="menu rail-menu">
           <button disabled={!doc} onClick={() => { exportJson(); setExportOpen(false); }}>Plan (.json)</button>
           <button onClick={() => { scene.current?.exportImage(); setExportOpen(false); }}>Image (.png)</button>
         </div>}
@@ -409,12 +416,14 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <RailButton tip="Frame model (F)" onClick={() => scene.current?.view('fit')}><ArrowsPointingOutIcon /></RailButton>
       <span className="rail-sep" />
       <RailButton tip="Collapse" onClick={() => { setRail(false); setExportOpen(false); }}><ChevronLeftIcon /></RailButton>
-    </nav> : <button className="rail-tab" aria-label="Open project menu" onClick={() => setRail(true)}><ChevronRightIcon /></button>}
+    </nav>
+    {!rail && <button className="rail-tab" aria-label="Open project menu" onClick={() => setRail(true)}><ChevronRightIcon /></button>}
 
     {/* Bottom: context toolbar */}
     <footer className="dock" aria-label={`${mode} tools`}>
       {mode === 'edit' && <>
         <Tool tip="Select (V)" on={tool === 'select'} onClick={() => choose('select')}><CursorArrowRaysIcon /></Tool>
+        <Tool tip="Pan (H)" on={tool === 'pan'} onClick={() => choose('pan')}><HandRaisedIcon /></Tool>
         <Tool tip={`Wall · ${WALL_TYPES.find(t => t.id === wallType)!.name} (W) · right-click for type`} on={tool === 'wall'} disabled={!editable} onClick={() => choose('wall')}
           onContextMenu={e => { e.preventDefault(); if (!editable) return; const r = e.currentTarget.getBoundingClientRect(); setMenu(null); setTypeMenu({ x: r.left + r.width / 2, y: r.top }); }}>
           <PencilIcon /><i className={`swatch ${wallType}`} />
@@ -427,7 +436,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         <Tool tip={floor && floors.some(f => f.level === floor.level + 1) ? 'Stair (T) · drag toward the top' : 'Stair (T) · add a floor above first'} on={tool === 'stair'} disabled={!editable} onClick={() => choose('stair')}><BarsArrowUpIcon /></Tool>
         <span className="sep" />
         <Tool tip="Door (D)" on={tool === 'door'} disabled={!editable} onClick={() => choose('door')}><ArrowRightEndOnRectangleIcon /></Tool>
-        <Tool tip="Window (N)" on={tool === 'window'} disabled={!editable} onClick={() => choose('window')}><WindowIcon /></Tool>
+        <Tool tip="Window (N)" on={tool === 'window'} disabled={!editable} onClick={() => choose('window')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden><path d="M4 3.5h16v16H4z M12 3.5v16 M4 10h16 M2 21h20" /></svg></Tool>
         <Tool tip="Exit (E)" on={tool === 'exit'} disabled={!editable} onClick={() => choose('exit')}><ArrowRightStartOnRectangleIcon /></Tool>
         <span className="sep" />
         <Tool tip="Erase (X) · click or drag across walls" on={tool === 'erase'} disabled={!editable} onClick={() => choose('erase')}><BackspaceIcon /></Tool>
@@ -450,13 +459,13 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         onDelete={() => { edit([{ kind: 'deleteEntities', ids: [floor.id] }]); setFloorId(null); setFloorPanel(false); }} />}
     </div>}
 
-    {slabMenu && <div className="menu type-menu" style={{ left: slabMenu.x, top: slabMenu.y }} onMouseLeave={() => setSlabMenu(null)}>
+    {slabMenu && <div className="menu type-menu" style={{ left: slabMenu.x, top: slabMenu.y }}>
       {SLAB_TYPES.map(t => <button key={t.id} aria-pressed={slabType === t.id} onClick={() => { setSlabType(t.id); setTool('slab'); setSlabMenu(null); }}><i className={`swatch floor-${t.id}`} />{t.name}{slabType === t.id && <CheckIcon />}</button>)}
     </div>}
-    {typeMenu && <div className="menu type-menu" style={{ left: typeMenu.x, top: typeMenu.y }} onMouseLeave={() => setTypeMenu(null)}>
+    {typeMenu && <div className="menu type-menu" style={{ left: typeMenu.x, top: typeMenu.y }}>
       {WALL_TYPES.map(t => <button key={t.id} aria-pressed={wallType === t.id} onClick={() => { setWallType(t.id); setTool('wall'); setTypeMenu(null); }}><i className={`swatch ${t.id}`} />{t.name}{wallType === t.id && <CheckIcon />}</button>)}
     </div>}
-    {menu && <div className="menu context-menu" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
+    {menu && <div className="menu context-menu" style={{ left: menu.x, top: menu.y }}>
       {menu.wallId && !menu.openingId && WALL_TYPES.map(t => <button key={t.id} onClick={() => { edit([{ kind: 'updateWall', wallId: menu.wallId!, patch: { material: t.id } }]); setMenu(null); }}>
         <i className={`swatch ${t.id}`} />{t.name}{doc?.walls.find(w => w.id === menu.wallId)?.material === t.id && <CheckIcon />}</button>)}
       {menu.wallId && !menu.openingId && <hr />}
@@ -579,7 +588,6 @@ function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
   floor: Floor; count: number; canEdit: boolean; onEdit(p: { name?: string; ceilingHeightM?: number }): void; onDelete(): void; onClose(): void;
 }) {
   return <div className="menu floor-panel" onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
-    <div className="menu-label">Floor {floor.level + 1} of {count}</div>
     <label className="field"><span>Name</span><input key={floor.name} defaultValue={floor.name} maxLength={80} disabled={!canEdit}
       onBlur={e => { const v = e.target.value.trim(); if (v && v !== floor.name) onEdit({ name: v }); }} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></label>
     <NumberField label="Floor to floor" unit="m" value={floor.ceilingHeightM} step={0.1} min={2} max={50} disabled={!canEdit} onCommit={ceilingHeightM => onEdit({ ceilingHeightM })} />
