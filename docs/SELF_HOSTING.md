@@ -34,7 +34,7 @@
 ```powershell
 git clone https://github.com/davidssien/UTD-Hackathon.git C:\Egress
 cd C:\Egress
-git checkout STABLE-V2      # or main until STABLE-V2 exists
+git checkout STABLE-V3      # the latest release tag
 npm ci
 Copy-Item .env.example .env
 ```
@@ -114,6 +114,7 @@ nssm set EgressRunner AppDirectory C:\Egress\services\runner
 
 nssm install EgressWeb $node "C:\Egress\node_modules\next\dist\bin\next start C:\Egress\frontend -p 3100"
 nssm set EgressWeb AppDirectory C:\Egress
+nssm set EgressWeb AppEnvironmentExtra IMPORT_PUBLIC_ORIGIN=https://dontrepeatyourself.dev   # phone upload behind the tunnel
 
 foreach ($s in 'EgressRunner','EgressWeb') {
   nssm set $s AppStdout "C:\EgressData\logs\$s.log"; nssm set $s AppStderr "C:\EgressData\logs\$s.log"
@@ -131,9 +132,11 @@ Reboot the desktop and confirm the site comes back without logging in.
 
 ## 8. Updating to a new version
 
+Step-by-step update and checks for the current server: [LOCAL_SETUP.md](../LOCAL_SETUP.md).
+
 ```powershell
 cd C:\Egress
-git fetch --tags; git checkout STABLE-V2      # or the new tag
+git fetch --tags; git checkout STABLE-V3      # or the new tag
 npm ci
 npm run build
 nssm restart EgressRunner; nssm restart EgressWeb

@@ -1,6 +1,6 @@
 # Egress final sprint · November 8
 
-The release baseline is the tested studio at `dd55d3f`, tagged `Stable-V2` and merged into `main`. Development continues on `stable-forward`. All times below are Central.
+The sprint started from `Stable-V2` (`dd55d3f`). Its result is on `main`, tagged **`STABLE-V3`**; updating the server is described in [LOCAL_SETUP.md](../../LOCAL_SETUP.md).
 
 ## Delivered
 

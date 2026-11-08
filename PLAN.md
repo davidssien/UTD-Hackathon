@@ -83,7 +83,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Floor surfaces have materials.
 - Multiple floors with stairs work: people walk down stairs and out.
 
-**`STABLE-V3`:** the agentic evacuation mode.
+**`STABLE-V3`:** the final sprint release (2026-11-08). **`STABLE-V4`:** the agentic evacuation mode.
 
 | # | Workstream | Target | Why now |
 |---|---|---|---|
@@ -377,7 +377,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Fixtures still evacuate fully, and evacuation times are within 10% of v0.1 or better.
 - Determinism holds.
 
-### I. Agentic evacuation mode (b) — Nemotron estimates human behavior (`STABLE-V3`)
+### I. Agentic evacuation mode (b) — Nemotron estimates human behavior (`STABLE-V4`)
 
 **Why not one LLM per person.** 150–500 people deciding every few seconds means thousands of calls per run. That's far beyond cost and the ~40 requests/min limit, and too slow.
 
@@ -494,7 +494,8 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | 13 ✅ | **K: collaborative modes** (§3 K): one shared live simulation per project, edits locked while it runs, presence by mode, shared analysis. Then **at least 3 example saves** that differ in size and layout. | K done-when list. *Done 2026-11-08 (D93); five example saves (D94).* |
 | 14 | S: security review and fixes, then a **global naming check**: no "ExitCraft" left anywhere; it is Egress | S done-when list; `git grep -i exitcraft` is empty |
 | 15 | Harden, final review and docs; publish the module to `egress-dev`; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
-| 16+ | I: agentic evacuation mode; tag `STABLE-V3` | I done-when list |
+| ✅ | Final sprint: multi-floor evacuation, airflow with HVAC and a wind compass, furniture, furnished examples, Nemotron run grades; `main` fast-forwarded and tagged **`STABLE-V3`** (server update steps in LOCAL_SETUP.md) | docs/final-sprint/plan.md |
+| 16+ | I: agentic evacuation mode; tag `STABLE-V4` | I done-when list |
 
 - Pass 8 can start alongside 7 (it's mostly setup on the desktop). It needs B's JSON import before moving projects off Maincloud.
 - Pass 9 comes before the agent work because agent proposals are only as good as the crowd model they measure.
