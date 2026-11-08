@@ -25,8 +25,6 @@ export interface FloorRoutes {
   compiled: CompiledFloor;
   nav: Navigation;
   destinations: Destination[];
-  /** Seed cells per destination, so routes can be re-solved around a fire. */
-  seeds: number[][];
 }
 
 /** Walking speed on stairs relative to the person's preferred walking speed. */
@@ -61,7 +59,7 @@ export function buildingRoutes(doc: EgressDocument, blocked: ReadonlySet<string>
       seeds.push([topCell]);
     }
     const nav = seeds.length === c.exits.length ? c.nav : buildNavigation(c.grid, c.navigable, seeds, c.blockedEdges, c.clearance);
-    routes.push({ floor, compiled: c, destinations, nav, seeds });
+    routes.push({ floor, compiled: c, destinations, nav });
   }
   return routes;
 }

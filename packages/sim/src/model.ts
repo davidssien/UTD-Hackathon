@@ -7,14 +7,12 @@
  * This is an exploratory flow model, not certified evacuation physics.
  */
 import {
-  ACTOR_DOWN, ACTOR_EXITED, ACTOR_MOVING, ACTOR_QUEUED, ACTOR_TRANSITIONING, floorsByLevel, createRng, DomainError, DT_SECONDS, TICK_RATE_HZ,
+  ACTOR_EXITED, ACTOR_MOVING, ACTOR_QUEUED, ACTOR_TRANSITIONING, floorsByLevel, createRng, DomainError, DT_SECONDS, TICK_RATE_HZ,
   type ActorFrame, type BottleneckMetric, type EgressDocument, type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
 import { compileFloor, type CompiledFloor, type Portal } from './compile.ts';
-import { buildNavigation } from './nav.ts';
 import { buildingRoutes, STAIR_SPEED_FACTOR, type FloorRoutes, type Descent } from './building.ts';
 import { FieldAccumulator } from './fields.ts';
-import { burningAt, cellOf, createHazards, HAZARD, stepHazard, type Hazard } from './hazards.ts';
 import { isSpawnable, paintWeights } from './paint.ts';
 import { ActorHash, closestOnSegment, segmentsIntersect } from './spatial.ts';
 
@@ -102,8 +100,6 @@ interface SimulationFloor extends FloorRoutes {
   throughput: Int32Array;
   queue: Int32Array;
   stairReady: Int32Array;
-  /** Destinations inside the fire (hazard runs); nobody chooses them any more. */
-  closed: Uint8Array;
   started: number;
   stairDescents: number;
 }
@@ -157,12 +153,6 @@ export interface SimState {
   lastProgressTick: number;
   exited: number;
   unreachable: number;
-  /** Hazard runs: fire and smoke on one floor, each person's smoke dose, and who was overcome by what. */
-  /** One per floor with fire: the hazard, the floor index, and how much fire its routes were solved around. */
-  readonly hazards: { hazard: Hazard; floor: number; routedBurning: number }[];
-  readonly dose: Float32Array;
-  fireDeaths: number;
-  smokeDeaths: number;
   /** The people as spawned, for rerunning a candidate layout with the same population. */
   readonly initial: InitialActors;
   /** How many given initial actors had to be respawned because the layout changed under them. */
@@ -271,11 +261,8 @@ export function initialize(input: FrozenSimulationInput): SimState {
     portalOpen: Uint8Array.from(route.compiled.portals, p => p.kind === 'exit' && blocked.has(p.openingId) ? 0 : 1),
     waitTables: route.destinations.map(() => new Float64Array(0)), throughput: new Int32Array(route.compiled.exits.length),
     queue: new Int32Array(route.destinations.length), stairReady: new Int32Array(route.destinations.length),
-    closed: new Uint8Array(route.destinations.length), started: 0, stairDescents: 0,
+    started: 0, stairDescents: 0,
   }));
-  const hazards = createHazards(input.document, { ...scenario, seed: scenario.population.seed })
-    .map(hazard => ({ hazard, floor: floors.findIndex(f => f.floor.id === hazard.floorId), routedBurning: 0 }))
-    .filter(h => h.floor >= 0);
   const compiled = floors[0].compiled;
   const { x, y, r, vPref, respawned, actorFloor } = spawnPopulation(floors.map(f => f.compiled), scenario.population, input.initialActors);
 
@@ -303,7 +290,7 @@ export function initialize(input: FrozenSimulationInput): SimState {
     switches: 0, reversals: 0, fields: floors[0].fields,
     maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, lastProgressTick: 0, exited: 0, unreachable: 0,
     initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref), floorIds: Array.from(actorFloor, f => floors[f].floor.id) },
-    respawned, hazards, dose: new Float32Array(n), fireDeaths: 0, smokeDeaths: 0,
+    respawned,
   };
   // Start: nearest exit, then one round of the full rule so the split accounts for everyone else.
   for (let a = 0; a < n; a++) {
@@ -323,7 +310,7 @@ function rebuildWaitTables(state: SimState) {
   const lists = state.floors.map(f => f.destinations.map((): number[] => []));
   for (let a = 0; a < state.n; a++) {
     const e = state.exit[a], f = state.actorFloor[a];
-    if (e < 0 || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
+    if (e < 0 || state.flag[a] === ACTOR_EXITED || state.transit[a]) continue;
     const d = state.floors[f].nav.distanceAt(e, state.x[a], state.y[a]);
     if (Number.isFinite(d)) lists[f][e].push(d);
   }
@@ -357,7 +344,7 @@ function chooseExit(state: SimState, a: number, mode: 'initial' | 'replan' | 'im
   let best = -1, bestCost = Infinity, currentCost = Infinity, currentDistance = Infinity;
   for (let e = 0; e < destinations.length; e++) {
     const dest = destinations[e];
-    if (!Number.isFinite(dest.onwardM) || state.floors[state.actorFloor[a]].closed[e]) continue;
+    if (!Number.isFinite(dest.onwardM)) continue;
     const d = nav.distanceAt(e, state.x[a], state.y[a]);
     if (!Number.isFinite(d)) continue;
     const wait = peopleAhead(waitTables[e], d) / Math.max(0.1, dest.capacity);
@@ -400,7 +387,7 @@ export function step(state: SimState): void {
   // Exit choice v0.2: each person re-decides on their own attention clock; impatience forces a look.
   if (state.tick % PARAMS.waitTableTicks === 0) rebuildWaitTables(state);
   for (let a = 0; a < n; a++) {
-    if (flag[a] >= ACTOR_EXITED || state.transit[a] || !state.reachable[a]) continue;
+    if (flag[a] === ACTOR_EXITED || state.transit[a] || !state.reachable[a]) continue;
     if (state.waited[a] >= state.patience[a]) {
       chooseExit(state, a, 'impatient');
       state.waited[a] = 0;
@@ -413,7 +400,7 @@ export function step(state: SimState): void {
 
 
   for (let a = 0; a < n; a++) {
-    if (flag[a] >= ACTOR_EXITED) continue;
+    if (flag[a] === ACTOR_EXITED) continue;
     const floor = state.floors[state.actorFloor[a]], compiled = floor.compiled;
     const { segments, portals, exits } = compiled;
     const trip = state.transit[a];
@@ -558,10 +545,9 @@ export function step(state: SimState): void {
   separateOverlaps(state);
   const exitedBefore = state.exited;
   sweepExited(state);
-  for (const h of state.hazards) applyHazard(state, h);
   // Stabilization (D38): progress = someone left, or the people inside are still moving.
   let active = 0, speedSum = 0;
-  for (let a = 0; a < n; a++) if (flag[a] < ACTOR_EXITED) { active++; speedSum += Math.hypot(vx[a], vy[a]); }
+  for (let a = 0; a < n; a++) if (flag[a] !== ACTOR_EXITED) { active++; speedSum += Math.hypot(vx[a], vy[a]); }
   if (state.exited > exitedBefore || active === 0 || state.transit.some(Boolean) || speedSum / active >= PARAMS.stableSpeed) state.lastProgressTick = state.tick + 1;
   let queue = 0;
   for (const f of state.floors) for (const count of f.queue) queue = Math.max(queue, count);
@@ -570,70 +556,9 @@ export function step(state: SimState): void {
   if (state.tick % PARAMS.fieldEvery === 0 || isComplete(state)) sampleFields(state);
 }
 
-/**
- * Fire and smoke on fixed ticks: the hazard advances one tick, anyone in the flames is overcome,
- * everyone on that floor accumulates smoke dose, and every second exits and stairs inside the
- * fire close, sending the people bound for them to their next choice.
- */
-function applyHazard(state: SimState, entry: SimState['hazards'][number]) {
-  const { hazard } = entry;
-  stepHazard(hazard);
-  if (hazard.tick <= hazard.ignitionTick) return;
-  const floor = state.floors[entry.floor], floorIndex = entry.floor;
-  if ((hazard.tick - hazard.ignitionTick) % TICK_RATE_HZ === 1) {
-    const newlyClosed: number[] = [];
-    floor.destinations.forEach((dest, e) => {
-      if (!floor.closed[e] && burningAt(hazard, dest.center, HAZARD.exitAvoidM)) { floor.closed[e] = 1; newlyClosed.push(e); }
-    });
-    // Routes bend around the flames: re-solve this floor's distance fields with burning cells
-    // (plus a margin) removed whenever the fire has grown by a tenth since the last solve.
-    const rerouted = hazard.burningCount > entry.routedBurning * 1.1 + 4;
-    if (rerouted) {
-      entry.routedBurning = hazard.burningCount;
-      const c = floor.compiled, navigable = c.navigable.slice();
-      for (let i = 0; i < navigable.length; i++) {
-        if (!navigable[i]) continue;
-        const p = { x: c.grid.origin.x + ((i % c.grid.width) + 0.5) * c.grid.cellSizeM, y: c.grid.origin.y + (Math.floor(i / c.grid.width) + 0.5) * c.grid.cellSizeM };
-        if (burningAt(hazard, p, HAZARD.routeAvoidM)) navigable[i] = 0;
-      }
-      floor.nav = buildNavigation(c.grid, navigable, floor.seeds, c.blockedEdges, c.clearance);
-    }
-    if (newlyClosed.length || rerouted) {
-      for (let a = 0; a < state.n; a++) {
-        if (state.actorFloor[a] !== floorIndex || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
-        if (newlyClosed.includes(state.exit[a])) { state.exit[a] = -1; state.prevExit[a] = -1; state.cooldownUntil[a] = 0; chooseExit(state, a, 'initial'); }
-        else chooseExit(state, a, 'replan');
-      }
-    }
-  }
-  const dt = DT_SECONDS;
-  let exposed = false;
-  for (let a = 0; a < state.n; a++) {
-    if (state.actorFloor[a] !== floorIndex || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
-    const p = { x: state.x[a], y: state.y[a] };
-    if (burningAt(hazard, p)) { overcome(state, a); state.fireDeaths++; continue; }
-    const cell = cellOf(hazard, p);
-    if (cell < 0 || hazard.smoke[cell] <= 0.01) continue;
-    exposed = true;
-    state.dose[a] += hazard.smoke[cell] * dt;
-    if (state.dose[a] >= HAZARD.lethalDose) { overcome(state, a); state.smokeDeaths++; }
-  }
-  // People still taking in smoke are not a settled outcome: keep the run going until they get out or are overcome.
-  if (exposed) state.lastProgressTick = state.tick + 1;
-}
-
-function overcome(state: SimState, a: number) {
-  state.flag[a] = ACTOR_DOWN;
-  state.vx[a] = 0; state.vy[a] = 0;
-  if (!state.reachable[a]) state.unreachable--; // counted once, as a fatality
-  state.lastProgressTick = state.tick + 1;
-}
-
-const downCount = (state: SimState) => state.fireDeaths + state.smokeDeaths;
-
 function rebuildActorHashes(state: SimState) {
   state.floors.forEach((floor, i) => floor.hash.rebuild(state.x, state.y,
-    a => state.actorFloor[a] === i && state.flag[a] < ACTOR_EXITED && !state.transit[a], state.n));
+    a => state.actorFloor[a] === i && state.flag[a] !== ACTOR_EXITED && !state.transit[a], state.n));
 }
 
 function descend(state: SimState, a: number, trip: StairTrip) {
@@ -674,7 +599,7 @@ function separateOverlaps(state: SimState) {
   const { n, x, y, flag } = state;
   rebuildActorHashes(state);
   for (let a = 0; a < n; a++) {
-    if (flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
+    if (flag[a] === ACTOR_EXITED || state.transit[a]) continue;
     const { compiled, hash } = state.floors[state.actorFloor[a]];
     hash.forNear(x[a], y[a], b => {
       if (b <= a) return;
@@ -696,7 +621,7 @@ function separateOverlaps(state: SimState) {
  */
 function sweepExited(state: SimState) {
   for (let a = 0; a < state.n; a++) {
-    if (state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
+    if (state.flag[a] === ACTOR_EXITED || state.transit[a]) continue;
     const floor = state.floors[state.actorFloor[a]], exits = floor.compiled.exits;
     for (let e = 0; e < exits.length; e++) {
       if (!Number.isFinite(floor.destinations[e].onwardM)) continue;
@@ -721,7 +646,7 @@ function sampleFields(state: SimState) {
   const speeds = new Float64Array(state.n);
   for (let a = 0; a < state.n; a++) speeds[a] = Math.hypot(state.vx[a], state.vy[a]);
   state.floors.forEach((floor, i) => floor.fields.addSample(state.tick, state.n, state.x, state.y, speeds,
-    a => state.actorFloor[a] === i && state.flag[a] < ACTOR_EXITED && !state.transit[a]));
+    a => state.actorFloor[a] === i && state.flag[a] !== ACTOR_EXITED && !state.transit[a]));
 }
 
 // ── outputs ─────────────────────────────────────────────────────────────────
@@ -732,7 +657,7 @@ export function isComplete(state: SimState): boolean {
 
 /** Why the run ended: everyone reachable is out, the flow stabilized (nothing changing), or the safety timeout. */
 export function endReason(state: SimState): 'all-out' | 'stabilized' | 'timeout' | null {
-  if (state.exited + state.unreachable + downCount(state) >= state.n) return 'all-out';
+  if (state.exited + state.unreachable >= state.n) return 'all-out';
   if (state.tick - state.lastProgressTick >= PARAMS.stableWindowTicks) return 'stabilized';
   if (state.tick >= state.maxTicks) return 'timeout';
   return null;
@@ -751,7 +676,7 @@ export function metrics(state: SimState): SimulationMetrics {
   const mean = occupied ? summaries.reduce((n, s) => n + s.mean * s.cells, 0) / occupied : 0;
   const peak = Math.max(...summaries.map(s => s.peak));
   const complete = isComplete(state);
-  const allOut = state.exited + state.unreachable + downCount(state) >= state.n;
+  const allOut = state.exited + state.unreachable >= state.n;
   const bottlenecks: BottleneckMetric[] = state.floors.flatMap(f => f.fields.hotspots(5).map(h => {
     const near = f.compiled.portals
       .map(p => ({ p, d: Math.hypot(p.center.x - h.x, p.center.y - h.y) }))
@@ -772,7 +697,7 @@ export function metrics(state: SimState): SimulationMetrics {
     simulatedSeconds: state.tick / TICK_RATE_HZ,
     initialPeople: state.n,
     evacuatedPeople: state.exited,
-    remainingPeople: state.n - state.exited - downCount(state),
+    remainingPeople: state.n - state.exited,
     unreachablePeople: state.unreachable,
     evacuationTimeSeconds: allOut && state.exited > 0 ? state.lastExitTick / TICK_RATE_HZ : null,
     maxQueueLength: state.maxQueue,
@@ -786,7 +711,6 @@ export function metrics(state: SimState): SimulationMetrics {
     endReason: endReason(state) ?? undefined,
     exitSwitches: state.switches,
     exitReversals: state.reversals,
-    ...(state.hazards.length ? { fireDeaths: state.fireDeaths, smokeDeaths: state.smokeDeaths } : {}),
     complete,
   };
 }

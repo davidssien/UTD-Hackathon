@@ -69,7 +69,6 @@ The old `/dev` harness and the ExitCraft-era editor/viewer components were remov
 ## Not done yet
 
 - Presence (person icon + count, hover for tokens), permanent share links and role management need the collaboration backend ([PLAN.md](../PLAN.md) §3 C). Share currently creates a 14-day viewer invite.
-- Population painting in Simulate; fire / elements.
 - Compliance-based and multi-edit suggestions (backend follow-ups).
 
 ## Airflow

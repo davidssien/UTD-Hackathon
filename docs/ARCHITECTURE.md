@@ -190,7 +190,7 @@ frame × frameCount:
 | `people.congestion` | density × max(0, 1 − speed / 1.34) |
 | `people.exitDistance` | meters (static) |
 
-Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `perCellPeak`. `people.velocity`, `people.routeDemand`, `air.*` and `smoke.*` are reserved.
+Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `perCellPeak`. `air.flowMagnitude` is the airflow layer's magnitude; `people.velocity`, `people.routeDemand` and `air.velocity` are reserved.
 
 ---
 
@@ -445,7 +445,7 @@ Reference sketches: [layout-v2-rail-open.png](reference/gui/sketches/layout-v2-r
 
 **Layers** (dropdown, select one)
 - **People** (now). Options: **Discrete** (people as dots) or **Heatmap**. Heatmap field: Density or Congestion. Statistic: Current / Average / Peak. After a run completes, Average is the default, because the final frame is an empty building.
-- **Airflow** (future): listed but disabled. Its fields (`air.velocity`, `air.flowMagnitude`, `smoke.concentration`) are reserved in `FieldIdSchema`.
+- **Airflow:** a steady per-floor pressure solve (`floorAirflow`) under an assumed wind of any bearing, with HVAC ceiling vents as supply; shown as `air.flowMagnitude` with flow arrows.
 
 **Scene**
 - **One 3D scene; Edit is always top-down.** Edit locks the scene to an orthographic overhead camera. Leaving Edit transitions to isometric and enables orbit. There is no second 2D model.
@@ -456,7 +456,7 @@ Reference sketches: [layout-v2-rail-open.png](reference/gui/sketches/layout-v2-r
 - **Blender wall textures.** `frontend/public/assets/walls/manifest.json` maps each wall material, and later each `finish` id, to textures exported from Blender (base colour, optional normal and roughness). UVs are world-scale, so a texture repeats every `repeatM` metres on any wall length. A missing file falls back to the flat material colour. Physics never reads textures or `finish`.
 
 **Simulate rules** (unchanged from D36)
-- Only the **distribution** and **elements** (future: fire, via `scenario.elements`) change in Simulate. Building edits happen in Edit.
+- Only the **distribution** changes in Simulate. Building edits happen in Edit.
 - Either change needs a restart. Stop calls `cancelRun`.
 - Pause and scrub are client-side. The server keeps simulating while paused. Stop or restart cancels the server job within ~100 ms.
 - Population paint is labelled *initial distribution*, never congestion.

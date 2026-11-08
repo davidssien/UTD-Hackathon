@@ -35,9 +35,8 @@ These files are design references, not instructions to execute or a replacement 
 | Design dock | Curved bottom dock with draw-line, draw-room/box, erase, and Clear Canvas; drag gestures for drawing/erasing/box sizing. | Use atomic `@egress/client.edit` commands and undo. The prototype's axis-aligned drawing restriction can guide the default gesture; do not remove diagonal geometry support from core. |
 | Navigation hand | Persistent pan button at bottom-right; pan mode separate from editing. | Top-down pan/zoom during Edit; freecam only outside Edit. |
 | Simulate dock | Run changes to Restart; setup tools lock while running. | Existing run/cancel/restart lifecycle, population distribution, pacing and replay. Keep Stop available and retain the LIVE/END scrubber and heatmap controls from PLAN.md. |
-| Fire | Reference shows a toggled cell icon before a run, locked during a run, cleared on return to Design. | Future scenario element only. v0.1 ignores `scenario.elements`; do not claim fire affects evacuation or add fire physics in this pass. |
 | Analysis | Persistent panel while in Analysis, no close X; leaves when switching modes. Report / Suggestions buttons in the bottom dock, chat on the right with a usable input/send control. | Reports use measured run metrics; Suggestions use real proposals, ghost previews, and Accept/Reject. Chat uses the existing agent interface; never import the prototype's canned messages as results. |
-| Export | White opaque PNG background, no fire icons. | Capture a clean top-down view of the same scene. Export must not mutate saved geometry or the active scenario. |
+| Export | White opaque PNG background. | Capture a clean top-down view of the same scene. Export must not mutate saved geometry or the active scenario. |
 
 The reference's trails and dots are a rendering idea for actual replay frames, not a second movement model. Mode changes do not discard saved projects or authoritative runs. Restart/cancellation semantics continue to follow PLAN.md.
 
@@ -48,6 +47,6 @@ The reference's trails and dots are a rendering idea for actual replay frames, n
 - The viewcube reflects the camera, stays clear of File, and cannot navigate under the floor.
 - Occluding walls reveal the floor with dithering from all allowed viewing directions; furniture stays opaque.
 - Persistent navigation, switching bottom dock, side menu and hand follow the selected reference patterns. The menu has a pull handle and collapses after toolbar use; saves switch inline. Analysis has both tabs and a working chat input. No modal popups.
-- Export, fire placeholders, startup upload, and UI drawing restrictions follow the boundaries above without changing the backend contract.
+- Export, startup upload, and UI drawing restrictions follow the boundaries above without changing the backend contract.
 
 For the Blender production and placement plan, see [3D_ASSET_PLAN.md](3D_ASSET_PLAN.md).

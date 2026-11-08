@@ -219,17 +219,6 @@ export const SimulationScenarioSchema = z.object({
     seed: z.number().int().min(0).max(0xffffffff),
   }),
   goal: ScenarioGoalSchema,
-  /**
-   * Live-mode elements placed for this run (reserved). Changing them restarts the
-   * run. egress-pedestrian v0.1 ignores them; a future fire/smoke model reads them.
-   */
-  elements: z.array(z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('fire'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().positive().max(20), startSeconds: z.number().nonnegative() }),
-    /** A lassoed area that starts burning (final sprint); several may be placed, on any floor. */
-    z.object({ kind: z.literal('fireArea'), id: IdSchema, floorId: IdSchema, polygon: z.array(Vec2Schema).min(3).max(512), startSeconds: z.number().nonnegative() }),
-  ])).max(50).optional(),
-  /** Assumed exterior wind for airflow and smoke (default west). */
-  windFrom: z.enum(['west', 'north', 'east', 'south']).optional(),
   /** Timeout in simulated seconds. */
   durationSeconds: z.number().positive().max(3600),
 });
@@ -250,7 +239,6 @@ export const FieldIdSchema = z.enum([
   'people.routeDemand',
   'air.velocity',
   'air.flowMagnitude',
-  'smoke.concentration',
 ]);
 export const AggregationSchema = z.enum(['instant', 'timeAverage', 'perCellPeak']);
 
@@ -295,9 +283,6 @@ export const SimulationMetricsSchema = z.object({
   /** Exit choice v0.2: total exit switches, and switches back to an exit the person had left (A→B→A). */
   exitSwitches: z.number().int().nonnegative().optional(),
   exitReversals: z.number().int().nonnegative().optional(),
-  /** Hazard runs: people overcome inside the flames, and by cumulative smoke exposure. */
-  fireDeaths: z.number().int().nonnegative().optional(),
-  smokeDeaths: z.number().int().nonnegative().optional(),
 });
 
 // ── Agent ───────────────────────────────────────────────────────────────────

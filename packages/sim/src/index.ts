@@ -17,5 +17,4 @@ export { runSimulation, simulateChunks, type RunChunk, type RunResult } from './
 export { structuralField, type StructuralFieldId } from './structural.ts';
 export { escapeRoutes, type EscapeRoute } from './routes.ts';
 export { isSpawnable, MAX_PAINT_WEIGHT, paintWeights } from './paint.ts';
-export { advanceHazard, burningAt, burningCells, createHazards, HAZARD, smokeField, stepHazard, type Hazard } from './hazards.ts';
-export { FIRE_PRESSURE, floorAirflow, VENT_PRESSURE, WIND_FROM, type AirVent, type FloorAirflow, type WindFrom } from './airflow.ts';
+export { floorAirflow, VENT_PRESSURE, WIND_FROM, type AirVent, type FloorAirflow, type WindFrom } from './airflow.ts';

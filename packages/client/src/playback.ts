@@ -155,10 +155,6 @@ export class Playback implements PlaybackController {
     return { ...a, tick: t, actorXY: xy, actorElevation: elevation };
   }
 
-  runLayout(): EgressDocument | null {
-    return this.layout;
-  }
-
   /** The run's frozen layout; enables heatmaps computed from frames (D15). */
   setLayout(doc: EgressDocument): void {
     if (this.layout === doc) return;

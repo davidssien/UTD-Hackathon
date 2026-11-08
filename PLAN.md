@@ -42,7 +42,6 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Display: a black background trial; right panes collapse like the left rail; Layers must not collide with the pane; the heatmap must be smooth in time and space; no sparkle icon.
 - Floor surfaces return, with wood / basic / tile materials.
 - Multiple floors with stairs.
-- Fire, after an airflow layer and smoke.
 - **First:** a small pass so everyone shares one central `.env` (NVIDIA key and SpacetimeDB credentials) and can use SpacetimeDB without `spacetime login`.
 - **Evacuation behavior has two modes:**
   - (a) the deterministic model, fixed so crowds stop flip-flopping between exits, with per-person attention span and patience;
@@ -84,7 +83,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Floor surfaces have materials.
 - Multiple floors with stairs work: people walk down stairs and out.
 
-**`STABLE-V3`:** the agentic evacuation mode; airflow particles, then smoke, then fire, combined into hazard evacuations.
+**`STABLE-V3`:** the agentic evacuation mode.
 
 | # | Workstream | Target | Why now |
 |---|---|---|---|
@@ -98,7 +97,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | H | Evacuation behavior v0.2 (deterministic mode) | V2 | Crowds shimmying between doors undermine every number the product shows. |
 | S | Security review | V2, before the tag | The site becomes public; IDOR and auth gaps must be found first. |
 | I | Agentic evacuation mode (Nemotron behavior) | V3 | Needs H's per-person parameters to steer, and a cost budget. |
-| G | Airflow → smoke → fire | V3 | Airflow must exist before smoke, and fire needs both. |
+| G | Airflow and HVAC | V2 | Done in the final sprint: a steady airflow layer for any wind bearing, with HVAC vents. |
 
 ---
 
@@ -288,7 +287,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
   - distances and walking time at 1.34 m/s
 - Export is PNG/PDF.
 - **Routes** come from per-exit distance fields on the nav grid (`escapeRoutes(compiled, room)` in `@egress/sim`).
-- Later, routes avoid fire zones (G) and include stairs (F).
+- Routes include stairs (F).
 
 *Done when:* on Courtyard, the two rooms are labelled rooms and the corridor is labelled hallway. Exactly two plans exist, each with primary and secondary routes, and they export.
 
@@ -331,24 +330,11 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 *Status (Pass 12, D91):* surfaces, floors, the switcher and settings, stairs (drawn and rendered) and population painting are done. **Still open, now Pass 12b:** the multi-floor simulation (stairs linking floor grids, people descending, frame codec v2), upper-floor walkability from slabs, the stair opening in the floor above, and escape plans on upper floors. Until then the simulation covers the lowest floor and the Simulate pane says so.
 
-### G. Hazards: airflow → smoke → fire (`STABLE-V3`)
+### G. Airflow and HVAC (final sprint)
 
-1. **Airflow layer.** A coarse per-floor 2D flow field driven by openings (doors open or closed, windows) and configurable inflows, solved with a stable-fluids style step on the 0.25–0.5 m grid. Shown as moving particles or streaks under Layers → Airflow, using fields `air.velocity` and `air.flowMagnitude`.
-2. **Smoke.** Concentration is carried by the airflow and spreads; sources are fires. It's a **time-based hazard**: visibility and walking speed fall, and an exposure dose accumulates.
-3. **Fire.**
-   - **Painted** fire zones, with the same brush as population painting (Simulate pane: Paint People | Fire).
-   - Fire spreads **through rooms**, independent of material:
-     - growth within a room follows a t² curve
-     - cells ignite after an exposure time
-     - spread passes through open doors; closed doors delay it
-   - It's an **immediate hazard**: burning cells are impassable and people re-route.
-4. **Combined hazard evacuation:**
-   - people avoid fire and are slowed by smoke
-   - metrics add exposure
-   - escape plans avoid fire
-   - fire is a new evacuation type in the scenario (`scenario.elements` is already reserved)
-
-**Before G:** the population painting UI (the backend has existed since D30) ships in V2, because fire painting reuses the brush.
+- **Airflow layer.** `floorAirflow(document, floorId, windFrom)` solves steady relative pressure within each connected floor. Open exterior doors and windows take the wind pressure for a bearing chosen on a compass (any of 360°); closed openings are sealed. Shown under Layers → Airflow and measured by the agent's `inspect_airflow`.
+- **HVAC.** Ceiling vents are placeables that hold their area at supply pressure and push air toward open outlets; a sealed room stays still.
+- **Furniture** (tables, desks, chairs, counters; 0–0.5 m) blocks people but not air.
 
 ### H. Evacuation behavior v0.2 — deterministic mode (a)
 
@@ -409,7 +395,6 @@ This file holds **priorities, the work ahead and decisions**. Reference material
    - an exit's expected wait passes a threshold
    - an exit becomes blocked
    - a group has stalled beyond its patience
-   - later: smoke or fire seen (G)
    
    The runner groups people by room and current exit and sends one compact summary: groups, sizes, room names, waits per exit, what each group can see. Nemotron returns group-level intents, such as "40% of the east-room group head for the north exit; the rest wait". They're applied to members with the seed.
 3. **Budget and fallback.** Lightning model by default, temperature 0, Zod-validated JSON, all groups batched in one call. A hard per-run budget: about 10 calls and 20k tokens, shown in the UI. Answers are cached by a situation hash. When the budget runs out, a call fails or no key exists, groups follow the deterministic rules (H).
@@ -509,7 +494,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | 13 ✅ | **K: collaborative modes** (§3 K): one shared live simulation per project, edits locked while it runs, presence by mode, shared analysis. Then **at least 3 example saves** that differ in size and layout. | K done-when list. *Done 2026-11-08 (D93); five example saves (D94).* |
 | 14 | S: security review and fixes, then a **global naming check**: no "ExitCraft" left anywhere; it is Egress | S done-when list; `git grep -i exitcraft` is empty |
 | 15 | Harden, final review and docs; publish the module to `egress-dev`; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
-| 16+ | I: agentic evacuation mode; then G: airflow, smoke, fire; tag `STABLE-V3` | I and G done-when lists |
+| 16+ | I: agentic evacuation mode; tag `STABLE-V3` | I done-when list |
 
 - Pass 8 can start alongside 7 (it's mostly setup on the desktop). It needs B's JSON import before moving projects off Maincloud.
 - Pass 9 comes before the agent work because agent proposals are only as good as the crowd model they measure.
@@ -555,9 +540,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 2. **Escape plans:** is PNG enough, or is a printable PDF needed? Are secondary routes wanted on every plan?
 3. **Stairs:** down-only for evacuation? (Assumed yes.) Any outdoor stairs or ramps?
 4. **Upper floors:** should walls placed on floor 2 require a slab underneath, or warn?
-5. **Fire:** realism target. Fire-modeling grade (t² growth, smoke dose) or a believable visual first?
-6. ~~**Team token on Maincloud.**~~ Decided (D84): keep `egress-dev` on Cody's account for now; revisit a team account or organization before the public launch.
-7. **V3 order:** agentic mode (I) before hazards (G), or hazards first so agentic behavior can react to fire and smoke from day one?
+5. ~~**Team token on Maincloud.**~~ Decided (D84): keep `egress-dev` on Cody's account for now; revisit a team account or organization before the public launch.
 
 ---
 
@@ -602,7 +585,7 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D33 | 11-07 | **Dot grid:** the plan view is a grid of dots, with thin walls built along grid lines between dots. Backend unchanged: dots are the 0.25 m snap points. |
 | D34 | 11-07 | **Local SpacetimeDB:** run a local server for development; Maincloud is for the demo. Bindings are generated with `--import-extension ts` so the runner can import them under Node type stripping, and are committed so the frontend lane needs no CLI. |
 | D35 | 11-07 | **Heatmap layers:** People flow is live now and Air flow is reserved. Per-layer options pick the field, aggregation, actors on/off and granularity (`downsampleField`). |
-| D36 | 11-07 | **Live-mode restarts:** Live allows only distribution and element changes, and both require a restart via a dedicated Stop. Cancellation lands within ~100 ms even while the runner paces ahead. `scenario.elements` (fire) is reserved and ignored by v0.1. |
+| D36 | 11-07 | **Live-mode restarts:** Live allows only distribution changes, which require a restart via a dedicated Stop. Cancellation lands within ~100 ms even while the runner paces ahead. |
 | D37 | 11-07 | **Model math is recorded** in [docs/PEOPLE_FLOW_MODEL.md](docs/PEOPLE_FLOW_MODEL.md). Any change to a `PARAMS` value or formula must update that file in the same commit. |
 | D38 | 11-07 | **Run end:** a Live run ends when the flow has stabilized, not at a fixed time.<br>• `all-out`: every reachable person has left.<br>• `stabilized`: 10 s with no exits and the people still inside averaging under 0.05 m/s.<br>• `timeout`: safety cap only.<br>It's cheap (O(N) per tick) and reported as `metrics.endReason`. Circulate will reuse the window with occupancy/field-change signals. |
 | D31 | 11-07 | **Edit-mode estimate:** route demand is the floor area whose shortest route passes through each cell, smoothed within rooms; exit distance is also available. It is labelled a potential-bottleneck estimate, never congestion. |
@@ -643,7 +626,7 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D73 | 11-08 | **Rooms and escape plans.** Nemotron labels each closed room (room, hallway, stair, closet, lobby, other) from geometric descriptors, with a rule fallback, cached by polygon hash and overridable by the user. Only real rooms get escape plans, each with primary and secondary routes from per-exit distance fields. |
 | D74 | 11-08 | **Floor surfaces return:** a `slab` entity with `wood`, `basic` (the wall look) or `tile`, drawn with a Floor tool or filled into a room. Ground-floor rooms stay walkable; on upper floors only slabs are walkable. |
 | D75 | 11-08 | **Multiple floors and stairs:** a bottom-left `‹ Floor n ›` switcher with per-floor floor-to-floor height; floors below render darker and floors above are hidden; the dot grid rises with the current floor while the ground stays at 0. Stairs are rectangles with an up edge, rendered as risers; evacuation routes go down only; frames gain a per-actor floor index. |
-| D76 | 11-08 | **Hazard order:** airflow particles, then smoke (time-based hazard carried by airflow), then fire (painted zones that spread through rooms independent of material; an immediate hazard). The population painting UI ships in V2 so fire painting can reuse the brush. |
+| D76 | 11-08 | **Airflow layer:** a steady per-floor pressure solve under an assumed wind (any bearing), with HVAC ceiling vents as supply. Furniture blocks people, not air. |
 | D77 | 11-08 | **Team access first (Pass 6):** one gitignored root `.env` (NVIDIA key, service secret, SpacetimeDB URL/DB and a team token) replaces the per-component env files. `npm run db` wraps the CLI with a repo-local config logged in by token, so nobody runs `spacetime login`. Only the derived public URI and database name reach the browser. Team identities only, never a personal token. |
 | D78 | 11-08 | **Evacuation has two behavior modes.** Deterministic (v0.2) is the default and the basis for the agent's measurements; agentic is an opt-in mode on top of it. |
 | D79 | 11-08 | **Deterministic v0.2 route choice.** Staggered per-person attention span `τ_i`; expected wait counted from people *ahead* who are heading to the same exit; waiting weighted by `κ_i`; commitment thresholds (absolute and relative), a no-switch zone near the exit and a cooldown; patience `P_i` that, once used up, lets a person walk to a farther exit. All draws are seeded. People know the full layout (per-exit Dijkstra fields). |

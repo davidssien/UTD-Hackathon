@@ -310,7 +310,7 @@ min_e D_e(i)
 
 Multi-floor runs use model 0.3. Occupants spawn on enclosed, supported walkable surfaces across the building. At each floor they compare exterior exits with descending stairs that lead to an exit. The stair cost includes the inclined flight at 55% of preferred walking speed and the remaining route below. Landing-entry throughput scales with stair width. Replay records floor and elevation during each descent. Each floor keeps its own crowd density and queue measurements.
 
-Future model work includes ascending evacuation routes, fire, smoke, group behaviour, pre-movement time, disability profiles and directional door capacity.
+Future model work includes ascending evacuation routes, group behaviour, pre-movement time, disability profiles and directional door capacity.
 
 ## 10. Tuning knobs (and what they move)
 

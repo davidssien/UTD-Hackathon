@@ -11,9 +11,9 @@ import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, BarsArrowUpIcon, CheckIcon, Cog6ToothIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
   CursorArrowRaysIcon, EyeIcon, HandRaisedIcon, ForwardIcon, LinkIcon, LockClosedIcon, PaintBrushIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon,
-  FireIcon, SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, XMarkIcon,
+  SignalSlashIcon, Squares2X2Icon, UserIcon, MapIcon, Square3Stack3DIcon, StopIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison, type RunSummary } from '@egress/client';
+import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import {
   describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, PLACEABLES, type Placeable, type PlaceableItem, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
@@ -22,8 +22,7 @@ import {
 import { compileFloor, paintWeights, populationCapacity, type WindFrom, type FloorAirflow } from '@egress/sim';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import { useFloorAirflow } from '@/lib/use-floor-airflow';
-import { useHazardPlayback } from '@/lib/use-hazard-playback';
-import type { GridStyle, SceneTheme, HazardPin, HazardPins, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
+import type { GridStyle, SceneTheme, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
 import EscapePlans from './escape-plans';
@@ -202,10 +201,6 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const activeRunId = runId && runs.some(r => r.id === runId) ? runId : userRuns[0]?.id ?? null;
   const playback = useMemo(() => (activeRunId ? client.playback(activeRunId) : null), [client, activeRunId]);
   const activeRun = runs.find(r => r.id === activeRunId);
-  // Hazard pins for the next run (Simulate): one flame and any number of HVAC supply vents.
-  const [fire, setFire] = useState<HazardPin | null>(null);
-  const [placing, setPlacing] = useState<'fire' | null>(null);
-  const hazard = useHazardPlayback(mode === 'edit' ? null : playback, activeRun);
   const running = activeRun?.status === 'queued' || activeRun?.status === 'running';
   useEffect(() => {
     if (!canEdit || screen !== 'editor' || !rooms.length || rooms.every(r => labelMap.has(r.roomHash))) return;
@@ -244,7 +239,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       if (attempt !== openSequence.current) return;
       setEntry({ projectId, phase: 'iso' });
       setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select');
-      setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform'); setFire(null); setPlacing(null);
+      setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform');
     }).catch(e => { if (attempt === openSequence.current) { setEntry(null); fail(e); } });
   };
   // Keep the first rendered isometric view in place as the saves page slides away.
@@ -327,7 +322,6 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const sceneDoc = ghost?.doc ?? doc;
   const airflow = useFloorAirflow(screen === 'editor' && layer.family === 'air' ? sceneDoc : null, floor?.id, wind);
   const overlay: HeatOverlay | null = layer.family === 'air' ? (airflow?.flow ? { field: airflow.flow.magnitude, diverging: false, airflow: airflow.flow } : null)
-    : layer.family === 'smoke' ? (hazard && hazard.floorId === floor?.id ? { field: hazard.smoke, diverging: false, max: 1 } : null)
     : paintField ? { field: paintField, diverging: false }
     : mode === 'analysis' && diffMap && comparison?.congestionDiff ? { field: comparison.congestionDiff, diverging: true } : null;
 
@@ -376,12 +370,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     setError(''); setBrush(null);
     followed.current = null;
     const painted = distribution === 'painted' && strokes.length > 0;
-    setPlacing(null);
-    const elements = [
-      ...(fire ? [{ kind: 'fire' as const, id: 'fire-1', floorId: fire.floorId, position: fire.position, radiusM: fire.radiusM, startSeconds: 0 }] : []),
-    ];
-    void client.startRun({ scenarioVersion: 1, id: `s-${crypto.randomUUID()}`, projectId: doc.projectId, name: fire ? 'Fire evacuation' : 'Evacuate', durationSeconds: 900, population: { count: people, distribution: painted ? 'painted' : 'uniform', strokes: painted ? strokes : [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] },
-      ...(elements.length ? { elements, windFrom: wind } : {}) }, 'x4')
+    void client.startRun({ scenarioVersion: 1, id: `s-${crypto.randomUUID()}`, projectId: doc.projectId, name: 'Evacuate', durationSeconds: 900, population: { count: people, distribution: painted ? 'painted' : 'uniform', strokes: painted ? strokes : [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] } }, 'x4')
       .then(id => { followed.current = id; setRunId(id); const p = client.playback(id); p.setSpeed(speedRef.current); p.play(); })
       .catch(fail);
   };
@@ -416,12 +405,6 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     <Scene ref={scene} theme={theme} gridStyle={appearance.grid} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       placeItem={placeItem} placeRotation={placeRotation}
-      place={mode === 'simulate' ? placing : null} onPlace={at => {
-        if (!floor) return;
-        if (placing === 'fire') setFire({ position: at, floorId: floor.id, radiusM: 1 });
-        setPlacing(null);
-      }}
-      hazardPins={mode === 'edit' ? null : hazardPinsFor(running || !!hazard ? activeRun : undefined, fire, hazard?.fireRadiusM)}
       inputBlocked={screen === 'saves' || !!entry}
       entryView={entry?.projectId === sceneDoc?.projectId && (entry?.phase === 'iso' || entry?.phase === 'top') ? entry.phase : null}
       onEntryFrame={cameraView => {
@@ -483,8 +466,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         {mode === 'simulate' && <SimulatePane doc={doc} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }}
           distribution={distribution} onDistribution={d => { setDistribution(d); setBrush(d === 'painted' ? { radiusM: 2, mode: 'increase' } : null); }}
           brush={brush} onBrush={setBrush} strokes={strokes} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent}
-          canRun={canEdit} fire={fire} placing={placing} wind={wind}
-          onPlacing={p => { setBrush(null); setPlacing(p); }} onClearHazards={() => { setFire(null); setPlacing(null); }} />}
+          canRun={canEdit} />}
         {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} locked={locked} onError={fail} />}
       </aside>}
     </div>
@@ -623,11 +605,8 @@ function LayersPanel({ layer, onChange, wind, onWind, flow, error }: {
     <div className="menu-label">Layer</div>
     <button aria-pressed={layer.family === 'people'} onClick={() => onChange({ ...layer, family: 'people' })}>{layer.family === 'people' && <CheckIcon />}People</button>
     <button aria-pressed={layer.family === 'air'} onClick={() => onChange({ ...layer, family: 'air' })}>{layer.family === 'air' && <CheckIcon />}Airflow</button>
-    <button aria-pressed={layer.family === 'smoke'} onClick={() => onChange({ ...layer, family: 'smoke' })}>{layer.family === 'smoke' && <CheckIcon />}Smoke</button>
     <hr />
-    {layer.family === 'smoke' && <><p className="air-readout" role="status">Smoke at the playhead of a fire run, on the fire&apos;s floor. People stay visible.</p>
-      <div className="legend"><span>Clear</span><i /><span>Dense</span></div></>}
-    {layer.family === 'smoke' ? null : layer.family === 'air' ? <>
+    {layer.family === 'air' ? <>
       <div className="menu-label">Wind from</div>
       <Segmented value={wind} options={[{ id: 'west', name: 'West' }, { id: 'north', name: 'North' }, { id: 'east', name: 'East' }, { id: 'south', name: 'South' }]} onChange={onWind} />
       <p className="air-readout" role="status">{error ?? (!flow ? 'Calculating airflow…' : flow.peak < 1e-6 ? 'No through-flow under this wind. Open exterior windows or doors on different sides.' : `${flow.exteriorOpenings} open exterior apertures · relative airflow`)}</p>
@@ -719,9 +698,8 @@ function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
 
 // ── Simulate ────────────────────────────────────────────────────────────────
 
-function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun, fire, placing, wind, onPlacing, onClearHazards }: {
+function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun }: {
   doc: EgressDocument | null; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; canRun: boolean;
-  fire: HazardPin | null; placing: 'fire' | null; wind: WindFrom; onPlacing(p: 'fire' | null): void; onClearHazards(): void;
   onRun(people: number, seed: number): void; onStop(): void;
   distribution: 'uniform' | 'painted'; onDistribution(d: 'uniform' | 'painted'): void;
   brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: PopulationBrushStroke[]; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
@@ -753,11 +731,6 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
         </div>
         <p className="fine">Painting changes where people start, not how many. Left-drag on the plan while the brush is out.</p>
       </div>}
-      <div className="hazard-row">
-        <button className={`button fire-button ${placing === 'fire' ? 'on' : ''}`} aria-pressed={placing === 'fire'} disabled={running} onClick={() => onPlacing(placing === 'fire' ? null : 'fire')}><FireIcon />{placing === 'fire' ? 'Click the plan to place the fire' : fire ? 'Move fire' : 'Add fire'}</button>
-        {fire && <button className="icon-button" data-tip="Remove fire" aria-label="Remove fire" disabled={running} onClick={onClearHazards}><XMarkIcon /></button>}
-      </div>
-      {fire && <p className="fine">Fire on {doc?.floors.find(f => f.id === fire.floorId)?.name ?? 'a floor'} · wind from the {wind} (Layers → Airflow). Smoke follows the airflow and the building&apos;s HVAC vents; routes avoid the flames.</p>}
       <label className="field"><span>Seed</span>
         <input type="number" className="narrow" min={0} value={seed} disabled={running} onChange={e => setSeed(Math.max(0, Number(e.target.value) || 0))} />
         <button className="icon-button" data-tip="New seed" disabled={running} onClick={() => setSeed(Math.floor(Math.random() * 100000))}><ArrowPathIcon /></button>
@@ -776,12 +749,6 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
   </>;
 }
 
-/** Pins shown on the plan: the playing run's own elements, else the ones staged for the next run. */
-function hazardPinsFor(run: RunSummary | undefined, fire: HazardPin | null, fireRadiusM?: number): HazardPins | null {
-  const f = run?.elements?.find(e => e.kind === 'fire');
-  if (f) return { fire: { position: f.position, floorId: f.floorId, radiusM: f.radiusM }, fireRadiusM: fireRadiusM ?? null, vents: [] };
-  return fire ? { fire, vents: [] } : null;
-}
 
 function PlaceableInspector({ placeable, canEdit, onEdit, onDelete }: { placeable: Placeable; canEdit: boolean; onEdit(c: EditCommand[]): void; onDelete(): void }) {
   const spec = PLACEABLES[placeable.item];
@@ -800,11 +767,7 @@ function endText(m: SimulationMetrics | null): string {
   if (!m) return 'Queued';
   if (!m.complete) return 'Running';
   // Outcome of the whole run (it can show before the playhead reaches the end).
-  if (m.endReason === 'all-out') {
-    const lost = (m.fireDeaths ?? 0) + (m.smokeDeaths ?? 0);
-    if (lost > 0) return `${m.evacuatedPeople} of ${m.initialPeople} survived`;
-    return m.unreachablePeople ? 'Everyone reachable survived' : 'Everyone survived';
-  }
+  if (m.endReason === 'all-out') return m.unreachablePeople ? 'Everyone reachable survived' : 'Everyone survived';
   if (m.endReason === 'stabilized') return 'Flow stopped changing';
   return 'Time limit reached';
 }
@@ -825,7 +788,6 @@ function RunReadout({ playback, doc }: { playback: PlaybackController; doc: Egre
     }
     rows.push(['Stair descents', String(Object.values(m.perFloor).reduce((sum, f) => sum + f.stairDescents, 0))]);
   }
-  if (m?.fireDeaths !== undefined) rows.push(['Overcome by fire', String(m.fireDeaths)], ['Overcome by smoke', String(m.smokeDeaths ?? 0)]);
   if (m?.unreachablePeople) rows.push(['Cannot reach an exit', String(m.unreachablePeople)]);
   if (m?.exitSwitches !== undefined) rows.push(['Exit changes', m.exitReversals ? `${m.exitSwitches} (${m.exitReversals} back)` : String(m.exitSwitches)]);
   return <section className="readout">
