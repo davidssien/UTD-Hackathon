@@ -167,6 +167,13 @@ export const SimulationScenarioSchema = z.object({
     seed: z.number().int().min(0).max(0xffffffff),
   }),
   goal: ScenarioGoalSchema,
+  /**
+   * Live-mode elements placed for this run (reserved). Changing them restarts the
+   * run. egress-pedestrian v0.1 ignores them; a future fire/smoke model reads them.
+   */
+  elements: z.array(z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('fire'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().positive().max(20), startSeconds: z.number().nonnegative() }),
+  ])).max(50).optional(),
   /** Timeout in simulated seconds. */
   durationSeconds: z.number().positive().max(3600),
 });

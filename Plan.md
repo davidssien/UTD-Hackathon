@@ -349,6 +349,8 @@ Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `p
 
 ## 6. Simulation — `@egress/sim`
 
+> **Source of truth for the math:** [docs/PEOPLE_FLOW_MODEL.md](docs/PEOPLE_FLOW_MODEL.md) holds the exact formulas, parameter values, the reasons behind them, and validation results. This section is the original plan; where the two differ, the model doc wins.
+
 The lifecycle is model-agnostic:
 
 ```text
@@ -469,6 +471,17 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
 - **Edit is always top-down.** Every layout edit happens in an orthographic plan view, with no orbit or tilt while editing. Free-look 3D is for viewing the result after editing, and it is never an editing surface.
 - **Blueprint look:** the floor is blueprint blue. Walls, and anything added from now on (openings, furniture, guides), are drawn in white lines.
+- **Layers button (heatmaps).** One button picks the active layer:
+  - **People flow** (now): field `people.congestion`, `people.density` or `people.speed`, with aggregation Current / Average / Peak.
+    - Actors (dots) on or off.
+    - Granularity of 0.25 / 0.5 / 1 m through `downsampleField(field, 1|2|4)`.
+    - Particle rendering options (dot size, trails) are client-only.
+  - **Air flow** (future): greyed out or hidden. Its fields (`air.velocity`, `air.flowMagnitude`, `smoke.concentration`) are already reserved in `FieldIdSchema`.
+- **Live-mode rules.**
+  - In Live, only the **distribution** (painting) and **elements** (future: fire, via the reserved `scenario.elements`) can change. Building edits happen in Edit mode.
+  - Changing either needs a run restart. There is a dedicated **Stop** button (`cancelRun`).
+  - Pause and scrub are client-side only; the server keeps simulating ahead while paused.
+  - Stop or restart cancels the server job at once: the runner checks every 100 ms, even while pacing, and the job is thrown away.
 - **Dot grid, thin walls.**
   - The plan shows a grid of dots: every grid intersection is a dot, and walls are built along the grid lines between dots.
   - Walls render with a small thickness.
@@ -802,4 +815,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D32 | 11-07 | **Editing and textures:** editing is top-down only, with free-look 3D for viewing after editing, in a blueprint style (blue floor, white lines). Walls gain an optional per-side `finish` (texture IDs) for future textures; it is visual only, and older documents stay valid. |
 | D33 | 11-07 | **Dot grid:** the plan view is a grid of dots, with thin walls built along grid lines between dots. Backend unchanged: dots are the 0.25 m snap points. |
 | D34 | 11-07 | **Local SpacetimeDB:** run a local server for development; Maincloud is for the demo. Bindings are generated with `--import-extension ts` so the runner can import them under Node type stripping, and are committed so the frontend lane needs no CLI. |
+| D35 | 11-07 | **Heatmap layers:** People flow is live now and Air flow is reserved. Per-layer options pick the field, aggregation, actors on/off and granularity (`downsampleField`). |
+| D36 | 11-07 | **Live-mode restarts:** Live allows only distribution and element changes, and both require a restart via a dedicated Stop. Cancellation lands within ~100 ms even while the runner paces ahead. `scenario.elements` (fire) is reserved and ignored by v0.1. |
+| D37 | 11-07 | **Model math is recorded** in [docs/PEOPLE_FLOW_MODEL.md](docs/PEOPLE_FLOW_MODEL.md). Any change to a `PARAMS` value or formula must update that file in the same commit. |
 | D31 | 11-07 | **Edit-mode estimate:** route demand is the floor area whose shortest route passes through each cell, smoothed within rooms; exit distance is also available. It is labelled a potential-bottleneck estimate, never congestion. |

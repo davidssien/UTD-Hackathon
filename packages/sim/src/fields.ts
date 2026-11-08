@@ -183,3 +183,28 @@ export class FieldAccumulator {
     return picked;
   }
 }
+
+/**
+ * Coarser view of a field for the heatmap "granularity" option: averages
+ * factor×factor blocks of finite cells (NaN cells are ignored; all-NaN blocks stay NaN).
+ */
+export function downsampleField(field: ScalarField, factor: number): ScalarField {
+  const f = Math.max(1, Math.floor(factor));
+  if (f === 1) return field;
+  const { width, height, cellSizeM } = field.grid;
+  const w = Math.ceil(width / f), h = Math.ceil(height / f);
+  const values = new Float32Array(w * h);
+  for (let by = 0; by < h; by++) {
+    for (let bx = 0; bx < w; bx++) {
+      let sum = 0, count = 0;
+      for (let y = by * f; y < Math.min(height, by * f + f); y++) {
+        for (let x = bx * f; x < Math.min(width, bx * f + f); x++) {
+          const v = field.values[y * width + x];
+          if (Number.isFinite(v)) { sum += v; count++; }
+        }
+      }
+      values[by * w + bx] = count ? sum / count : NaN;
+    }
+  }
+  return { ...field, grid: { ...field.grid, cellSizeM: cellSizeM * f, width: w, height: h }, values };
+}

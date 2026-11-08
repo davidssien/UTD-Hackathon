@@ -102,7 +102,14 @@ export async function processRun(
       if (factor > 0 && !chunk.last) {
         const due = started + ((chunk.frames[chunk.frames.length - 1].tick + 1) / TICK_RATE_HZ / factor) * 1000;
         const wait = due - clock.now();
-        if (wait > 0) await clock.sleep(wait);
+        // Sleep in short slices so Stop/restart cancels within ~100 ms, even while pacing ahead.
+        for (let left = wait; left > 0; left -= 100) {
+          await clock.sleep(Math.min(100, left));
+          if (backend.isCancelled(run.runId)) {
+            log(`[run ${run.runId}] cancelled at tick ${state.tick}`);
+            return outcome;
+          }
+        }
       }
     }
     const fields = state.fields;
