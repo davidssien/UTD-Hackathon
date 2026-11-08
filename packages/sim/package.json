@@ -1,0 +1,16 @@
+{
+  "name": "@egress/sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Egress pedestrian simulation: grid compiler, navigation fields, population, fixed 10 Hz step, fields, metrics.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@egress/core": "0.1.0"
+  }
+}

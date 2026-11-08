@@ -1,0 +1,182 @@
+{
+  "docVersion": 1,
+  "projectId": "fixture-hall",
+  "revision": 0,
+  "floors": [
+    {
+      "kind": "floor",
+      "id": "hall.floor0",
+      "level": 0,
+      "name": "Ground floor",
+      "elevationM": 0,
+      "ceilingHeightM": 3
+    }
+  ],
+  "vertices": [
+    {
+      "kind": "vertex",
+      "id": "hall.s0.0",
+      "floorId": "hall.floor0",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "hall.s0.1",
+      "floorId": "hall.floor0",
+      "position": {
+        "x": 30,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "hall.s0.3",
+      "floorId": "hall.floor0",
+      "position": {
+        "x": 30,
+        "y": 20
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "hall.s0.5",
+      "floorId": "hall.floor0",
+      "position": {
+        "x": 0,
+        "y": 20
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "hall.s1.0",
+      "floorId": "hall.floor0",
+      "position": {
+        "x": 20,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "hall.s1.1",
+      "floorId": "hall.floor0",
+      "position": {
+        "x": 20,
+        "y": 20
+      }
+    }
+  ],
+  "walls": [
+    {
+      "kind": "wall",
+      "id": "hall.s0.2",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s0.0",
+      "endVertexId": "hall.s1.0",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "hall.s0.4",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s0.1",
+      "endVertexId": "hall.s0.3",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "hall.s0.6",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s0.3",
+      "endVertexId": "hall.s1.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "hall.s0.7",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s0.5",
+      "endVertexId": "hall.s0.0",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "hall.s1.2",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s1.0",
+      "endVertexId": "hall.s1.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "hall.s1.3",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s1.0",
+      "endVertexId": "hall.s0.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "hall.s1.4",
+      "floorId": "hall.floor0",
+      "startVertexId": "hall.s1.1",
+      "endVertexId": "hall.s0.5",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    }
+  ],
+  "openings": [
+    {
+      "kind": "opening",
+      "id": "hall.s2.0",
+      "floorId": "hall.floor0",
+      "wallId": "hall.s0.7",
+      "openingKind": "exit",
+      "offsetM": 10,
+      "widthM": 2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "hall.s2.1",
+      "floorId": "hall.floor0",
+      "wallId": "hall.s1.2",
+      "openingKind": "door",
+      "offsetM": 10,
+      "widthM": 1.6,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "hall.s2.2",
+      "floorId": "hall.floor0",
+      "wallId": "hall.s0.4",
+      "openingKind": "exit",
+      "offsetM": 4,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    }
+  ],
+  "furniture": []
+}

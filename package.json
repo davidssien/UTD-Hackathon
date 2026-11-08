@@ -1,0 +1,24 @@
+{
+  "name": "utd-hackathon",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "packages/*",
+    "services/*",
+    "spacetimedb"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=exitcraft-frontend",
+    "build": "npm run build --workspace=exitcraft-frontend",
+    "start": "npm run start --workspace=exitcraft-frontend",
+    "lint": "npm run lint --workspace=exitcraft-frontend",
+    "test": "npm run test --workspace=exitcraft-frontend",
+    "test:backend": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\"",
+    "typecheck:backend": "tsc -p packages/core && tsc -p packages/sim && tsc -p packages/agent && tsc -p packages/client && tsc -p services/runner"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,110 @@
+{
+  "docVersion": 1,
+  "projectId": "fixture-one-room",
+  "revision": 0,
+  "floors": [
+    {
+      "kind": "floor",
+      "id": "one-room.floor0",
+      "level": 0,
+      "name": "Ground floor",
+      "elevationM": 0,
+      "ceilingHeightM": 3
+    }
+  ],
+  "vertices": [
+    {
+      "kind": "vertex",
+      "id": "one-room.s0.0",
+      "floorId": "one-room.floor0",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "one-room.s0.1",
+      "floorId": "one-room.floor0",
+      "position": {
+        "x": 10,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "one-room.s0.3",
+      "floorId": "one-room.floor0",
+      "position": {
+        "x": 10,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "one-room.s0.5",
+      "floorId": "one-room.floor0",
+      "position": {
+        "x": 0,
+        "y": 8
+      }
+    }
+  ],
+  "walls": [
+    {
+      "kind": "wall",
+      "id": "one-room.s0.2",
+      "floorId": "one-room.floor0",
+      "startVertexId": "one-room.s0.0",
+      "endVertexId": "one-room.s0.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "one-room.s0.4",
+      "floorId": "one-room.floor0",
+      "startVertexId": "one-room.s0.1",
+      "endVertexId": "one-room.s0.3",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "one-room.s0.6",
+      "floorId": "one-room.floor0",
+      "startVertexId": "one-room.s0.3",
+      "endVertexId": "one-room.s0.5",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "one-room.s0.7",
+      "floorId": "one-room.floor0",
+      "startVertexId": "one-room.s0.5",
+      "endVertexId": "one-room.s0.0",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    }
+  ],
+  "openings": [
+    {
+      "kind": "opening",
+      "id": "one-room.s1.0",
+      "floorId": "one-room.floor0",
+      "wallId": "one-room.s0.2",
+      "openingKind": "exit",
+      "offsetM": 5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    }
+  ],
+  "furniture": []
+}

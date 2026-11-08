@@ -7,7 +7,6 @@ A local floorplan-to-3D workspace built with Next.js, React, TypeScript, and Thr
 Requires Node.js 22.18+ (Node.js 24 recommended).
 
 ```sh
-cd frontend
 npm install
 npm run dev
 ```
