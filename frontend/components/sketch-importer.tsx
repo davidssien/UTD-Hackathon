@@ -18,7 +18,7 @@ export default function SketchImporter({current,initialFile,onClose,onImport}:Pr
   const [known,setKnown]=useState(''),[calibrated,setCalibrated]=useState(false);
   const [append,setAppend]=useState(false),[x,setX]=useState(0),[z,setZ]=useState(0),[rotation,setRotation]=useState(0);
   const [traceOnly,setTraceOnly]=useState(false);
-  const dialog=useRef<HTMLDialogElement>(null),requestId=useRef(0),started=useRef(false);
+  const requestId=useRef(0),started=useRef(false);
   const analyze=async(url:string)=>{
     const id=++requestId.current;
     setError('');setStage('Reading image…');setSource(url);setDraft(null);setCalibrated(false);setSelected([]);
@@ -39,10 +39,7 @@ export default function SketchImporter({current,initialFile,onClose,onImport}:Pr
     if(!['image/png','image/jpeg','image/webp'].includes(f.type)||f.size>10*1024*1024){setError('Choose a PNG, JPEG, or WebP smaller than 10 MB.');return;}
     try{const url=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result as string);r.onerror=reject;r.readAsDataURL(f);});await analyze(url);}catch{setError('This image could not be read.');}
   };
-  useEffect(()=>{
-    const d=dialog.current;d?.showModal();
-    return()=>{requestId.current++;d?.close();};
-  },[]);
+  useEffect(()=>()=>{requestId.current++;},[]);
   useEffect(()=>{if(initialFile&&!started.current){started.current=true;void file(initialFile);}},[initialFile]);
   useEffect(()=>{
     if(!pair||source)return;
@@ -76,7 +73,7 @@ export default function SketchImporter({current,initialFile,onClose,onImport}:Pr
     const floors=enclosedRooms(placed.walls).map(points=>({id:crypto.randomUUID(),points,kind:'room' as const}));
     onImport({...placed,floors,references:append?[{image:source,width:draft!.width,depth:draft!.depth,x,z,rotation}]:[],importInfo:{calibrated,method:'Local line recognition with manual review',warnings},referenceImage:append?current?.referenceImage:source},append);onClose();
   };
-  return <dialog className="import-dialog" ref={dialog} onCancel={e=>{e.preventDefault();onClose();}} aria-labelledby="import-title" onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();onClose();}e.stopPropagation();}}>
+  return <section className="import-dialog" aria-labelledby="import-title" onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();onClose();}e.stopPropagation();}}>
     <header><div><span className="import-eyebrow">SKETCH TO HOUSE</span><h1 id="import-title">Bring your plan to life.</h1></div><button aria-label="Close import" onClick={onClose}><X size={20}/></button></header>
     {!draft?<div className="import-upload"><p>A clear plan works best. Nothing in your building changes until you confirm.</p><label className="import-action"><Upload size={19}/> Choose a floor plan<input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" disabled={!!stage} onChange={e=>void file(e.target.files?.[0])}/></label><button onClick={pairing} disabled={!!stage}><Smartphone size={18}/> {pair?'Refresh QR code':'Use your phone'}</button>{pair&&<div className="qr-pair"><img src={pair.qr} alt="QR code for phone upload"/><div><strong>Scan, snap, send.</strong><p>Use the same Wi-Fi network, or a configured HTTPS tunnel. This link expires in 15 minutes.</p><a href={pair.url} target="_blank" rel="noreferrer">Open upload page</a><p className="pair-url">{pair.url.split('#')[0]}</p></div></div>}{pairError&&<p role="alert">{pairError}</p>}{stage&&<p role="status">{stage}</p>}</div>:<>
       <div className="import-review">
@@ -89,5 +86,5 @@ export default function SketchImporter({current,initialFile,onClose,onImport}:Pr
         <details><summary>Recognition notes</summary>{[...warnings.filter(w=>!calibrated||!w.startsWith('Scale')), ...importWarnings(draft)].map((w,i)=><p key={i}>{w}</p>)}</details>{traceOnly&&<p>No automatic structure was accepted. Trace walls over the original image.</p>}</aside>
       </div><footer><p>{placementError||error||'Review every wall and opening before generating. Dimensions are approximate until calibrated.'}</p><button disabled={!draft.walls.length||!!placementError} onClick={generate}>{append?'Add to current building':'Generate Building'}</button></footer>
     </>}{error&&!draft&&<p role="alert">{error}</p>}
-  </dialog>;
+  </section>;
 }

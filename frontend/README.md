@@ -1,5 +1,7 @@
 # ExitCraft Studio
 
+The root page on `implement-backend` is now the **Egress branch demo**, with one 3D scene, top-down-only Design, a viewcube, collapsible menu and local save slots. Read [the current demo guide](../docs/DEMO_UI.md) for the active controls and Maincloud connection. The descriptions below document retained editor/import modules from the merged frontend; image/QR import is not yet connected to the new canonical demo. The retained importer component is now inline rather than modal.
+
 A local floorplan-to-3D workspace built with Next.js, React, TypeScript, and Three.js.
 
 ## Run
