@@ -50,6 +50,7 @@ import JoinProjectReducer from "./join_project_reducer.ts";
 import OpenCompareReducer from "./open_compare_reducer.ts";
 import OpenProjectReducer from "./open_project_reducer.ts";
 import OpenRunReducer from "./open_run_reducer.ts";
+import PreviewProjectReducer from "./preview_project_reducer.ts";
 import PublishProposalReducer from "./publish_proposal_reducer.ts";
 import PublishRunResultReducer from "./publish_run_result_reducer.ts";
 import RegisterServiceReducer from "./register_service_reducer.ts";
@@ -82,8 +83,10 @@ import ActiveRunsRow from "./active_runs_table.ts";
 import ActiveScenariosRow from "./active_scenarios_table.ts";
 import MyMembershipsRow from "./my_memberships_table.ts";
 import MyProfileRow from "./my_profile_table.ts";
+import MyProjectStatsRow from "./my_project_stats_table.ts";
 import MyProjectsRow from "./my_projects_table.ts";
 import MySessionRow from "./my_session_table.ts";
+import PreviewEntitiesRow from "./preview_entities_table.ts";
 import RunnerAgentQueueRow from "./runner_agent_queue_table.ts";
 import RunnerInputsRow from "./runner_inputs_table.ts";
 import RunnerQueueRow from "./runner_queue_table.ts";
@@ -191,6 +194,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyProfileRow),
+  myProjectStats: __table({
+    name: 'my_project_stats',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyProjectStatsRow),
   myProjects: __table({
     name: 'my_projects',
     indexes: [
@@ -205,6 +215,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MySessionRow),
+  previewEntities: __table({
+    name: 'preview_entities',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PreviewEntitiesRow),
   runnerAgentQueue: __table({
     name: 'runner_agent_queue',
     indexes: [
@@ -253,6 +270,7 @@ const reducersSchema = __reducers(
   __reducerSchema("open_compare", OpenCompareReducer),
   __reducerSchema("open_project", OpenProjectReducer),
   __reducerSchema("open_run", OpenRunReducer),
+  __reducerSchema("preview_project", PreviewProjectReducer),
   __reducerSchema("publish_proposal", PublishProposalReducer),
   __reducerSchema("publish_run_result", PublishRunResultReducer),
   __reducerSchema("register_service", RegisterServiceReducer),
@@ -303,10 +321,14 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "my_memberships": Omit<typeof tablesSchema.schemaType.tables["myMemberships"], "accessorName"> & { readonly accessorName: "my_memberships" };
     /** @deprecated Use `myProfile` instead. This alias will be removed in the next major version. */
     readonly "my_profile": Omit<typeof tablesSchema.schemaType.tables["myProfile"], "accessorName"> & { readonly accessorName: "my_profile" };
+    /** @deprecated Use `myProjectStats` instead. This alias will be removed in the next major version. */
+    readonly "my_project_stats": Omit<typeof tablesSchema.schemaType.tables["myProjectStats"], "accessorName"> & { readonly accessorName: "my_project_stats" };
     /** @deprecated Use `myProjects` instead. This alias will be removed in the next major version. */
     readonly "my_projects": Omit<typeof tablesSchema.schemaType.tables["myProjects"], "accessorName"> & { readonly accessorName: "my_projects" };
     /** @deprecated Use `mySession` instead. This alias will be removed in the next major version. */
     readonly "my_session": Omit<typeof tablesSchema.schemaType.tables["mySession"], "accessorName"> & { readonly accessorName: "my_session" };
+    /** @deprecated Use `previewEntities` instead. This alias will be removed in the next major version. */
+    readonly "preview_entities": Omit<typeof tablesSchema.schemaType.tables["previewEntities"], "accessorName"> & { readonly accessorName: "preview_entities" };
     /** @deprecated Use `runnerAgentQueue` instead. This alias will be removed in the next major version. */
     readonly "runner_agent_queue": Omit<typeof tablesSchema.schemaType.tables["runnerAgentQueue"], "accessorName"> & { readonly accessorName: "runner_agent_queue" };
     /** @deprecated Use `runnerInputs` instead. This alias will be removed in the next major version. */
@@ -347,8 +369,10 @@ const tableAccessorAliases = {
   "active_scenarios": "activeScenarios",
   "my_memberships": "myMemberships",
   "my_profile": "myProfile",
+  "my_project_stats": "myProjectStats",
   "my_projects": "myProjects",
   "my_session": "mySession",
+  "preview_entities": "previewEntities",
   "runner_agent_queue": "runnerAgentQueue",
   "runner_inputs": "runnerInputs",
   "runner_queue": "runnerQueue",
@@ -401,10 +425,14 @@ export type DbView = __DbViewBase & {
   readonly "my_memberships": __DbViewBase["myMemberships"];
   /** @deprecated Use `myProfile` instead. This alias will be removed in the next major version. */
   readonly "my_profile": __DbViewBase["myProfile"];
+  /** @deprecated Use `myProjectStats` instead. This alias will be removed in the next major version. */
+  readonly "my_project_stats": __DbViewBase["myProjectStats"];
   /** @deprecated Use `myProjects` instead. This alias will be removed in the next major version. */
   readonly "my_projects": __DbViewBase["myProjects"];
   /** @deprecated Use `mySession` instead. This alias will be removed in the next major version. */
   readonly "my_session": __DbViewBase["mySession"];
+  /** @deprecated Use `previewEntities` instead. This alias will be removed in the next major version. */
+  readonly "preview_entities": __DbViewBase["previewEntities"];
   /** @deprecated Use `runnerAgentQueue` instead. This alias will be removed in the next major version. */
   readonly "runner_agent_queue": __DbViewBase["runnerAgentQueue"];
   /** @deprecated Use `runnerInputs` instead. This alias will be removed in the next major version. */
@@ -445,10 +473,14 @@ export type Tables = __TablesBase & {
   readonly "my_memberships": __TablesBase["myMemberships"];
   /** @deprecated Use `myProfile` instead. This alias will be removed in the next major version. */
   readonly "my_profile": __TablesBase["myProfile"];
+  /** @deprecated Use `myProjectStats` instead. This alias will be removed in the next major version. */
+  readonly "my_project_stats": __TablesBase["myProjectStats"];
   /** @deprecated Use `myProjects` instead. This alias will be removed in the next major version. */
   readonly "my_projects": __TablesBase["myProjects"];
   /** @deprecated Use `mySession` instead. This alias will be removed in the next major version. */
   readonly "my_session": __TablesBase["mySession"];
+  /** @deprecated Use `previewEntities` instead. This alias will be removed in the next major version. */
+  readonly "preview_entities": __TablesBase["previewEntities"];
   /** @deprecated Use `runnerAgentQueue` instead. This alias will be removed in the next major version. */
   readonly "runner_agent_queue": __TablesBase["runnerAgentQueue"];
   /** @deprecated Use `runnerInputs` instead. This alias will be removed in the next major version. */

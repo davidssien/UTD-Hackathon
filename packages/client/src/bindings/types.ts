@@ -109,11 +109,17 @@ export type MyMemberships = __Infer<typeof MyMemberships>;
 export const MyProfile = __t.object("MyProfile", {});
 export type MyProfile = __Infer<typeof MyProfile>;
 
+export const MyProjectStats = __t.object("MyProjectStats", {});
+export type MyProjectStats = __Infer<typeof MyProjectStats>;
+
 export const MyProjects = __t.object("MyProjects", {});
 export type MyProjects = __Infer<typeof MyProjects>;
 
 export const MySession = __t.object("MySession", {});
 export type MySession = __Infer<typeof MySession>;
+
+export const PreviewEntities = __t.object("PreviewEntities", {});
+export type PreviewEntities = __Infer<typeof PreviewEntities>;
 
 export const ProjectInvites = __t.object("ProjectInvites", {
   codeHash: __t.string(),
@@ -133,6 +139,19 @@ export const ProjectMembers = __t.object("ProjectMembers", {
   joinedAt: __t.timestamp(),
 });
 export type ProjectMembers = __Infer<typeof ProjectMembers>;
+
+export const ProjectStats = __t.object("ProjectStats", {
+  projectId: __t.string(),
+  sizeBytes: __t.u32(),
+  walls: __t.u32(),
+  doors: __t.u32(),
+  windows: __t.u32(),
+  exits: __t.u32(),
+  floors: __t.u32(),
+  members: __t.u32(),
+  lastEvacuationSeconds: __t.f64(),
+});
+export type ProjectStats = __Infer<typeof ProjectStats>;
 
 export const Projects = __t.object("Projects", {
   id: __t.string(),
@@ -215,6 +234,12 @@ export const SessionCompare = __t.object("SessionCompare", {
   candidateRunId: __t.string(),
 });
 export type SessionCompare = __Infer<typeof SessionCompare>;
+
+export const SessionPreview = __t.object("SessionPreview", {
+  identity: __t.identity(),
+  projectId: __t.string(),
+});
+export type SessionPreview = __Infer<typeof SessionPreview>;
 
 export const Sessions = __t.object("Sessions", {
   identity: __t.identity(),

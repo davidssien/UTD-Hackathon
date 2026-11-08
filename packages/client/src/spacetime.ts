@@ -18,8 +18,9 @@ import { ghostFor } from './ghost.ts';
 import { OptimisticDocument } from './optimistic.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
+import { parseProjectFile } from './stats.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectStats, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
 } from './types.ts';
 
 export interface SpacetimeClientOptions {
@@ -51,6 +52,7 @@ class SpacetimeEgressClient implements EgressClient {
   readonly connectionError = writable<string | null>(null);
   readonly me = writable<Me | null>(null);
   readonly projects = writable<ProjectSummary[]>([]);
+  readonly projectStats = writable<ProjectStats[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
   readonly runs = writable<RunSummary[]>([]);
   readonly agentJobs = writable<AgentJob[]>([]);
@@ -93,6 +95,7 @@ class SpacetimeEgressClient implements EgressClient {
               tables.myProfile, tables.mySession, tables.myProjects, tables.myMemberships, tables.activeMembers, tables.activeEntities,
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
               tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus, tables.activeCompareResults,
+              tables.myProjectStats, tables.previewEntities,
             ]);
         })
         .onConnectError((_ctx, error) => {
@@ -131,7 +134,7 @@ class SpacetimeEgressClient implements EgressClient {
     const handles = [
       conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
-      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults,
+      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
@@ -159,6 +162,10 @@ class SpacetimeEgressClient implements EgressClient {
     this.projects.set(projectRows
       .map(p => ({ id: p.id, name: p.name, role: roles.get(p.id) ?? 'viewer', revision: Number(p.revision), updatedAt: ms(p.updatedAt) }))
       .sort((a, b) => b.updatedAt - a.updatedAt));
+    this.projectStats.set([...conn.db.myProjectStats.iter()].map(s => ({
+      projectId: s.projectId, sizeBytes: s.sizeBytes, walls: s.walls, doors: s.doors, windows: s.windows, exits: s.exits,
+      floors: s.floors, members: s.members, lastEvacuationSeconds: s.lastEvacuationSeconds < 0 ? null : s.lastEvacuationSeconds,
+    })));
 
     // Document: entity rows of the active project, with optimistic edits rebased on top.
     const project = projectRows.find(p => p.id === this.activeProjectId);
@@ -273,6 +280,33 @@ class SpacetimeEgressClient implements EgressClient {
     const projectId = this.activeProjectId;
     await this.call(c => c.reducers.createInvite({ projectId, role, codeHash: sha256Hex(code), ttlHours }));
     return code;
+  }
+
+  async previewProject(projectId: ID) {
+    await this.call(c => c.reducers.previewProject({ projectId }));
+    const conn = await this.ready;
+    const deadline = Date.now() + 8000;
+    for (;;) {
+      const rows = [...conn.db.previewEntities.iter()].filter(r => r.projectId === projectId);
+      if (rows.length) {
+        const project = [...conn.db.myProjects.iter()].find(p => p.id === projectId);
+        return entitiesToDocument(projectId, Number(project?.revision ?? 0), rows.map(r => JSON.parse(r.payload) as Entity));
+      }
+      if (Date.now() > deadline) throw new DomainError('INTERNAL_ERROR', 'The project preview did not arrive in time.');
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
+
+  async renameProject(projectId: ID, name: string) {
+    await this.call(c => c.reducers.renameProject({ projectId, name }));
+  }
+
+  async deleteProject(projectId: ID) {
+    await this.call(c => c.reducers.deleteProject({ projectId }));
+  }
+
+  async importProject(name: string, json: string) {
+    return this.createProject(name, parseProjectFile(json));
   }
 
   async joinProject(code: string) {

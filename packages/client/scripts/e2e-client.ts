@@ -68,6 +68,20 @@ if (proposal) {
   ok('proposal accepted and applied');
 }
 
+// Saves page (PLAN.md §3 B): stats, preview without opening, rename, JSON round trip, delete.
+await until(() => (client.projectStats.get().find(s => s.projectId === projectId)?.lastEvacuationSeconds ?? null) !== null, 10_000, 'project stats');
+const stats = client.projectStats.get().find(s => s.projectId === projectId)!;
+ok(`project stats: ${(stats.sizeBytes / 1024).toFixed(1)} KB, ${stats.walls} walls, ${stats.exits} exits, last evacuation ${stats.lastEvacuationSeconds} s`);
+const copyId = await client.importProject('Client E2E copy', JSON.stringify(client.document.get().doc));
+await client.openProject(projectId);
+const preview = await client.previewProject(copyId);
+ok(`imported copy previewed without opening: ${preview.walls.length} walls (open project is still ${client.document.get().projectId === projectId ? 'the original' : 'wrong'})`);
+await client.renameProject(copyId, 'Renamed copy');
+await until(() => client.projects.get().find(p => p.id === copyId)?.name === 'Renamed copy', 10_000, 'rename');
+await client.deleteProject(copyId);
+await until(() => !client.projects.get().some(p => p.id === copyId) && !client.projectStats.get().some(s => s.projectId === copyId), 10_000, 'delete');
+ok('renamed and deleted the copy');
+
 client.dispose();
 runner.stop();
 console.log('CLIENT E2E OK');

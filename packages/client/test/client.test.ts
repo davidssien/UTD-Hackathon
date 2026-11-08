@@ -26,6 +26,31 @@ function fakeClock() {
 
 const frame = (tick: number, x: number): ActorFrame => ({ tick, actorXY: new Float32Array([x, 0]), actorFlags: new Uint8Array([0]) });
 
+test('saves page API: stats, preview, rename, JSON round trip and delete (mock)', async () => {
+  const client = createMockClient({ seed: [{ name: 'Hall', doc: fixture('hall.json') }] });
+  const id = client.projects.get()[0].id;
+  const stats = client.projectStats.get().find(s => s.projectId === id)!;
+  const doc = await client.previewProject(id);
+  assert.equal(stats.walls, doc.walls.length);
+  assert.equal(stats.exits, doc.openings.filter(o => o.openingKind === 'exit').length);
+  assert.ok(stats.sizeBytes > 500, `size is counted (${stats.sizeBytes} B)`);
+  assert.equal(stats.lastEvacuationSeconds, null, 'no run yet');
+
+  await client.renameProject(id, '  Main hall ');
+  assert.equal(client.projects.get().find(p => p.id === id)!.name, 'Main hall');
+  await assert.rejects(client.renameProject(id, ''), /1–80/);
+
+  const copy = await client.importProject('Copy of hall', JSON.stringify(doc));
+  const imported = await client.previewProject(copy);
+  assert.equal(imported.walls.length, doc.walls.length, 'download then import round-trips the walls');
+  assert.equal(client.projectStats.get().find(s => s.projectId === copy)!.sizeBytes > 0, true);
+  await assert.rejects(client.importProject('Bad', '{"not":"a project"}'), /./);
+
+  await client.deleteProject(copy);
+  assert.equal(client.projects.get().some(p => p.id === copy), false);
+  assert.equal(client.projectStats.get().some(s => s.projectId === copy), false);
+});
+
 test('LIVE stays lit while following a streaming run, trails the edge, and drops on scrub-back (D82)', () => {
   const { clock, advance } = fakeClock();
   const p = new Playback('r', clock);

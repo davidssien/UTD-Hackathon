@@ -13,8 +13,9 @@ import { LocalEnvironment, runHeuristicAgent, ToolBox, type RunRecord } from '@e
 import { ghostFor } from './ghost.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
+import { parseProjectFile, statsFor } from './stats.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectStats, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
 } from './types.ts';
 
 type PatchCommand = Extract<EditCommand, { kind: 'applyPatch' }>;
@@ -46,6 +47,7 @@ class MockEgressClient implements EgressClient {
   readonly runner = writable<RunnerStatus>({ online: true, lastSeenMs: null, agentModel: 'in-browser heuristic', activeRuns: 0, activeJobs: 0 });
   readonly me = writable<Me | null>({ identity: 'mock-identity', displayName: 'Mock user' });
   readonly projects = writable<ProjectSummary[]>([]);
+  readonly projectStats = writable<ProjectStats[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
   readonly runs = writable<RunSummary[]>([]);
   readonly agentJobs = writable<AgentJob[]>([]);
@@ -61,6 +63,8 @@ class MockEgressClient implements EgressClient {
   private readonly lastScenario = new Map<ID, SimulationScenario>();
   /** Finished user runs, so the agent can use them as baselines (same people via state.initial). */
   private readonly runRecords = new Map<ID, RunRecord & { projectId: ID }>();
+  /** Evacuation time of each project's latest finished user run (saves page). */
+  private readonly lastEvacuation = new Map<ID, number | null>();
 
   constructor(options: MockClientOptions) {
     this.latency = options.latencyMs ?? 0;
@@ -75,8 +79,43 @@ class MockEgressClient implements EgressClient {
     const id = `mock-${uuid().slice(0, 8)}`;
     const doc = { ...seed, projectId: id, revision: 0 };
     this.store.set(id, { summary: { id, name, role: 'owner', revision: 0, updatedAt: Date.now() }, doc, undo: [], redo: [] });
-    this.projects.set([...this.store.values()].map(p => p.summary));
+    this.publishProjects();
     return id;
+  }
+
+  private publishProjects() {
+    const all = [...this.store.values()];
+    this.projects.set(all.map(p => p.summary));
+    this.projectStats.set(all.map(p => statsFor(p.summary.id, p.doc, 1, this.lastEvacuation.get(p.summary.id) ?? null)));
+  }
+
+  async previewProject(projectId: ID) {
+    await this.wait();
+    const project = this.store.get(projectId);
+    if (!project) throw new DomainError('NOT_FOUND', `Project ${projectId} does not exist.`);
+    return project.doc;
+  }
+
+  async renameProject(projectId: ID, name: string) {
+    await this.wait();
+    const project = this.store.get(projectId);
+    const trimmed = name.trim();
+    if (!project) throw new DomainError('NOT_FOUND', `Project ${projectId} does not exist.`);
+    if (!trimmed || trimmed.length > 80) throw new DomainError('INVALID_INPUT', 'Project name must be 1–80 characters.');
+    project.summary = { ...project.summary, name: trimmed, updatedAt: Date.now() };
+    this.publishProjects();
+  }
+
+  async deleteProject(projectId: ID) {
+    await this.wait();
+    if (!this.store.delete(projectId)) throw new DomainError('NOT_FOUND', `Project ${projectId} does not exist.`);
+    this.lastEvacuation.delete(projectId);
+    this.publishProjects();
+    if (this.active === projectId) await this.openProject(null);
+  }
+
+  async importProject(name: string, json: string) {
+    return this.createProject(name, parseProjectFile(json));
   }
 
   async setDisplayName(name: string) {
@@ -152,7 +191,7 @@ class MockEgressClient implements EgressClient {
   private commit(project: MockProject, doc: EgressDocument) {
     project.doc = doc;
     project.summary = { ...project.summary, revision: doc.revision, updatedAt: Date.now() };
-    this.projects.set([...this.store.values()].map(p => p.summary));
+    this.publishProjects();
     this.publishDocument(null);
     this.refreshGhosts();
   }
@@ -213,6 +252,8 @@ class MockEgressClient implements EgressClient {
       update({ progressTick: chunk.frames[chunk.frames.length - 1].tick, status: chunk.last ? 'complete' : 'running' });
       if (chunk.last) {
         playback.setStatus('complete');
+        this.lastEvacuation.set(project.summary.id, chunk.metrics.evacuationTimeSeconds);
+        this.publishProjects();
         this.runRecords.set(runId, {
           runId, projectId: project.summary.id, label: scenario.name, scenario, layoutHash: state.compiled.layoutHash,
           metrics: chunk.metrics, initialActors: state.initial, respawned: 0, computeMs: 0,

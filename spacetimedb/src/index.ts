@@ -127,6 +127,30 @@ const sim_runs = table({ name: 'sim_runs' }, {
   updatedAt: t.timestamp(),
 });
 
+/**
+ * Row type of `my_project_stats` (saves page, PLAN.md §3 B). Computed at read time from the
+ * project's rows; nothing writes this table.
+ */
+const project_stats = table({ name: 'project_stats' }, {
+  projectId: t.string().primaryKey(),
+  /** Approximate size of the project document: the sum of its entity JSON payloads. */
+  sizeBytes: t.u32(),
+  walls: t.u32(),
+  doors: t.u32(),
+  windows: t.u32(),
+  exits: t.u32(),
+  floors: t.u32(),
+  members: t.u32(),
+  /** Evacuation time of the latest finished user run; -1 when there is none. */
+  lastEvacuationSeconds: t.f64(),
+});
+
+/** Which project the caller previews on the saves page without opening it (`preview_entities`). */
+const session_preview = table({ name: 'session_preview' }, {
+  identity: t.identity().primaryKey(),
+  projectId: t.string(),
+});
+
 const sim_results = table({ name: 'sim_results' }, {
   runId: t.string().primaryKey(),
   metrics: t.string(),
@@ -206,6 +230,7 @@ const session_compare = table({ name: 'session_compare' }, {
 const spacetimedb = schema({
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
   layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats, session_compare,
+  project_stats, session_preview,
 });
 export default spacetimedb;
 
@@ -363,6 +388,7 @@ export const delete_project = spacetimedb.reducer({ projectId: t.string() }, (ct
   for (const r of [...ctx.db.agent_steps.projectId.filter(projectId)]) ctx.db.agent_steps.id.delete(r.id);
   for (const r of [...ctx.db.agent_jobs.projectId.filter(projectId)]) ctx.db.agent_jobs.id.delete(r.id);
   for (const s of [...ctx.db.sessions.activeProjectId.filter(projectId)]) ctx.db.sessions.identity.update({ ...s, activeProjectId: '', activeRunId: '' });
+  for (const p of [...ctx.db.session_preview.iter()]) if (p.projectId === projectId) ctx.db.session_preview.identity.delete(p.identity);
   ctx.db.projects.id.delete(projectId);
 }));
 
@@ -430,6 +456,15 @@ export const remove_member = spacetimedb.reducer({ projectId: t.string(), member
 }));
 
 // ── Sessions ────────────────────────────────────────────────────────────────
+
+/** Saves page: show a project's plan and details without opening it. '' clears the preview. */
+export const preview_project = spacetimedb.reducer({ projectId: t.string() }, (ctx, { projectId }) => guard(() => {
+  const row = ctx.db.session_preview.identity.find(ctx.sender);
+  if (!projectId) { if (row) ctx.db.session_preview.identity.delete(ctx.sender); return; }
+  requireRole(ctx, projectId, 'viewer');
+  if (row) ctx.db.session_preview.identity.update({ identity: ctx.sender, projectId });
+  else ctx.db.session_preview.insert({ identity: ctx.sender, projectId });
+}));
 
 export const open_project = spacetimedb.reducer({ projectId: t.string() }, (ctx, { projectId }) => guard(() => {
   if (projectId) requireRole(ctx, projectId, 'viewer');
@@ -762,6 +797,48 @@ export const active_compare_results = spacetimedb.view({ name: 'active_compare_r
     if (result) out.push(result);
   }
   return out;
+});
+
+const isMember = (ctx: { sender: Identity; db: { project_members: { projectId: { filter: (id: string) => Iterable<{ identity: Identity }> } } } }, projectId: string) => {
+  for (const m of ctx.db.project_members.projectId.filter(projectId)) if (m.identity.isEqual(ctx.sender)) return true;
+  return false;
+};
+
+/** Saves page details for every project the caller belongs to, computed at read time. */
+export const my_project_stats = spacetimedb.view({ name: 'my_project_stats', public: true }, t.array(project_stats.rowType), ctx => {
+  const out = [];
+  for (const membership of ctx.db.project_members.identity.filter(ctx.sender)) {
+    const projectId = membership.projectId;
+    let sizeBytes = 0, walls = 0, doors = 0, windows = 0, exits = 0, floors = 0, members = 0;
+    for (const e of ctx.db.entities.projectId.filter(projectId)) {
+      sizeBytes += e.payload.length + 1;
+      if (e.kind === 'wall') walls++;
+      else if (e.kind === 'floor') floors++;
+      else if (e.kind === 'opening') {
+        const kind = (JSON.parse(e.payload) as { openingKind?: string }).openingKind;
+        if (kind === 'door') doors++; else if (kind === 'window') windows++; else if (kind === 'exit') exits++;
+      }
+    }
+    for (const _ of ctx.db.project_members.projectId.filter(projectId)) members++;
+    let lastEvacuationSeconds = -1, latest = -1n;
+    for (const run of ctx.db.sim_runs.projectId.filter(projectId)) {
+      if (run.status !== 'complete' || run.agentJobId || run.createdAt.microsSinceUnixEpoch <= latest) continue;
+      const result = ctx.db.sim_results.runId.find(run.id);
+      if (!result) continue;
+      latest = run.createdAt.microsSinceUnixEpoch;
+      const seconds = (JSON.parse(result.metrics) as { evacuationTimeSeconds?: number | null }).evacuationTimeSeconds;
+      lastEvacuationSeconds = typeof seconds === 'number' ? seconds : -1;
+    }
+    out.push({ projectId, sizeBytes, walls, doors, windows, exits, floors, members, lastEvacuationSeconds });
+  }
+  return out;
+});
+
+/** Entity rows of the project the caller previews on the saves page (membership re-checked at read time). */
+export const preview_entities = spacetimedb.view({ name: 'preview_entities', public: true }, t.array(entities.rowType), ctx => {
+  const preview = ctx.db.session_preview.identity.find(ctx.sender);
+  if (!preview || !isMember(ctx, preview.projectId)) return [];
+  return [...ctx.db.entities.projectId.filter(preview.projectId)];
 });
 
 /** Runner liveness for every client (no project data). Clients treat a runner as online if seen in the last ~20 s. */

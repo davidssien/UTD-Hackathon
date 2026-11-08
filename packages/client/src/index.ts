@@ -12,3 +12,4 @@ export { ghostFor } from './ghost.ts';
 export { writable, WritableStore } from './store.ts';
 export { OptimisticDocument } from './optimistic.ts';
 export { createSpacetimeClient, type SpacetimeClientOptions } from './spacetime.ts';
+export { parseProjectFile, statsFor } from './stats.ts';

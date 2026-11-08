@@ -38,6 +38,21 @@ export interface ProjectSummary {
   updatedAt: number; // ms since epoch
 }
 
+/** Saves page details for one project (PLAN.md §3 B). */
+export interface ProjectStats {
+  projectId: ID;
+  /** Approximate size of the project document in bytes. */
+  sizeBytes: number;
+  walls: number;
+  doors: number;
+  windows: number;
+  exits: number;
+  floors: number;
+  members: number;
+  /** Evacuation time of the latest finished run; null when there is none. */
+  lastEvacuationSeconds: number | null;
+}
+
 export interface DocumentView {
   projectId: ID | null;
   /** Server state plus any optimistic edits still waiting for confirmation. */
@@ -157,6 +172,8 @@ export interface EgressClient {
   readonly runner: Store<RunnerStatus>;
   readonly me: Store<Me | null>;
   readonly projects: Store<ProjectSummary[]>;
+  /** One entry per project in `projects`, for the saves page. */
+  readonly projectStats: Store<ProjectStats[]>;
   readonly document: Store<DocumentView>;
   readonly runs: Store<RunSummary[]>;
   readonly agentJobs: Store<AgentJob[]>;
@@ -166,6 +183,13 @@ export interface EgressClient {
   setDisplayName(name: string): Promise<void>;
   createProject(name: string, seed?: EgressDocument): Promise<ID>;
   openProject(projectId: ID | null): Promise<void>;
+  /** A project's current document without opening it (saves page plan, details, JSON download). */
+  previewProject(projectId: ID): Promise<EgressDocument>;
+  renameProject(projectId: ID, name: string): Promise<void>;
+  /** Owner only. Deletes the project and everything in it. */
+  deleteProject(projectId: ID): Promise<void>;
+  /** Validates a downloaded project JSON and creates a new project from it. */
+  importProject(name: string, json: string): Promise<ID>;
   /** Returns the plain invite code to share; only its hash is stored. */
   createInvite(role: Exclude<Role, 'owner'>, ttlHours?: number): Promise<string>;
   joinProject(code: string): Promise<ID>;
