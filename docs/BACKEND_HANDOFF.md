@@ -6,7 +6,7 @@ Verified 2026-11-07 on `implement-backend`. Scope: finish hosted NVIDIA verifica
 
 `@egress/core` owns the wall graph and deterministic edits. `@egress/sim` runs the real pedestrian model; its math and limitations remain documented in [PEOPLE_FLOW_MODEL.md](PEOPLE_FLOW_MODEL.md). SpacetimeDB owns saved projects, edits, frozen run inputs, replay/results and agent jobs. The outbound Node runner performs simulations and hosted-model tool calls. The frontend accesses it only through `@egress/client`.
 
-The existing `/dev?backend=local` harness drives the real local database and runner. `/dev` without that parameter uses the in-browser mock. It does not currently select Maincloud. The production ExitCraft UI still needs the real client integration.
+*(2026-11-08: the `/dev` harness was removed. The studio at `/` uses the database from the repo `.env`, `?backend=local&db=…` for a local server, or `?backend=mock` in the browser.)*
 
 ## NVIDIA configuration and result
 

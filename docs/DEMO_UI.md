@@ -15,7 +15,7 @@ Branch `backend-passes`. Design source: ARCHITECTURE.md §8 "UI direction v2" an
 | `?project=<id>` | Opens that project if you are a member. The URL always tracks the open project. |
 | `?join=<code>` | Joins through a share link (viewer access), then opens the project. |
 
-`/dev` is still the plain backend harness.
+The old `/dev` harness and the ExitCraft-era editor/viewer components were removed on 2026-11-08; the partner's scan importer keeps its components.
 
 ## Layout
 

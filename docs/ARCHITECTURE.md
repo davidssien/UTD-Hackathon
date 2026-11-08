@@ -10,7 +10,6 @@ Moved out of the master plan when it was rebuilt after `STABLE-V1` (D64). Sectio
 /                       npm workspace and backend build plan.
 frontend/               Next.js app (frontend lane), moved here on main and merged back.
   app/ components/ lib/ public/ tests/
-  app/dev/              Plain backend test page at /dev, retained alongside the demo.
 packages/
   core/                 @egress/core: domain types, Zod, applyEdit, wall graph, corner polygons,
                         rooms, diagnostics, canonical JSON + layoutHash, frame codec

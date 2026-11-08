@@ -27,4 +27,4 @@ npm run build
 
 See the [frontend guide](frontend/README.md) for editor controls and implementation details.
 
-The root npm workspace also contains the shared `packages/`, backend `services/`, and `spacetimedb/` module. The backend reference UI is available at `/dev`. Run `npm run test:backend` and `npm run typecheck:backend` from the repository root.
+The root npm workspace also contains the shared `packages/`, backend `services/`, and `spacetimedb/` module. The studio at `/` covers every backend feature; `?backend=mock` runs it fully in the browser. Run `npm run test:backend` and `npm run typecheck:backend` from the repository root.
