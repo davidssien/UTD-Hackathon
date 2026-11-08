@@ -230,9 +230,14 @@
 .saves.shown{transform:translateX(0);visibility:visible;transition:transform .45s cubic-bezier(.4,0,.2,1),visibility 0s}
 .saves.hidden{transform:translateX(-100%);visibility:hidden}
 .saves-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--chrome)}
-.brand{display:flex;align-items:center;gap:10px}
-.logo-slot{width:30px;height:30px;border:1.5px solid var(--line-2);border-radius:8px}
-.brand strong{font-size:20px;font-weight:650;letter-spacing:-.3px;color:#178a4c}
+.egress-logo{display:block;width:120px;height:auto;flex:none}
+.saves-splash{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:var(--chrome)}
+.saves-splash>div{position:relative}
+.saves-splash .egress-logo{width:min(192px,60vw)}
+.saves-splash p{position:absolute;top:100%;margin:14px 0 0;width:100%;color:var(--muted);text-align:center}
+.saves-splash.fading{animation:splash-fade .22s ease-out forwards}
+@keyframes splash-fade{to{opacity:0}}
+@media(prefers-reduced-motion:reduce){.saves-splash.fading{animation-duration:1ms}}
 .saves-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .saves-actions .new-project{padding:0}
 .saves-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;padding:16px 20px}
@@ -252,6 +257,7 @@
 .saves-list td.actions{text-align:right;width:84px}
 .saves-list td.actions .icon-button{display:inline-grid}
 .row-menu{position:relative;display:inline-block}
+.row-menu .menu button svg{margin-left:0}
 .row-menu .menu{right:0;top:30px;min-width:150px}
 .saves-detail{display:flex;flex-direction:column;background:var(--chrome);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:0;overflow:auto}
 .plan-frame{aspect-ratio:4/3;background:#fff;border:1px solid var(--line);border-radius:8px;display:grid;place-items:center;overflow:hidden}
@@ -265,7 +271,6 @@
 .details dt{color:var(--muted)}
 .details dd{margin:0;font-variant-numeric:tabular-nums;font-weight:550;text-transform:none}
 .detail-actions{margin-top:auto;display:flex;gap:8px;justify-content:space-between;align-items:center}
-.button.open{height:44px;padding:0 28px;font-size:14px}
 .saves .empty{color:var(--muted);padding:16px}
 .project-chip,.mode-switch,.right-column,.dock,.rail,.rail-tab,.pane-tab,.viewcube-host{transition:transform .45s cubic-bezier(.4,0,.2,1),opacity .3s}
 .studio.on-saves .project-chip,.studio.on-saves .viewcube-host{transform:translateY(-160px)}

@@ -22,7 +22,7 @@
   },
   {
     "id": "clinic",
-    "name": "Two-storey clinic",
+    "name": "Two-story clinic",
     "note": "20 × 15 m · two floors joined by a stair",
     "people": 80,
     "file": "clinic.json"

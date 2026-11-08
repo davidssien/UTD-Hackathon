@@ -34,6 +34,9 @@ const nextConfig: NextConfig = {
     ...Object.values(networkInterfaces()).flatMap(list => (list ?? []).filter(a => a.family === 'IPv4' && !a.internal).map(a => a.address)),
     ...(process.env.IMPORT_PUBLIC_ORIGIN ? [new URL(process.env.IMPORT_PUBLIC_ORIGIN).hostname] : []),
   ],
+  async redirects() {
+    return [{ source: "/favicon.ico", destination: "/Egress-favicon.png", permanent: false }];
+  },
   env: {
     EGRESS_SPACETIME_URI: publicUrl ? publicUrl.replace(/^http/, 'ws').replace(/\/+$/, '') : '',
     EGRESS_SPACETIME_DB: pick('SPACETIME_DB'),

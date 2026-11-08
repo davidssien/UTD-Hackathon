@@ -4,6 +4,7 @@
  * with size and JSON download, and the selected project's plan (black on white) and
  * details. Open (or double-click) slides this page away to reveal the editor.
  */
+import Image from 'next/image';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownTrayIcon, ChevronDownIcon, DocumentArrowUpIcon, EllipsisHorizontalIcon, PencilSquareIcon, PhotoIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import type { EgressClient, ProjectStats, ProjectSummary } from '@egress/client';
@@ -36,6 +37,7 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
   const projects = useEgress(client.projects), stats = useEgress(client.projectStats), view = useEgress(client.document), status = useEgress(client.status);
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ id: string; doc: EgressDocument } | null>(null);
+  const [failedPreview, setFailedPreview] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
@@ -50,12 +52,24 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
 
   // Load the selected project's document for the plan and details, without opening it.
   const revision = project?.revision;
+  const openDoc = view.doc?.projectId === current && view.doc?.revision === revision ? view.doc : null;
+  const plan = openDoc ?? (preview?.id === current ? preview.doc : null);
+  const loading = status === 'connecting' || (status === 'connected' && !!current && !plan && failedPreview !== current);
+  const [splash, setSplash] = useState<'loading' | 'fading' | 'done'>(() => active && loading ? 'loading' : 'done');
+  const splashStarted = useRef(0);
   useEffect(() => {
-    if (!current || !active) return;
+    if (splash !== 'loading') return;
+    if (!splashStarted.current) splashStarted.current = performance.now();
+    if (loading) return;
+    const timer = setTimeout(() => setSplash('fading'), Math.max(0, 500 - (performance.now() - splashStarted.current)));
+    return () => clearTimeout(timer);
+  }, [loading, splash]);
+  useEffect(() => {
+    if (!current || !active || openDoc || status !== 'connected') return;
     let live = true;
-    client.previewProject(current).then(doc => { if (live) setPreview({ id: current, doc }); }).catch(e => { if (live) onError(e); });
+    client.previewProject(current).then(doc => { if (live) { setPreview({ id: current, doc }); setFailedPreview(null); } }).catch(e => { if (live) { setFailedPreview(current); onError(e); } });
     return () => { live = false; };
-  }, [client, current, revision, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [client, current, revision, active, openDoc, status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +85,7 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
   };
   const download = async (p: ProjectSummary) => {
     setMenu(null);
-    try { downloadJson(p.name, preview?.id === p.id ? preview.doc : await client.previewProject(p.id)); } catch (e) { onError(e); }
+    try { downloadJson(p.name, p.id === current && plan ? plan : await client.previewProject(p.id)); } catch (e) { onError(e); }
   };
   const remove = async (p: ProjectSummary) => {
     setMenu(null);
@@ -91,11 +105,11 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
     <td className="role">{p.role}</td>
     <td className="num">{kb(byId.get(p.id)?.sizeBytes)}</td>
     <td className="num">{when(p.updatedAt)}</td>
-    <td className="actions" onClick={e => e.stopPropagation()}>
+    <td className="actions" onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}>
       <button className="icon-button" aria-label={`Download ${p.name} as JSON`} data-tip="Download JSON" onClick={() => void download(p)}><ArrowDownTrayIcon /></button>
       <span className="row-menu">
         <button className="icon-button" aria-label={`More actions for ${p.name}`} aria-expanded={menu === p.id} onClick={() => setMenu(m => (m === p.id ? null : p.id))}><EllipsisHorizontalIcon /></button>
-        {menu === p.id && <div className="menu" onMouseLeave={() => setMenu(null)}>
+        {menu === p.id && <div className="menu">
           <button disabled={p.role === 'viewer'} onClick={() => { setMenu(null); setRenaming(p.id); }}><PencilSquareIcon />Rename</button>
           <button className="danger" disabled={p.role !== 'owner'} onClick={() => void remove(p)}><TrashIcon />Delete</button>
         </div>}
@@ -103,9 +117,19 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
     </td>
   </tr>;
 
-  return <section ref={pageRef} className={`saves ${active ? 'shown' : 'hidden'}`} aria-label="Saves" aria-hidden={!active} inert={!active}>
-    <header className="saves-header">
-      <div className="brand"><span className="logo-slot" aria-hidden /><strong>Egress</strong></div>
+  return <section ref={pageRef} className={`saves ${active ? 'shown' : 'hidden'}`} aria-label="Saves" aria-hidden={!active} inert={!active}
+    onKeyDown={e => { if (e.key === 'Escape') { setMenu(null); setExamplesOpen(false); } }}
+    onPointerDownCapture={e => {
+      const target = e.target as Element;
+      if (!target.closest('.row-menu')) setMenu(null);
+      if (!target.closest('.examples-anchor')) setExamplesOpen(false);
+    }}>
+    {splash !== 'done' && <div className={`saves-splash ${splash}`} role="status"
+      onAnimationEnd={() => { if (splash === 'fading') setSplash('done'); }}>
+      <div><EgressLogo /><p>{status === 'connecting' ? 'Loading saves…' : loading ? 'Loading project preview…' : status === 'connected' ? 'Saves ready' : 'Saves unavailable'}</p></div>
+    </div>}
+    <header className="saves-header" inert={splash !== 'done'}>
+      <EgressLogo />
       <div className="saves-actions">
         <form onSubmit={create} className="new-project">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="New project name" aria-label="New project name" maxLength={80} />
@@ -113,7 +137,7 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
         </form>
         <span className="examples-anchor">
           <button className="button" aria-expanded={examplesOpen} onClick={() => setExamplesOpen(v => !v)} disabled={status !== 'connected'}><PlusIcon />Example<ChevronDownIcon /></button>
-          {examplesOpen && <div className="menu examples-menu" role="menu" onMouseLeave={() => setExamplesOpen(false)}>
+          {examplesOpen && <div className="menu examples-menu" role="menu">
             {EXAMPLES.map(x => <button key={x.id} role="menuitem" onClick={() => { setExamplesOpen(false); void onCreateExample(x).then(setSelected).catch(onError); }}>
               <span className="example-name">{x.name}</span><span className="example-note">{x.note} · about {x.people} people</span>
             </button>)}
@@ -124,7 +148,7 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
         <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ''; }} />
       </div>
     </header>
-    <div className="saves-body">
+    <div className="saves-body" inert={splash !== 'done'}>
       <div className="saves-list">
         <table>
           <thead><tr><th>Name</th><th>Role</th><th className="num">Size</th><th className="num">Edited</th><th /></tr></thead>
@@ -135,21 +159,25 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
             {shared.map(row)}
           </tbody>
         </table>
-        {!projects.length && <p className="empty">{status === 'connected' ? 'No projects yet.' : status === 'error' ? 'Not connected.' : 'Connecting…'}</p>}
+        {!projects.length && <p className="empty">{status === 'connected' ? 'No projects yet.' : 'Saves unavailable.'}</p>}
       </div>
       <aside className="saves-detail" aria-label="Project details">
         {project ? <>
-          <div className="plan-frame">{preview?.id === project.id ? <PlanImage doc={preview.doc} /> : <span className="plan-placeholder">Loading plan…</span>}</div>
+          <div className="plan-frame">{plan ? <PlanImage doc={plan} /> : <span className="plan-placeholder">{failedPreview === project.id ? 'Preview unavailable' : 'Loading plan…'}</span>}</div>
           <h2>{project.name}</h2>
           <Details stats={projectStats} project={project} />
           <div className="detail-actions">
             <button className="button" onClick={() => void download(project)}><ArrowDownTrayIcon />Download JSON</button>
-            <button className="button primary open" onClick={() => onOpen(project.id)}>Open</button>
+            <button className="button primary" onClick={() => onOpen(project.id)}>Open</button>
           </div>
         </> : <p className="empty">Create or import a project to begin.</p>}
       </aside>
     </div>
   </section>;
+}
+
+function EgressLogo() {
+  return <Image className="egress-logo" src="/Egress-icon.webp" alt="Egress" width={120} height={40} unoptimized loading="eager" />;
 }
 
 function Details({ stats, project }: { stats: ProjectStats | undefined; project: ProjectSummary }) {

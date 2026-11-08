@@ -114,7 +114,7 @@ const eventHall = build('event-hall', [
   (_d, f) => [slab(f(0), 8, 0, 36, 24, 'wood'), slab(f(0), 0, 5, 8, 19, 'tile'), slab(f(0), 0, 0, 8, 5, 'basic'), slab(f(0), 0, 19, 8, 24, 'tile'), slab(f(0), 31, 6, 36, 18, 'basic')],
 ]);
 
-// ── Two-storey clinic (20 × 15 m per floor): lobby, exam rooms, pharmacy; offices upstairs, joined by a stair ──
+// ── Two-story clinic (20 × 15 m per floor): lobby, exam rooms, pharmacy; offices upstairs, joined by a stair ──
 const clinic = build('clinic', [
   (_d, f) => [box(f(0), 0, 0, 20, 15, 'normal', 0.25)],
   (_d, f) => [
@@ -156,7 +156,7 @@ export const EXAMPLES = [
   { id: 'office', name: 'Office floor', note: '24 × 16 m · offices, meeting room, open plan', people: 120, doc: office },
   { id: 'school', name: 'School wing', note: '48 × 20 m · eleven classrooms off one corridor', people: 320, doc: school },
   { id: 'event-hall', name: 'Event hall', note: '36 × 24 m · foyer, hall and backstage', people: 500, doc: eventHall },
-  { id: 'clinic', name: 'Two-storey clinic', note: '20 × 15 m · two floors joined by a stair', people: 80, doc: clinic },
+  { id: 'clinic', name: 'Two-story clinic', note: '20 × 15 m · two floors joined by a stair', people: 80, doc: clinic },
 ];
 
 const index = EXAMPLES.map(({ id, name, note, people }) => ({ id, name, note, people, file: `${id}.json` }));
