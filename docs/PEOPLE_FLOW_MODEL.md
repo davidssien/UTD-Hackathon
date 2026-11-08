@@ -308,7 +308,9 @@ min_e D_e(i)
 | Hall, 500 people | ≈ 1.5 ms/tick; everyone out in about 141–144 s simulated across seeds |
 | One-room, 80 people through 0.9 m | 73–77 s, against 68 s at the theoretical 1.17 persons/s capacity |
 
-**Not modelled yet:** stairs and multi-floor transitions, fire, smoke and air, group behaviour, pre-movement time, disability profiles, counter-flow at doors (both directions share one bucket).
+Multi-floor runs use model 0.3. Occupants spawn on enclosed, supported walkable surfaces across the building. At each floor they compare exterior exits with descending stairs that lead to an exit. The stair cost includes the inclined flight at 55% of preferred walking speed and the remaining route below. Landing-entry throughput scales with stair width. Replay records floor and elevation during each descent. Each floor keeps its own crowd density and queue measurements.
+
+Future model work includes ascending evacuation routes, fire, smoke, group behaviour, pre-movement time, disability profiles and directional door capacity.
 
 ## 10. Tuning knobs (and what they move)
 

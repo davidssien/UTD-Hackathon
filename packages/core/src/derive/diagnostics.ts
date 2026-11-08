@@ -2,6 +2,7 @@
  * Geometry diagnostics (docs/ARCHITECTURE.md §4). The editor saves invalid drafts; the
  * simulation reports these instead of crashing.
  */
+import { pointInPolygon, stairGeometry } from '../geometry.ts';
 import type { EgressDocument, ID } from '../types.ts';
 import type { Topology } from './topology.ts';
 import { isPassable } from './walls.ts';
@@ -46,6 +47,15 @@ export function diagnostics(doc: EgressDocument, topo: Topology): GeometryDiagno
       if (isPassable(o) && leftRoom !== rightRoom) reachable.add(leftRoom ? sides.left : sides.right);
     }
     if (isPassable(o) && leftRoom && rightRoom) link(sides.left, sides.right);
+  }
+  for (const stair of doc.stairs) {
+    const upper = doc.floors.find(f => f.id === stair.toFloorId), lower = doc.floors.find(f => f.id === stair.floorId);
+    if (!upper || !lower) continue;
+    const { top, bottom } = stairGeometry(stair, upper.elevationM - lower.elevationM);
+    const topRoom = topo.rooms.find(r => r.floorId === upper.id && pointInPolygon(top, r.polygon));
+    const bottomRoom = topo.rooms.find(r => r.floorId === lower.id && pointInPolygon(bottom, r.polygon));
+    // Search backwards from exits: an upstairs room can reach the room below.
+    if (topRoom && bottomRoom) graph.set(bottomRoom.id, (graph.get(bottomRoom.id) ?? new Set()).add(topRoom.id));
   }
   const queue = [...reachable];
   while (queue.length) {

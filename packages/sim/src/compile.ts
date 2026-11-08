@@ -5,7 +5,7 @@
  * layoutHash.
  */
 import {
-  CELL_SIZE_M, deriveLayout, groundFloorId, isPassable, layoutHash, openingSegment, pointInPolygon, topology, wallGeometry,
+  CELL_SIZE_M, deriveLayout, groundFloorId, isPassable, layoutHash, openingSegment, pointInPolygon, stairGeometry, topology, wallGeometry,
   type EgressDocument, type GridDefinition, type ID, type Opening, type Vec2,
 } from '@egress/core';
 import { buildNavigation, type Navigation } from './nav.ts';
@@ -47,6 +47,11 @@ export interface CompiledFloor {
   solids: Vec2[][];
   segments: SegmentIndex;
   nav: Navigation;
+  blockedEdges: Uint8Array;
+  clearance: Float32Array;
+  exitSeeds: number[][];
+  restrictSurface: boolean;
+  stairFootprint: Uint8Array;
   roomCount: number;
 }
 
@@ -151,6 +156,35 @@ export function compileFloor(doc: EgressDocument, floorId: ID = groundFloorId(do
   const navigable = new Uint8Array(n);
   const freeCenter = (i: number) => { const c = center(i); return !segmentIndex.insideSolid(c.x, c.y); };
   for (let i = 0; i < n; i++) navigable[i] = walkable[i] >= 0.3 && room[i] >= 0 && freeCenter(i) ? 1 : 0;
+  const upper = floorId !== groundFloorId(doc);
+  const slabs = doc.slabs.filter(s => s.floorId === floorId);
+  const stairs = doc.stairs.filter(s => s.floorId === floorId || s.toFloorId === floorId).map(s => {
+    const rise = doc.floors.find(f => f.id === s.toFloorId)!.elevationM - doc.floors.find(f => f.id === s.floorId)!.elevationM;
+    return { stair: s, ...stairGeometry(s, rise) };
+  });
+  const restrictSurface = upper || stairs.length > 0;
+  const stairFootprint = new Uint8Array(n);
+  if (restrictSurface) {
+    for (let i = 0; i < n; i++) {
+      if (!navigable[i]) continue;
+      const p = center(i);
+      const supports = !upper || slabs.some(s => pointInPolygon(p, s.polygon));
+      let supported = supports;
+      for (const { stair, direction, top, bottom, landing } of stairs) {
+        if (p.x < stair.min.x || p.x > stair.max.x || p.y < stair.min.y || p.y > stair.max.y) continue;
+        stairFootprint[i] = 1;
+        if (stair.toFloorId === floorId) {
+          const along = (p.x - top.x) * direction.x + (p.y - top.y) * direction.y;
+          supported = along >= -landing / 2;
+        } else {
+          const along = (p.x - bottom.x) * direction.x + (p.y - bottom.y) * direction.y;
+          supported = supports && along < 0.4;
+        }
+        if (!supported) break;
+      }
+      navigable[i] = supported ? 1 : 0;
+    }
+  }
   for (const e of exits) forEachCellInGap(grid, e, i => { if (walkable[i] >= 0.3 && freeCenter(i)) navigable[i] = 1; });
 
   // Walls are thinner than a cell, so cells alone cannot separate rooms: block every
@@ -192,7 +226,7 @@ export function compileFloor(doc: EgressDocument, floorId: ID = groundFloorId(do
   }
   const nav = buildNavigation(grid, navigable, seeds, blockedEdges, clearance);
   const compiled: CompiledFloor = {
-    layoutHash: hash, floorId, grid, walkable, room, navigable, portals, exits, solids, segments: segmentIndex, nav, roomCount: rooms.length,
+    layoutHash: hash, floorId, grid, walkable, room, navigable, portals, exits, solids, segments: segmentIndex, nav, blockedEdges, clearance, exitSeeds: seeds, restrictSurface, stairFootprint, roomCount: rooms.length,
   };
   if (cache.size > 32) cache.delete(cache.keys().next().value!);
   cache.set(key, compiled);

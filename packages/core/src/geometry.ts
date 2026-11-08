@@ -1,5 +1,5 @@
 /** Small, allocation-light 2D helpers. World meters, +y north. */
-import type { Vec2 } from './types.ts';
+import type { Stair, Vec2 } from './types.ts';
 
 export const EPS = 1e-9;
 /** Endpoints closer than this are the same vertex. */
@@ -68,4 +68,18 @@ export function pointInPolygon(p: Vec2, polygon: Vec2[]): boolean {
     if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
   }
   return inside;
+}
+
+/** Shared endpoints and level landing for rendering and walking a straight stair. */
+export function stairGeometry(stair: Pick<Stair, 'min' | 'max' | 'upEdge'>, rise: number) {
+  const { min, max, upEdge } = stair;
+  const vertical = upEdge === 'n' || upEdge === 's';
+  const run = vertical ? max.y - min.y : max.x - min.x;
+  const width = vertical ? max.x - min.x : max.y - min.y;
+  const steps = Math.max(3, Math.round(rise / 0.18));
+  const landing = Math.min(1, Math.max(0.6, run / steps), run * 0.75);
+  const direction = { x: upEdge === 'e' ? 1 : upEdge === 'w' ? -1 : 0, y: upEdge === 'n' ? 1 : upEdge === 's' ? -1 : 0 };
+  const center = { x: (min.x + max.x) / 2, y: (min.y + max.y) / 2 };
+  const along = (d: number) => ({ x: center.x + direction.x * d, y: center.y + direction.y * d });
+  return { run, width, steps, landing, direction, top: along((run - landing) / 2), bottom: along(-run / 2 + Math.min(0.15, run / 4)) };
 }

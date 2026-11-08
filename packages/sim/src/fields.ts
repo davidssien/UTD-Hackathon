@@ -8,7 +8,7 @@
  * never bleeds through walls and is not diluted next to them.
  */
 import type { ActorFrame, Aggregation, FieldId, ScalarField } from '@egress/core';
-import { ACTOR_EXITED, TICK_RATE_HZ } from '@egress/core';
+import { ACTOR_EXITED, ACTOR_TRANSITIONING, TICK_RATE_HZ } from '@egress/core';
 import type { CompiledFloor } from './compile.ts';
 
 export const FREE_WALK_SPEED = 1.34;
@@ -100,7 +100,7 @@ export class FieldAccumulator {
   }
 
   /** Browser path: derive speeds from the previous frame and add a sample. */
-  addFrame(frame: ActorFrame, previous: ActorFrame | null): void {
+  addFrame(frame: ActorFrame, previous: ActorFrame | null, floor = 0): void {
     const count = frame.actorFlags.length;
     const xs = new Float64Array(count), ys = new Float64Array(count), speeds = new Float64Array(count);
     const dt = previous ? Math.max(1e-6, (frame.tick - previous.tick) / TICK_RATE_HZ) : 1;
@@ -109,7 +109,7 @@ export class FieldAccumulator {
       ys[i] = frame.actorXY[i * 2 + 1];
       speeds[i] = previous ? Math.hypot(xs[i] - previous.actorXY[i * 2], ys[i] - previous.actorXY[i * 2 + 1]) / dt : FREE_WALK_SPEED;
     }
-    this.addSample(frame.tick, count, xs, ys, speeds, i => frame.actorFlags[i] !== ACTOR_EXITED);
+    this.addSample(frame.tick, count, xs, ys, speeds, i => (frame.actorFloor?.[i] ?? 0) === floor && frame.actorFlags[i] !== ACTOR_EXITED && frame.actorFlags[i] !== ACTOR_TRANSITIONING);
   }
 
   field(fieldId: FieldId, aggregation: Aggregation): ScalarField | null {
@@ -143,7 +143,7 @@ export class FieldAccumulator {
   }
 
   /** Mean of time-averaged congestion over cells anyone ever stood in, and the overall peak. */
-  congestionSummary(): { mean: number; peak: number } {
+  congestionSummary(): { mean: number; peak: number; cells: number } {
     let sum = 0, cells = 0, peak = 0;
     for (let i = 0; i < this.n; i++) {
       if (!this.everOccupied[i]) continue;
@@ -151,7 +151,7 @@ export class FieldAccumulator {
       sum += this.samples ? this.congestionSum[i] / this.samples : 0;
       if (this.congestionPeak[i] > peak) peak = this.congestionPeak[i];
     }
-    return { mean: cells ? sum / cells : 0, peak };
+    return { mean: cells ? sum / cells : 0, peak, cells };
   }
 
   /** Top-k local maxima of time-averaged congestion, at least `separationM` apart. */

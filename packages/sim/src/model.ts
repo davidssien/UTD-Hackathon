@@ -7,10 +7,11 @@
  * This is an exploratory flow model, not certified evacuation physics.
  */
 import {
-  ACTOR_EXITED, ACTOR_MOVING, ACTOR_QUEUED, createRng, DomainError, DT_SECONDS, TICK_RATE_HZ,
+  ACTOR_EXITED, ACTOR_MOVING, ACTOR_QUEUED, ACTOR_TRANSITIONING, floorsByLevel, createRng, DomainError, DT_SECONDS, TICK_RATE_HZ,
   type ActorFrame, type BottleneckMetric, type EgressDocument, type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
 import { compileFloor, type CompiledFloor, type Portal } from './compile.ts';
+import { buildingRoutes, STAIR_SPEED_FACTOR, type FloorRoutes, type Descent } from './building.ts';
 import { FieldAccumulator } from './fields.ts';
 import { isSpawnable, paintWeights } from './paint.ts';
 import { ActorHash, closestOnSegment, segmentsIntersect } from './spatial.ts';
@@ -24,6 +25,7 @@ export interface InitialActors {
   y: number[];
   r: number[];
   vPref: number[];
+  floorIds?: string[];
 }
 
 export interface FrozenSimulationInput {
@@ -89,6 +91,26 @@ export const PARAMS = {
   stableSpeed: 0.05,
 } as const;
 
+interface SimulationFloor extends FloorRoutes {
+  hash: ActorHash;
+  fields: FieldAccumulator;
+  tokens: Float64Array;
+  portalOpen: Uint8Array;
+  waitTables: Float64Array[];
+  throughput: Int32Array;
+  queue: Int32Array;
+  stairReady: Int32Array;
+  started: number;
+  stairDescents: number;
+}
+interface StairTrip {
+  stair: Descent;
+  startTick: number;
+  ticks: number;
+  fromX: number;
+  fromY: number;
+}
+
 export interface SimState {
   readonly runId: string;
   readonly compiled: CompiledFloor;
@@ -117,18 +139,12 @@ export interface SimState {
   readonly cooldownUntil: Int32Array;
   /** The exit before the last switch, to count reversals (A→B→A). */
   readonly prevExit: Int32Array;
-  /** Per exit: distances of the people heading there, sorted (rebuilt every waitTableTicks). */
-  waitTables: Float64Array[];
-  /** Per exit: the room just inside it. Waiting only counts in that room, i.e. queuing for the exit, not for an inner door. */
-  readonly exitRoom: Int32Array;
   switches: number;
   reversals: number;
-  readonly tokens: Float64Array;
-  readonly portalOpen: Uint8Array;
-  readonly allowedExit: Uint8Array;
-  readonly throughput: Int32Array;
-  readonly queueAtExit: Int32Array;
-  readonly hash: ActorHash;
+  readonly floors: SimulationFloor[];
+  readonly actorFloor: Uint16Array;
+  readonly transit: (StairTrip | null)[];
+  readonly elevation: Float32Array;
   readonly fields: FieldAccumulator;
   readonly maxTicks: number;
   maxQueue: number;
@@ -145,24 +161,24 @@ export interface SimState {
 
 // ── initialize ──────────────────────────────────────────────────────────────
 
-function spawnPopulation(compiled: CompiledFloor, population: SimulationScenario['population'], initialActors?: InitialActors) {
+function spawnPopulation(floors: CompiledFloor[], population: SimulationScenario['population'], initialActors?: InitialActors) {
   const n = population.count;
   const rng = createRng(population.seed);
-  const { grid, walkable } = compiled;
+
 
   // Spawn cells: walkable interior, weighted by free fraction × painted relative density (spec §4.1).
   const painted = population.distribution === 'painted' && population.strokes.length > 0;
-  const weights = painted ? paintWeights(compiled, population.strokes) : null;
-  const cells: number[] = [];
-  const cdf: number[] = [];
+  const cells: number[] = [], cellFloors: number[] = [], cdf: number[] = [];
   let total = 0;
-  for (let i = 0; i < walkable.length; i++) {
-    if (!isSpawnable(compiled, i)) continue;
-    const w = walkable[i] * (weights ? weights[i] : 1);
-    if (w <= 0) continue;
-    total += w;
-    cells.push(i);
-    cdf.push(total);
+  for (const [f, compiled] of floors.entries()) {
+    const weights = painted ? paintWeights(compiled, population.strokes) : null;
+    for (let i = 0; i < compiled.walkable.length; i++) {
+      if (!isSpawnable(compiled, i)) continue;
+      const w = compiled.walkable[i] * (weights ? weights[i] : 1);
+      if (w <= 0) continue;
+      total += w;
+      cells.push(i); cellFloors.push(f); cdf.push(total);
+    }
   }
   if (!cells.length) {
     throw new DomainError('POPULATION_INFEASIBLE', painted
@@ -171,24 +187,27 @@ function spawnPopulation(compiled: CompiledFloor, population: SimulationScenario
   }
 
   const x = new Float64Array(n), y = new Float64Array(n), r = new Float64Array(n), vPref = new Float64Array(n);
-  const placed = new Map<number, number[]>();
+  const placed = floors.map(() => new Map<number, number[]>());
+  const actorFloor = new Uint16Array(n);
   const key = (px: number, py: number) => Math.floor(px) * 100_003 + Math.floor(py);
   const given = initialActors?.x.length === n ? initialActors : null;
   let respawned = 0;
-  const fits = (a: number, px: number, py: number) => {
+  const fits = (a: number, f: number, px: number, py: number) => {
+    const compiled = floors[f];
     if (!clearOfWalls(compiled, px, py, r[a] + 0.02)) return false;
     for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      for (const b of placed.get(key(px + dx, py + dy)) ?? []) {
+      for (const b of placed[f].get(key(px + dx, py + dy)) ?? []) {
         if (Math.hypot(px - x[b], py - y[b]) < r[a] + r[b] + 0.02) return false;
       }
     }
     const cell = compiled.nav.cellAt(px, py);
-    return cell >= 0 && compiled.navigable[cell] === 1 && compiled.room[cell] >= 0;
+    return cell >= 0 && isSpawnable(compiled, cell);
   };
-  const place = (a: number, px: number, py: number) => {
+  const place = (a: number, f: number, px: number, py: number) => {
+    actorFloor[a] = f;
     x[a] = px; y[a] = py;
     const k = key(px, py);
-    placed.set(k, [...(placed.get(k) ?? []), a]);
+    placed[f].set(k, [...(placed[f].get(k) ?? []), a]);
   };
   for (let a = 0; a < n; a++) {
     r[a] = rng.range(PARAMS.radiusMin, PARAMS.radiusMax);
@@ -198,18 +217,19 @@ function spawnPopulation(compiled: CompiledFloor, population: SimulationScenario
       // Controlled comparison: reuse the baseline's people exactly where the geometry still allows it.
       r[a] = given.r[a];
       vPref[a] = given.vPref[a];
-      if (fits(a, given.x[a], given.y[a])) { place(a, given.x[a], given.y[a]); ok = true; }
+      const f = given.floorIds ? floors.findIndex(floor => floor.floorId === given.floorIds![a]) : 0;
+      if (f >= 0 && fits(a, f, given.x[a], given.y[a])) { place(a, f, given.x[a], given.y[a]); ok = true; }
       else respawned++;
     }
     for (let attempt = 0; attempt < PARAMS.spawnAttempts && !ok; attempt++) {
       const pick = rng.next() * total;
       let lo = 0, hi = cdf.length - 1;
       while (lo < hi) { const mid = (lo + hi) >> 1; if (cdf[mid] < pick) lo = mid + 1; else hi = mid; }
-      const cell = cells[lo];
+      const cell = cells[lo], f = cellFloors[lo], grid = floors[f].grid;
       const cx = cell % grid.width, cy = (cell - cx) / grid.width;
       const px = grid.origin.x + (cx + rng.next()) * grid.cellSizeM, py = grid.origin.y + (cy + rng.next()) * grid.cellSizeM;
-      if (!fits(a, px, py)) continue;
-      place(a, px, py);
+      if (!fits(a, f, px, py)) continue;
+      place(a, f, px, py);
       ok = true;
     }
     if (!ok) {
@@ -217,13 +237,13 @@ function spawnPopulation(compiled: CompiledFloor, population: SimulationScenario
     }
   }
 
-  return { x, y, r, vPref, respawned };
+  return { x, y, r, vPref, respawned, actorFloor };
 }
 
 /** The largest crowd this seed and paint distribution can place, up to the control's limit. */
 export function populationCapacity(doc: EgressDocument, population: SimulationScenario['population']): number {
   try {
-    spawnPopulation(compileFloor(doc), population);
+    spawnPopulation(floorsByLevel(doc).map(f => compileFloor(doc, f.id)), population);
     return population.count;
   } catch (e) {
     if (e instanceof DomainError && e.code === 'POPULATION_INFEASIBLE') return Number(e.details?.placed ?? 0);
@@ -232,15 +252,20 @@ export function populationCapacity(doc: EgressDocument, population: SimulationSc
 }
 
 export function initialize(input: FrozenSimulationInput): SimState {
-  const compiled = compileFloor(input.document);
   const { scenario } = input;
   const n = scenario.population.count;
-  const { x, y, r, vPref, respawned } = spawnPopulation(compiled, scenario.population, input.initialActors);
   const blocked = new Set(scenario.goal.blockedExitIds);
-  const allowedExit = new Uint8Array(compiled.exits.length);
-  compiled.exits.forEach((e, i) => { allowedExit[i] = blocked.has(e.openingId) ? 0 : 1; });
-  const portalOpen = new Uint8Array(compiled.portals.length);
-  compiled.portals.forEach((p, i) => { portalOpen[i] = p.kind === 'exit' && blocked.has(p.openingId) ? 0 : 1; });
+  const floors: SimulationFloor[] = buildingRoutes(input.document, blocked).map(route => ({
+    ...route, hash: new ActorHash(route.compiled.grid, n), fields: new FieldAccumulator(route.compiled),
+    tokens: new Float64Array(route.compiled.portals.length).fill(1),
+    portalOpen: Uint8Array.from(route.compiled.portals, p => p.kind === 'exit' && blocked.has(p.openingId) ? 0 : 1),
+    waitTables: route.destinations.map(() => new Float64Array(0)), throughput: new Int32Array(route.compiled.exits.length),
+    queue: new Int32Array(route.destinations.length), stairReady: new Int32Array(route.destinations.length), started: 0, stairDescents: 0,
+  }));
+  const compiled = floors[0].compiled;
+  const { x, y, r, vPref, respawned, actorFloor } = spawnPopulation(floors.map(f => f.compiled), scenario.population, input.initialActors);
+
+  for (const f of actorFloor) floors[f].started++;
 
   // Behaviour traits on their own random stream, so spawn positions match v0.1 and the same
   // person (same index, same seed) keeps the same traits across before/after comparisons.
@@ -260,16 +285,10 @@ export function initialize(input: FrozenSimulationInput): SimState {
     vx: new Float64Array(n), vy: new Float64Array(n), r, vPref,
     exit: new Int32Array(n).fill(-1), flag: new Uint8Array(n), stuck: new Uint16Array(n), squeeze: new Uint16Array(n), reachable: new Uint8Array(n),
     attentionTicks, waitWeight, patience, waited: new Float64Array(n), nextReplan, cooldownUntil: new Int32Array(n), prevExit: new Int32Array(n).fill(-1),
-    waitTables: compiled.exits.map(() => new Float64Array(0)), switches: 0, reversals: 0,
-    exitRoom: Int32Array.from(compiled.exits, e => {
-      const cell = compiled.nav.cellAt(e.center.x - e.normal.x * 0.4, e.center.y - e.normal.y * 0.4);
-      return cell >= 0 ? compiled.room[cell] : -1;
-    }),
-    tokens: new Float64Array(compiled.portals.length).fill(1), portalOpen, allowedExit,
-    throughput: new Int32Array(compiled.exits.length), queueAtExit: new Int32Array(compiled.exits.length),
-    hash: new ActorHash(compiled.grid, n), fields: new FieldAccumulator(compiled),
+    floors, actorFloor, transit: Array(n).fill(null), elevation: Float32Array.from(actorFloor, f => floors[f].floor.elevationM),
+    switches: 0, reversals: 0, fields: floors[0].fields,
     maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, lastProgressTick: 0, exited: 0, unreachable: 0,
-    initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref) },
+    initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref), floorIds: Array.from(actorFloor, f => floors[f].floor.id) },
     respawned,
   };
   // Start: nearest exit, then one round of the full rule so the split accounts for everyone else.
@@ -287,15 +306,14 @@ export function initialize(input: FrozenSimulationInput): SimState {
 
 /** Per exit, the sorted distances of the people heading there (for "people ahead of me"). */
 function rebuildWaitTables(state: SimState) {
-  const { nav, exits } = state.compiled;
-  const lists: number[][] = exits.map(() => []);
+  const lists = state.floors.map(f => f.destinations.map((): number[] => []));
   for (let a = 0; a < state.n; a++) {
-    const e = state.exit[a];
-    if (e < 0 || state.flag[a] === ACTOR_EXITED) continue;
-    const d = nav.distanceAt(e, state.x[a], state.y[a]);
-    if (Number.isFinite(d)) lists[e].push(d);
+    const e = state.exit[a], f = state.actorFloor[a];
+    if (e < 0 || state.flag[a] === ACTOR_EXITED || state.transit[a]) continue;
+    const d = state.floors[f].nav.distanceAt(e, state.x[a], state.y[a]);
+    if (Number.isFinite(d)) lists[f][e].push(d);
   }
-  state.waitTables = lists.map(l => Float64Array.from(l).sort());
+  state.floors.forEach((f, i) => { f.waitTables = lists[i].map(l => Float64Array.from(l).sort()); });
 }
 
 /** How many people heading to exit `e` are closer to it than distance `d` (binary search). */
@@ -319,16 +337,17 @@ function clearOfWalls(compiled: CompiledFloor, px: number, py: number, clearance
  * anything cheaper.
  */
 function chooseExit(state: SimState, a: number, mode: 'initial' | 'replan' | 'impatient') {
-  const { nav, exits } = state.compiled;
+  const { nav, destinations, waitTables } = state.floors[state.actorFloor[a]];
   const current = state.exit[a];
   const frustration = Math.min(1, state.waited[a] / state.patience[a]);
   let best = -1, bestCost = Infinity, currentCost = Infinity, currentDistance = Infinity;
-  for (let e = 0; e < exits.length; e++) {
-    if (!state.allowedExit[e]) continue;
+  for (let e = 0; e < destinations.length; e++) {
+    const dest = destinations[e];
+    if (!Number.isFinite(dest.onwardM)) continue;
     const d = nav.distanceAt(e, state.x[a], state.y[a]);
     if (!Number.isFinite(d)) continue;
-    const wait = peopleAhead(state.waitTables[e] ?? new Float64Array(0), d) / Math.max(0.1, exits[e].capacity);
-    const cost = d / state.vPref[a] + state.waitWeight[a] * wait * (e === current ? 1 + frustration : 1);
+    const wait = peopleAhead(waitTables[e], d) / Math.max(0.1, dest.capacity);
+    const cost = (d + dest.onwardM) / state.vPref[a] + state.waitWeight[a] * wait * (e === current ? 1 + frustration : 1);
     if (e === current) { currentCost = cost; currentDistance = d; }
     if (cost < bestCost || (cost === bestCost && e < best)) { bestCost = cost; best = e; }
   }
@@ -354,19 +373,20 @@ function chooseExit(state: SimState, a: number, mode: 'initial' | 'replan' | 'im
 // ── step ────────────────────────────────────────────────────────────────────
 
 export function step(state: SimState): void {
-  const { n, x, y, vx, vy, r, vPref, flag, compiled } = state;
-  const { nav, portals, exits, segments } = compiled;
+  const { n, x, y, vx, vy, vPref, flag } = state;
   const dt = DT_SECONDS;
-  state.hash.rebuild(x, y, i => flag[i] !== ACTOR_EXITED, n);
-
-  for (let p = 0; p < portals.length; p++) {
-    const cap = state.portalOpen[p] ? portals[p].capacity : 0;
-    state.tokens[p] = Math.min(Math.max(1, cap * 0.5), state.tokens[p] + cap * dt);
+  rebuildActorHashes(state);
+  for (const f of state.floors) {
+    f.compiled.portals.forEach((portal, i) => {
+      const cap = f.portalOpen[i] ? portal.capacity : 0;
+      f.tokens[i] = Math.min(Math.max(1, cap * 0.5), f.tokens[i] + cap * dt);
+    });
+    f.queue.fill(0);
   }
   // Exit choice v0.2: each person re-decides on their own attention clock; impatience forces a look.
   if (state.tick % PARAMS.waitTableTicks === 0) rebuildWaitTables(state);
   for (let a = 0; a < n; a++) {
-    if (flag[a] === ACTOR_EXITED || !state.reachable[a]) continue;
+    if (flag[a] === ACTOR_EXITED || state.transit[a] || !state.reachable[a]) continue;
     if (state.waited[a] >= state.patience[a]) {
       chooseExit(state, a, 'impatient');
       state.waited[a] = 0;
@@ -376,10 +396,14 @@ export function step(state: SimState): void {
       state.nextReplan[a] = state.tick + state.attentionTicks[a];
     }
   }
-  state.queueAtExit.fill(0);
+
 
   for (let a = 0; a < n; a++) {
     if (flag[a] === ACTOR_EXITED) continue;
+    const floor = state.floors[state.actorFloor[a]], compiled = floor.compiled;
+    const { segments, portals, exits } = compiled;
+    const trip = state.transit[a];
+    if (trip) { descend(state, a, trip); continue; }
     const px = x[a], py = y[a];
     let ax = 0, ay = 0;
     if (state.squeeze[a] > 0) state.squeeze[a]--;
@@ -388,16 +412,30 @@ export function step(state: SimState): void {
 
     // 1–2. Desired velocity from the chosen exit's distance field.
     const e = state.exit[a];
-    if (e >= 0) {
-      const exit = exits[e];
-      const inGap = Math.abs((px - exit.center.x) * exit.along.x + (py - exit.center.y) * exit.along.y) < exit.widthM / 2 &&
-        Math.abs((px - exit.center.x) * exit.normal.x + (py - exit.center.y) * exit.normal.y) < exit.depthM + 0.5;
-      // In the last 1.5 m, aim at the middle of the opening so nobody wedges against a jamb.
-      const rx = px - exit.center.x, ry = py - exit.center.y;
-      const across = rx * exit.normal.x + ry * exit.normal.y;
-      const close = !inGap && across < 0 && Math.hypot(rx, ry) < 1.5;
-      const funnel = close ? normalized(exit.center.x + exit.normal.x * 0.4 - px, exit.center.y + exit.normal.y * 0.4 - py) : null;
-      const dir = inGap ? exit.normal : funnel ?? nav.direction(e, px, py);
+    const dest = floor.destinations[e];
+    if (dest) {
+      let dir = floor.nav.direction(e, px, py);
+      const exit = dest.portal;
+      if (exit) {
+        const rx = px - exit.center.x, ry = py - exit.center.y;
+        const across = rx * exit.normal.x + ry * exit.normal.y;
+        const inGap = Math.abs(rx * exit.along.x + ry * exit.along.y) < exit.widthM / 2 && Math.abs(across) < exit.depthM + 0.5;
+        if (inGap) dir = exit.normal;
+        else if (across < 0 && Math.hypot(rx, ry) < 1.5) dir = normalized(exit.center.x + exit.normal.x * 0.4 - px, exit.center.y + exit.normal.y * 0.4 - py) ?? dir;
+      } else if (dest.descent) {
+        const dx = dest.center.x - px, dy = dest.center.y - py, distance = Math.hypot(dx, dy);
+        if (distance < 0.5 && !segments.crosses(px, py, dest.center.x, dest.center.y)) {
+          vx[a] = 0; vy[a] = 0;
+          if (state.tick < floor.stairReady[e]) { flag[a] = ACTOR_QUEUED; floor.queue[e]++; continue; }
+          floor.stairReady[e] = state.tick + Math.ceil(TICK_RATE_HZ / dest.capacity);
+          const ticks = Math.max(1, Math.ceil(dest.descent.length / (vPref[a] * STAIR_SPEED_FACTOR) * TICK_RATE_HZ));
+          state.transit[a] = { stair: dest.descent, startTick: state.tick, ticks, fromX: px, fromY: py };
+          flag[a] = ACTOR_TRANSITIONING;
+          descend(state, a, state.transit[a]!);
+          continue;
+        }
+        if (distance < 0.8 && !segments.crosses(px, py, dest.center.x, dest.center.y)) dir = normalized(dx, dy);
+      }
       if (dir) {
         ax += (dir.x * vPref[a] - vx[a]) / PARAMS.tau;
         ay += (dir.y * vPref[a] - vy[a]) / PARAMS.tau;
@@ -411,7 +449,7 @@ export function step(state: SimState): void {
     }
 
     // 3. Repulsion from neighbours and walls.
-    state.hash.forNear(px, py, b => {
+    floor.hash.forNear(px, py, b => {
       if (b === a) return;
       let dx = px - x[b], dy = py - y[b];
       let d = Math.hypot(dx, dy);
@@ -459,8 +497,8 @@ export function step(state: SimState): void {
     for (let p = 0; p < portals.length; p++) {
       const portal = portals[p];
       if (!crossesPortal(portal, px, py, nx, ny)) continue;
-      if (state.tokens[p] >= 1) {
-        state.tokens[p] -= 1;
+      if (floor.portalOpen[p] && floor.tokens[p] >= 1) {
+        floor.tokens[p] -= 1;
         if (portal.kind === 'exit' && (nx - px) * portal.normal.x + (ny - py) * portal.normal.y > 0) leaving = exits.indexOf(portal);
       } else {
         nx = px; ny = py; vx[a] = 0; vy[a] = 0; queued = true;
@@ -479,7 +517,7 @@ export function step(state: SimState): void {
       const [cx, cy, d] = closestOnSegment(nx, ny, segments.segments[s]);
       if (d >= ra || d < 1e-9) continue;
       const qx = nx + ((nx - cx) / d) * (ra - d), qy = ny + ((ny - cy) / d) * (ra - d);
-      if (!segments.insideSolid(qx, qy) && !segments.crosses(nx, ny, qx, qy) && !crossesAnyPortal(compiled, nx, ny, qx, qy)) { nx = qx; ny = qy; }
+      if (validMove(compiled, nx, ny, qx, qy) && !crossesAnyPortal(compiled, nx, ny, qx, qy)) { nx = qx; ny = qy; }
     }
     x[a] = nx;
     y[a] = ny;
@@ -487,7 +525,7 @@ export function step(state: SimState): void {
     if (leaving >= 0) {
       flag[a] = ACTOR_EXITED;
       vx[a] = 0; vy[a] = 0;
-      state.throughput[leaving]++;
+      floor.throughput[leaving]++;
       state.exited++;
       state.lastExitTick = state.tick + 1;
       continue;
@@ -495,10 +533,10 @@ export function step(state: SimState): void {
     const slow = Math.hypot(vx[a], vy[a]) < PARAMS.queueSpeed;
     // Patience runs down only while queuing for the chosen exit (same room), not while held at an inner door.
     if (slow && e >= 0) {
-      const cell = nav.cellAt(nx, ny), room = state.exitRoom[e];
+      const cell = floor.nav.cellAt(nx, ny), room = dest.room;
       if (room < 0 || (cell >= 0 && compiled.room[cell] === room)) state.waited[a] += dt;
     }
-    if (e >= 0 && (queued || slow) && Math.hypot(nx - exits[e].center.x, ny - exits[e].center.y) < PARAMS.queueRadius) state.queueAtExit[e]++;
+    if (dest && (queued || slow) && Math.hypot(nx - dest.center.x, ny - dest.center.y) < PARAMS.queueRadius) floor.queue[e]++;
     state.stuck[a] = slow && !queued ? Math.min(60000, state.stuck[a] + 1) : 0;
     flag[a] = queued || (slow && nearPortal(portals, nx, ny)) ? ACTOR_QUEUED : ACTOR_MOVING;
   }
@@ -509,12 +547,32 @@ export function step(state: SimState): void {
   // Stabilization (D38): progress = someone left, or the people inside are still moving.
   let active = 0, speedSum = 0;
   for (let a = 0; a < n; a++) if (flag[a] !== ACTOR_EXITED) { active++; speedSum += Math.hypot(vx[a], vy[a]); }
-  if (state.exited > exitedBefore || active === 0 || speedSum / active >= PARAMS.stableSpeed) state.lastProgressTick = state.tick + 1;
+  if (state.exited > exitedBefore || active === 0 || state.transit.some(Boolean) || speedSum / active >= PARAMS.stableSpeed) state.lastProgressTick = state.tick + 1;
   let queue = 0;
-  for (let e = 0; e < exits.length; e++) queue = Math.max(queue, state.queueAtExit[e]);
+  for (const f of state.floors) for (const count of f.queue) queue = Math.max(queue, count);
   state.maxQueue = Math.max(state.maxQueue, queue);
   state.tick++;
   if (state.tick % PARAMS.fieldEvery === 0 || isComplete(state)) sampleFields(state);
+}
+
+function rebuildActorHashes(state: SimState) {
+  state.floors.forEach((floor, i) => floor.hash.rebuild(state.x, state.y,
+    a => state.actorFloor[a] === i && state.flag[a] !== ACTOR_EXITED && !state.transit[a], state.n));
+}
+
+function descend(state: SimState, a: number, trip: StairTrip) {
+  const t = Math.min(1, (state.tick + 1 - trip.startTick) / trip.ticks);
+  const upper = state.floors[state.actorFloor[a]], lower = state.floors[trip.stair.floor];
+  state.x[a] = trip.fromX + (trip.stair.bottom.x - trip.fromX) * t;
+  state.y[a] = trip.fromY + (trip.stair.bottom.y - trip.fromY) * t;
+  state.elevation[a] = upper.floor.elevationM + (lower.floor.elevationM - upper.floor.elevationM) * t;
+  if (t < 1) return;
+  upper.stairDescents++;
+  state.actorFloor[a] = trip.stair.floor;
+  state.transit[a] = null;
+  state.flag[a] = ACTOR_MOVING;
+  state.exit[a] = -1; state.prevExit[a] = -1; state.waited[a] = 0; state.cooldownUntil[a] = 0; state.stuck[a] = 0;
+  chooseExit(state, a, 'initial');
 }
 
 function crossesPortal(p: Portal, ax: number, ay: number, bx: number, by: number): boolean {
@@ -522,7 +580,7 @@ function crossesPortal(p: Portal, ax: number, ay: number, bx: number, by: number
 }
 
 function validMove(c: CompiledFloor, ax: number, ay: number, bx: number, by: number): boolean {
-  return !c.segments.insideSolid(bx, by) && !c.segments.crosses(ax, ay, bx, by);
+  return (!c.restrictSurface || !!c.navigable[c.nav.cellAt(bx, by)]) && !c.segments.insideSolid(bx, by) && !c.segments.crosses(ax, ay, bx, by);
 }
 
 function crossesAnyPortal(c: CompiledFloor, ax: number, ay: number, bx: number, by: number): boolean {
@@ -537,11 +595,12 @@ function nearPortal(portals: Portal[], x: number, y: number): boolean {
 
 /** One deterministic relaxation pass so bodies do not overlap. */
 function separateOverlaps(state: SimState) {
-  const { n, x, y, r, flag, compiled } = state;
-  state.hash.rebuild(x, y, i => flag[i] !== ACTOR_EXITED, n);
+  const { n, x, y, flag } = state;
+  rebuildActorHashes(state);
   for (let a = 0; a < n; a++) {
-    if (flag[a] === ACTOR_EXITED) continue;
-    state.hash.forNear(x[a], y[a], b => {
+    if (flag[a] === ACTOR_EXITED || state.transit[a]) continue;
+    const { compiled, hash } = state.floors[state.actorFloor[a]];
+    hash.forNear(x[a], y[a], b => {
       if (b <= a) return;
       const dx = x[b] - x[a], dy = y[b] - y[a];
       const d = Math.hypot(dx, dy), min = contactRadius(state, a) + contactRadius(state, b);
@@ -560,10 +619,11 @@ function separateOverlaps(state: SimState) {
  * got there — separation and wall push-out can nudge people through too.
  */
 function sweepExited(state: SimState) {
-  const { exits } = state.compiled;
   for (let a = 0; a < state.n; a++) {
-    if (state.flag[a] === ACTOR_EXITED) continue;
+    if (state.flag[a] === ACTOR_EXITED || state.transit[a]) continue;
+    const floor = state.floors[state.actorFloor[a]], exits = floor.compiled.exits;
     for (let e = 0; e < exits.length; e++) {
+      if (!Number.isFinite(floor.destinations[e].onwardM)) continue;
       const exit = exits[e];
       const rx = state.x[a] - exit.center.x, ry = state.y[a] - exit.center.y;
       const across = rx * exit.normal.x + ry * exit.normal.y;
@@ -572,7 +632,7 @@ function sweepExited(state: SimState) {
         state.flag[a] = ACTOR_EXITED;
         state.vx[a] = 0;
         state.vy[a] = 0;
-        state.throughput[e]++;
+        floor.throughput[e]++;
         state.exited++;
         state.lastExitTick = state.tick + 1;
         break;
@@ -584,7 +644,8 @@ function sweepExited(state: SimState) {
 function sampleFields(state: SimState) {
   const speeds = new Float64Array(state.n);
   for (let a = 0; a < state.n; a++) speeds[a] = Math.hypot(state.vx[a], state.vy[a]);
-  state.fields.addSample(state.tick, state.n, state.x, state.y, speeds, a => state.flag[a] !== ACTOR_EXITED);
+  state.floors.forEach((floor, i) => floor.fields.addSample(state.tick, state.n, state.x, state.y, speeds,
+    a => state.actorFloor[a] === i && state.flag[a] !== ACTOR_EXITED && !state.transit[a]));
 }
 
 // ── outputs ─────────────────────────────────────────────────────────────────
@@ -604,28 +665,31 @@ export function endReason(state: SimState): 'all-out' | 'stabilized' | 'timeout'
 export function frame(state: SimState): ActorFrame {
   const actorXY = new Float32Array(state.n * 2);
   for (let a = 0; a < state.n; a++) { actorXY[a * 2] = state.x[a]; actorXY[a * 2 + 1] = state.y[a]; }
-  return { tick: state.tick, actorXY, actorFlags: state.flag.slice() };
+  return { tick: state.tick, actorXY, actorFlags: state.flag.slice(),
+    ...(state.floors.length > 1 ? { actorFloor: state.actorFloor.slice(), actorElevation: state.elevation.slice() } : {}) };
 }
 
 export function metrics(state: SimState): SimulationMetrics {
-  const { exits, portals } = state.compiled;
-  const summary = state.fields.congestionSummary();
+  const summaries = state.floors.map(f => f.fields.congestionSummary());
+  const occupied = summaries.reduce((n, s) => n + s.cells, 0);
+  const mean = occupied ? summaries.reduce((n, s) => n + s.mean * s.cells, 0) / occupied : 0;
+  const peak = Math.max(...summaries.map(s => s.peak));
   const complete = isComplete(state);
   const allOut = state.exited + state.unreachable >= state.n;
-  const bottlenecks: BottleneckMetric[] = state.fields.hotspots(5).map(h => {
-    const near = portals
+  const bottlenecks: BottleneckMetric[] = state.floors.flatMap(f => f.fields.hotspots(5).map(h => {
+    const near = f.compiled.portals
       .map(p => ({ p, d: Math.hypot(p.center.x - h.x, p.center.y - h.y) }))
       .sort((a, b) => a.d - b.d)[0];
     const where = near && near.d < 3 ? ` near the ${near.p.widthM.toFixed(1)} m ${near.p.kind} ${near.p.openingId}` : '';
     return {
-      floorId: state.compiled.floorId,
+      floorId: f.floor.id,
       regionCenter: { x: round2(h.x), y: round2(h.y) },
       score: round3(h.score),
       observedAtTick: Math.max(0, h.peakTick),
-      fieldId: 'people.congestion',
+      fieldId: 'people.congestion' as const,
       description: `Average congestion ${h.score.toFixed(2)}${where}`,
     };
-  });
+  })).sort((a, b) => b.score - a.score).slice(0, 5);
   return {
     runId: state.runId,
     tick: state.tick,
@@ -636,9 +700,12 @@ export function metrics(state: SimState): SimulationMetrics {
     unreachablePeople: state.unreachable,
     evacuationTimeSeconds: allOut && state.exited > 0 ? state.lastExitTick / TICK_RATE_HZ : null,
     maxQueueLength: state.maxQueue,
-    meanCongestion: round3(summary.mean),
-    peakCongestion: round3(summary.peak),
-    perExitThroughput: Object.fromEntries(exits.map((e, i) => [e.openingId, state.throughput[i]])),
+    meanCongestion: round3(mean),
+    peakCongestion: round3(peak),
+    perExitThroughput: Object.fromEntries(state.floors.flatMap(f => f.compiled.exits.map((e, i) => [e.openingId, f.throughput[i]]))),
+    ...(state.floors.length > 1 ? { perFloor: Object.fromEntries(state.floors.map(f => [f.floor.id, {
+      started: f.started, exitedHere: f.throughput.reduce((sum, n) => sum + n, 0), stairDescents: f.stairDescents,
+    }])) } : {}),
     bottlenecks,
     endReason: endReason(state) ?? undefined,
     exitSwitches: state.switches,

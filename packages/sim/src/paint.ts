@@ -11,7 +11,7 @@ import type { CompiledFloor } from './compile.ts';
 export const MAX_PAINT_WEIGHT = 4;
 
 /** Cells people may spawn in: walkable interior cells. */
-export const isSpawnable = (c: CompiledFloor, i: number) => c.navigable[i] === 1 && c.room[i] >= 0 && c.walkable[i] >= 0.5;
+export const isSpawnable = (c: CompiledFloor, i: number) => c.navigable[i] === 1 && c.room[i] >= 0 && !c.stairFootprint[i] && c.walkable[i] >= 0.5;
 
 export function paintWeights(c: CompiledFloor, strokes: PopulationBrushStroke[]): Float32Array {
   const { width, height, origin, cellSizeM: cell } = c.grid;

@@ -1,16 +1,9 @@
 /** Stair geometry for the scene (PLAN.md D75). Pure, so it can be unit tested. */
-import type { Stair, Vec2 } from '@egress/core';
-
-/** Riser height the step count aims for (m). */
-export const RISER_M = 0.18;
+import { stairGeometry, type Stair, type Vec2 } from '@egress/core';
 
 /** Steps of a straight stair as plan rectangles with their top heights above the lower floor, bottom step first. */
 export function stairSteps(stair: Pick<Stair, 'min' | 'max' | 'upEdge'>, rise: number): { min: Vec2; max: Vec2; top: number }[] {
-  const vertical = stair.upEdge === 'n' || stair.upEdge === 's';
-  const run = vertical ? stair.max.y - stair.min.y : stair.max.x - stair.min.x;
-  const n = Math.max(3, Math.round(rise / RISER_M));
-  // Keep a level landing within the footprint, including on short legacy stairs.
-  const landing = Math.min(1, Math.max(0.6, run / n), run * 0.75);
+  const { run, steps: n, landing } = stairGeometry(stair, rise);
   const tread = (run - landing) / (n - 1);
   const steps: { min: Vec2; max: Vec2; top: number }[] = [];
   for (let i = 0; i < n; i++) {

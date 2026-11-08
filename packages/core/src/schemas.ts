@@ -267,6 +267,9 @@ export const SimulationMetricsSchema = z.object({
   meanCongestion: z.number().nonnegative(),
   peakCongestion: z.number().nonnegative(),
   perExitThroughput: z.record(IdSchema, z.number().int().nonnegative()),
+  perFloor: z.record(IdSchema, z.object({
+    started: z.number().int().nonnegative(), exitedHere: z.number().int().nonnegative(), stairDescents: z.number().int().nonnegative(),
+  })).optional(),
   bottlenecks: z.array(BottleneckMetricSchema).max(32),
   complete: z.boolean(),
   /** all-out: every reachable person left; stabilized: nothing changed for 10 s (people trapped or stalled); timeout: safety cap. */

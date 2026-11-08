@@ -59,6 +59,9 @@ export interface ActorFrame {
   /** [x0, y0, x1, y1, …] in world meters. */
   actorXY: Float32Array;
   actorFlags: Uint8Array;
+  /** Floor index in floorsByLevel(snapshot), and feet height in metres. Absent in v1 ground-floor replays. */
+  actorFloor?: Uint16Array;
+  actorElevation?: Float32Array;
 }
 
 /** A decoded replay chunk (2 s = 20 frames at 10 Hz). */
@@ -77,6 +80,7 @@ export interface ScalarField {
   values: Float32Array;
 }
 
+export const MULTIFLOOR_MODEL_VERSION = '0.3.0';
 export const TICK_RATE_HZ = 10;
 export const DT_SECONDS = 0.1;
 export const CELL_SIZE_M = 0.25;
