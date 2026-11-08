@@ -435,7 +435,7 @@ Reference sketches: [layout-v2-rail-open.png](reference/gui/sketches/layout-v2-r
 - **Viewcube works like a CAD viewcube** (D63): drag it to orbit the camera; click a face, edge or corner to snap to that view; it always mirrors the camera. Edit stays top-down, so in Edit the cube only offers Top.
 - **Blueprint look:** a blue floor and a **white dot grid**: 0.25 m snap dots, brighter every metre. **No grid lines.** Drawing previews are white.
 - **Occluding walls are cross-hatched, never dithered.** Top-down views never fade anything. Outside top-down, walls between the camera and the interior floor draw as evenly spaced screen-space cross-hatching. This matches the hand-drawn look planned for future models. Furniture stays opaque.
-- **Parametric vs placeable.** Only walls are parametric now; counters and similar runs are planned. Everything else is a placeable: **wall-attached** (doors, windows, exits) or **floor-placed** (furniture).
+- **Parametric vs placeable.** Only walls are parametric now; counters and similar runs are planned. Everything else is a placeable: **wall-attached** (doors, windows, exits) or **floor-placed** (furniture). Floor-placed items rotate about the vertical axis only (yaw); wall-attached items follow their wall (D88).
 - **Blender wall textures.** `frontend/public/assets/walls/manifest.json` maps each wall material, and later each `finish` id, to textures exported from Blender (base colour, optional normal and roughness). UVs are world-scale, so a texture repeats every `repeatM` metres on any wall length. A missing file falls back to the flat material colour. Physics never reads textures or `finish`.
 
 **Simulate rules** (unchanged from D36)

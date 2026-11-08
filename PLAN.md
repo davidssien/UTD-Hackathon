@@ -463,7 +463,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 | Pass | Contents | Gate |
 |---|---|---|
 | 6 ✅ | **T: one central `.env`, `npm run db` wrapper.** Small, and first. *Done 2026-11-08 and verified on Cody's machine against Maincloud; the second-machine check is still open.* | T done-when list |
-| 7 | A (display, including the steady LIVE badge) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists |
+| 7 ✅ | A (display, including the steady LIVE badge) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists. *Done 2026-11-08 on `stable-forward`; the module changes (`my_project_stats`, `preview_project`, `preview_entities`) need `npm run db:publish` to `egress-dev` before `main` moves. Playhead-accurate readout rows are deferred.* |
 | 8 | C: the desktop serving the website and runner through the tunnel, sharing and presence | C done-when list from a phone on cellular data |
 | 9 | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated |
 | 10 | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron |
@@ -617,3 +617,4 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D85 | 11-08 | **Hosting splits:** the database stays on Maincloud; the home desktop runs only the Next.js site, the runner and the Cloudflare Tunnel. This drops the self-hosted SpacetimeDB, its publisher token and the edge lockdown of database routes from the plan. |
 | D86 | 11-08 | **`Plan.md` renamed to `PLAN.md`.** References were repointed: architecture sections to `docs/ARCHITECTURE.md`, workstreams and decisions to `PLAN.md`, old passes to the archive. |
 | D87 | 11-08 | **`STABLE-V1.1` and `stable-forward`.** `STABLE-V1.1` tags the verified team setup (`6593cd9`). Passes 7–13 run on `stable-forward`. CV floor-plan scanning is the partner's area; we only keep its seams stable (`buildingToDocument`, the importer entry points, `importProject`) and expect manual merges. |
+| D88 | 11-08 | **Placeable rotation.** Floor-placed placeables (furniture) rotate about the vertical axis only (`rotationDeg`, yaw); wall-attached placeables follow their wall. The furniture contract adds this when the furniture pass lands. |
