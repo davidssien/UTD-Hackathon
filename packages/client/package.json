@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@egress/core": "0.1.0",
-    "@egress/sim": "0.1.0"
+    "@egress/sim": "0.1.0",
+    "@egress/agent": "0.1.0"
   },
   "peerDependencies": {
     "react": ">=19"

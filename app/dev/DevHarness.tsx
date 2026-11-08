@@ -63,7 +63,7 @@ function Harness({ client }: { client: EgressClient }) {
       </header>
       {mode === 'edit' && <EditMode client={client} />}
       {mode === 'live' && <LiveMode client={client} playback={playback} onRun={setRunId} />}
-      {mode === 'analysis' && <AnalysisMode client={client} />}
+      {mode === 'analysis' && <AnalysisMode client={client} runId={runId} />}
     </div>
   );
 }
@@ -221,16 +221,17 @@ function Scrubber({ playback }: { playback: PlaybackController }) {
 
 // ── Analysis ────────────────────────────────────────────────────────────────
 
-function AnalysisMode({ client }: { client: EgressClient }) {
+function AnalysisMode({ client, runId }: { client: EgressClient; runId: string | null }) {
   const view = useEgress(client.document);
   const steps = useEgress(client.agentSteps);
+  const jobs = useEgress(client.agentJobs);
   const proposals = useEgress(client.proposals);
   const [prompt, setPrompt] = useState('Investigate the worst bottleneck and suggest one change.');
   const open = proposals.filter(p => p.status === 'proposed');
   return (
     <>
       <Toolbar>
-        <form style={{ display: 'flex', gap: 8, flex: 1 }} onSubmit={e => { e.preventDefault(); if (prompt.trim()) void client.askAgent(prompt); }}>
+        <form style={{ display: 'flex', gap: 8, flex: 1 }} onSubmit={e => { e.preventDefault(); if (prompt.trim()) void client.askAgent(prompt, runId ? { runId } : {}); }}>
           <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ask the agent…" style={{ flex: 1, padding: '4px 8px' }} />
           <button type="submit">Ask</button>
         </form>
@@ -241,7 +242,12 @@ function AnalysisMode({ client }: { client: EgressClient }) {
           {steps.map(s => (
             <div key={s.id} style={{ border: '1px solid #e4e7ec', borderRadius: 6, padding: 6, marginBottom: 6 }}>
               <div style={{ fontWeight: 600 }}>{s.kind}{s.toolName ? ` · ${s.toolName}` : ''}</div>
-              <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: 11 }}>{JSON.stringify(s.payload, null, 1)}</pre>
+              <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: 11, maxHeight: 120, overflow: 'auto' }}>{s.kind === 'message' ? String((s.payload as { text?: string }).text ?? '') : JSON.stringify(s.payload, null, 1).slice(0, 1500)}</pre>
+            </div>
+          ))}
+          {jobs.map(j => (
+            <div key={j.id} style={{ fontSize: 12, color: j.status === 'failed' ? '#b42318' : '#344054', marginBottom: 6 }}>
+              <strong>{j.status === 'running' ? 'Agent is working…' : j.status === 'failed' ? 'Agent failed' : 'Agent finished'}</strong>{j.summary ? ` — ${j.summary}` : ''}
             </div>
           ))}
           {proposals.map(p => (

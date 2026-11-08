@@ -5,10 +5,11 @@
  * the runner (one 2 s chunk every 2 s ÷ pace) so the LIVE edge behaves the same.
  */
 import {
-  applyEdit, DomainError, emptyDocument,
-  type EditCommand, type EgressDocument, type ID, type Pace, type SimulationScenario,
+  applyEdit, DomainError, emptyDocument, layoutHash,
+  type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type SimulationScenario,
 } from '@egress/core';
-import { initialize, simulateChunks, type RunChunk } from '@egress/sim';
+import { initialize, simulateChunks, type RunChunk, type SimState } from '@egress/sim';
+import { LocalEnvironment, runHeuristicAgent, ToolBox, type RunRecord } from '@egress/agent';
 import { ghostFor } from './ghost.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
@@ -54,6 +55,9 @@ class MockEgressClient implements EgressClient {
   private readonly latency: number;
   private active: ID | null = null;
   private readonly cancelled = new Set<ID>();
+  private readonly lastScenario = new Map<ID, SimulationScenario>();
+  /** Finished user runs, so the agent can use them as baselines (same people via state.initial). */
+  private readonly runRecords = new Map<ID, RunRecord & { projectId: ID }>();
 
   constructor(options: MockClientOptions) {
     this.latency = options.latencyMs ?? 0;
@@ -177,14 +181,17 @@ class MockEgressClient implements EgressClient {
       population: scenario.population.count, layoutRevision: project.doc.revision, progressTick: 0, agentJobId: null, createdAt: Date.now(), error: null,
     };
     this.runs.update(list => [summary, ...list]);
+    this.lastScenario.set(project.summary.id, scenario);
     const playback = this.playback(runId);
     playback.setLayout(project.doc);
     const update = (patch: Partial<RunSummary>) => this.runs.update(list => list.map(r => (r.id === runId ? { ...r, ...patch } : r)));
 
     // The real model, in the browser (client-cpu). The runner uses the same code server-side.
     let chunks: Generator<RunChunk>;
+    let state: SimState;
     try {
-      chunks = simulateChunks(initialize({ runId, document: project.doc, scenario }));
+      state = initialize({ runId, document: project.doc, scenario });
+      chunks = simulateChunks(state);
     } catch (e) {
       const error = e instanceof DomainError ? e.toJSON() : { code: 'INTERNAL_ERROR' as const, message: String(e) };
       update({ status: 'failed', error });
@@ -201,7 +208,13 @@ class MockEgressClient implements EgressClient {
       playback.pushFrames(chunk.frames);
       playback.setMetrics(chunk.metrics);
       update({ progressTick: chunk.frames[chunk.frames.length - 1].tick, status: chunk.last ? 'complete' : 'running' });
-      if (chunk.last) playback.setStatus('complete');
+      if (chunk.last) {
+        playback.setStatus('complete');
+        this.runRecords.set(runId, {
+          runId, projectId: project.summary.id, label: scenario.name, scenario, layoutHash: state.compiled.layoutHash,
+          metrics: chunk.metrics, initialActors: state.initial, respawned: 0, computeMs: 0,
+        });
+      }
       else this.later(emit, chunkMs);
     };
     this.later(emit, chunkMs);
@@ -223,35 +236,43 @@ class MockEgressClient implements EgressClient {
     return p;
   }
 
-  // ── agent (canned, but its proposal is a real, valid edit) ──
+  // ── agent: the real tools + measured heuristic planner, in the browser (no model key here) ──
 
-  async askAgent(prompt: string): Promise<ID> {
+  async askAgent(prompt: string, context: AgentContext = {}): Promise<ID> {
     const project = this.current();
     if (!project) throw new Error('Open a project first.');
+    const projectId = project.summary.id;
     const jobId = `job-${uuid().slice(0, 8)}`;
     this.agentJobs.update(list => [{ id: jobId, status: 'running', prompt, summary: '', createdAt: Date.now() }, ...list]);
-    const exit = project.doc.openings.find(o => o.openingKind === 'exit');
-    const steps: Omit<AgentStep, 'id' | 'jobId' | 'seq' | 'at'>[] = [
-      { kind: 'tool_call', toolName: 'inspect_layout', payload: {} },
-      { kind: 'tool_result', toolName: 'inspect_layout', payload: { walls: project.doc.walls.length, exits: project.doc.openings.filter(o => o.openingKind === 'exit').length } },
-      { kind: 'message', toolName: '', payload: { text: exit ? `(mock) The ${exit.widthM.toFixed(1)} m exit is the likely bottleneck; widening it should raise throughput.` : '(mock) There is no exit yet — add one in Edit mode.' } },
-    ];
-    steps.forEach((s, i) => this.later(() => {
-      this.agentSteps.update(list => [...list, { ...s, id: `${jobId}.${i}`, jobId, seq: i, at: Date.now() }]);
-    }, 300 * (i + 1)));
-
-    this.later(() => {
-      if (exit) {
-        const proposalId = `prop-${uuid().slice(0, 8)}`;
-        const commands: EditCommand[] = [{ kind: 'updateOpening', openingId: exit.id, patch: { widthM: exit.widthM + 0.6 } }];
-        this.proposals.update(list => [...list, {
-          id: proposalId, jobId, status: 'proposed', baseRevision: project.doc.revision, commands,
-          notes: { summary: '(mock) Widen the main exit by 0.6 m.', byCommand: { '0': 'Queue forms here; a wider exit increases flow capacity (mock evidence).' } },
-          baselineRunId: '', candidateRunId: '', delta: { evacuationTimeSeconds: -12 }, ghost: ghostFor(project.doc, proposalId, commands),
-        }]);
+    const document = project.doc;
+    const scenario = this.lastScenario.get(projectId) ?? {
+      scenarioVersion: 1 as const, id: `${jobId}.scenario`, projectId, name: 'Evacuate', durationSeconds: 400,
+      population: { count: 150, distribution: 'uniform' as const, strokes: [], seed: 1 }, goal: { kind: 'evacuate' as const, blockedExitIds: [] },
+    };
+    let seq = 0;
+    const env = new LocalEnvironment({
+      document, scenario, jobId,
+      existingRuns: [...this.runRecords.values()].filter(r => r.projectId === projectId && r.layoutHash === layoutHash(document)),
+      onStep: step => this.agentSteps.update(list => [...list, { ...step, id: `${jobId}.${seq}`, jobId, seq: seq++, at: Date.now() }]),
+      onRun: run => this.runs.update(list => [{
+        id: run.runId, projectId, status: 'complete', pace: 'unpaced', seed: run.scenario.population.seed, scenarioName: run.label,
+        population: run.metrics.initialPeople, layoutRevision: document.revision, progressTick: run.metrics.tick, agentJobId: jobId, createdAt: Date.now(), error: null,
+      }, ...list]),
+    });
+    void (async () => {
+      try {
+        const outcome = await runHeuristicAgent(new ToolBox(env, jobId), context);
+        const current = this.current()?.doc ?? document;
+        this.proposals.update(list => [...list, ...env.proposals.map(p => ({
+          id: p.id, jobId, status: 'proposed' as const, baseRevision: document.revision, commands: p.commands, notes: p.notes,
+          baselineRunId: p.baselineRunId, candidateRunId: p.candidateRunId, delta: p.delta, ghost: ghostFor(current, p.id, p.commands),
+        }))]);
+        this.agentJobs.update(list => list.map(j => (j.id === jobId ? { ...j, status: 'complete', summary: outcome.message } : j)));
+      } catch (e) {
+        this.agentSteps.update(list => [...list, { id: `${jobId}.${seq}`, jobId, seq: seq++, kind: 'error', toolName: '', payload: { message: String(e) }, at: Date.now() }]);
+        this.agentJobs.update(list => list.map(j => (j.id === jobId ? { ...j, status: 'failed', summary: String(e) } : j)));
       }
-      this.agentJobs.update(list => list.map(j => (j.id === jobId ? { ...j, status: 'complete', summary: '(mock) Done.' } : j)));
-    }, 300 * (steps.length + 1));
+    })();
     return jobId;
   }
 

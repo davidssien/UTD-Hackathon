@@ -105,15 +105,24 @@ test('an impossible head count fails the run with POPULATION_INFEASIBLE', async 
   client.dispose();
 });
 
-test('mock agent proposes a valid edit whose ghost ids match acceptance', async () => {
-  const client = createMockClient({ seed: [{ name: 'One room', doc: fixture('one-room.json') }] });
-  await client.askAgent('Find the bottleneck');
-  await new Promise(resolve => setTimeout(resolve, 1400));
+test('mock agent runs real tools and simulations, and Accept applies exactly the ghosted edit', async () => {
+  const client = createMockClient({ seed: [{ name: 'Two rooms', doc: fixture('two-rooms-corridor.json') }] });
+  const projectId = client.document.get().projectId!;
+  const runId = await client.startRun(scenario(projectId, 80), 'unpaced');
+  await until(() => client.playback(runId).state.get().complete);
+  const jobId = await client.askAgent('Investigate the worst bottleneck', { runId });
+  await until(() => client.agentJobs.get().find(j => j.id === jobId)?.status !== 'running', 30000);
+  const steps = client.agentSteps.get().filter(s => s.jobId === jobId);
+  assert.ok(steps.some(s => s.kind === 'tool_call' && s.toolName === 'test_edit_batch'), 'tested candidates');
+  assert.ok(client.runs.get().some(r => r.agentJobId === jobId), 'agent runs are listed');
   const [proposal] = client.proposals.get();
   assert.ok(proposal?.ghost, 'proposal has a ghost preview');
+  assert.ok(proposal.delta.evacuationTimeSeconds < 0, JSON.stringify(proposal.delta));
+  const before = client.document.get().doc!.revision;
   await client.acceptProposal(proposal.id);
-  const exit = client.document.get().doc!.openings.find(o => o.openingKind === 'exit')!;
-  assert.ok(Math.abs(exit.widthM - 1.5) < 1e-9);
+  const after = client.document.get().doc!;
+  assert.equal(after.revision, before + 1);
+  for (const id of proposal.ghost!.createdIds.flat()) assert.ok([...after.openings, ...after.walls, ...after.vertices].some(e => e.id === id), 'same ids as the ghost');
   assert.equal(client.proposals.get()[0].status, 'accepted');
   client.dispose();
 });
