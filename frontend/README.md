@@ -80,3 +80,30 @@ Review lines over the image before generating. Drag wall endpoints, trace missin
 Recognition runs locally: adaptive contrast/thresholding, axis-aligned stroke extraction, endpoint/T-junction repair, and room reconstruction. It does not recognize door/window symbols, labels, dimension annotations, arbitrary angled strokes, or perspective. Correct these manually in review. All detections require review; scale remains estimated until calibrated. No AI service is called.
 
 Upload sessions use private temporary files, separate random read/upload tokens, 15-minute expiry, bounded uploads, and decoded/re-encoded images. This backend targets a single Node server with writable temporary storage. Multi-instance/serverless deployment needs shared session/blob storage and deployment-level rate limiting. Expired files are removed on access/session creation; closing desktop pairing deletes the session. Physical phone cameras and real photographed drawings still need device testing. Multi-story import and automatic perspective/semantic recognition are not implemented.
+
+
+## Vercel deployment
+
+Set the Vercel project Root Directory to `frontend` and enable inclusion of
+source files outside that directory. The checked-in `frontend/vercel.json`
+installs the root workspace lockfile with `npm ci`, runs the frontend build,
+and uses `.next` as its output. Remove conflicting dashboard command overrides.
+
+Set `SPACETIME_URL` to the deployed HTTPS database host and `SPACETIME_DB` to
+its published database name before building. These public connection settings
+are compiled into the browser. The simulation runner and database are separate
+services; deploying this frontend does not deploy either of them.
+
+To reproduce the deployment from the repository root:
+
+```sh
+npm ci
+npm run build --workspace=exitcraft-frontend
+```
+
+After changing settings, redeploy without the previous build cache. If a build
+fails, capture the first error above the npm lifecycle summary, including the
+lines preceding any “collapsed duplicate lines” notice.
+
+Phone pairing currently uses local temporary files and is not reliable across
+multiple serverless instances. Desktop file upload does not require pairing.

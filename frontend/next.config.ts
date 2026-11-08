@@ -29,6 +29,8 @@ const pick = (key: string) => process.env[key] || file[key] || '';
 const publicUrl = pick('SPACETIME_PUBLIC_URL') || pick('SPACETIME_URL');
 
 const nextConfig: NextConfig = {
+  // Include sibling workspace packages in deployed server dependencies.
+  outputFileTracingRoot: join(__dirname, '..'),
   // Only this machine's LAN addresses and an explicitly configured tunnel.
   allowedDevOrigins: [
     ...Object.values(networkInterfaces()).flatMap(list => (list ?? []).filter(a => a.family === 'IPv4' && !a.internal).map(a => a.address)),
