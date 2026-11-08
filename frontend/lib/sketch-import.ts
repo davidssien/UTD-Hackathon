@@ -1,8 +1,10 @@
-import { detectWalls, type Building } from './floorplan.ts';
+import { detectOrientedWalls } from './scan-orientation.ts';
+import { type Building } from './floorplan.ts';
 import { joinWallEndpoints, wallLength, projectOnWall, editBuilding } from './building-editor.ts';
+import { rectangularFootprint, structuralWalls, scanGaps, closeScanGap, refreshScanFloors } from './scan-structure.ts';
 import { enclosedRooms } from './rooms.ts';
 
-export type Recognition = { building: Building; warnings: string[]; confidence: 'review-required'; method: string };
+export type Recognition = { building: Building; warnings: string[]; confidence: 'review-required'; method: string; ignored: Building['walls'] };
 // Local contrast enhancement removes broad paper shadows while retaining dark strokes.
 export function preprocessSketch(image: ImageData): ImageData {
   const { width, height, data } = image;
@@ -22,9 +24,11 @@ export function preprocessSketch(image: ImageData): ImageData {
   return { width,height,data:output } as ImageData;
 }
 export function recognizeSketch(image: ImageData): Recognition {
-  const raw = detectWalls(preprocessSketch(image),20,115,3);
+  const oriented = detectOrientedWalls(preprocessSketch(image));
+  const raw = oriented.building;
   if (raw.walls.length>500) throw new Error('Too many marks to review. Crop the plan or use manual tracing.');
-  const walls=joinWallEndpoints(raw.walls);
+  const filtered=structuralWalls(raw.walls);
+  const walls=joinWallEndpoints(filtered.walls);
   for (const wall of walls) for (const end of ['start','end'] as const) {
     const p=end==='start'?{x:wall.x1,z:wall.z1}:{x:wall.x2,z:wall.z2};
     let closest:ReturnType<typeof projectOnWall>|undefined;
@@ -35,12 +39,17 @@ export function recognizeSketch(image: ImageData): Recognition {
     }
     if(closest){if(end==='start'){wall.x1=closest.x;wall.z1=closest.z;}else{wall.x2=closest.x;wall.z2=closest.z;}}
   }
-  const building={...raw,walls,floorBounds:null};
-  return {building,confidence:'review-required',method:'Local contrast + line extraction',warnings:[
+  let building=refreshScanFloors({...raw,walls});
+  for(const gap of scanGaps(walls,raw.walls)) if(gap.evidence) building=closeScanGap(building,gap,gap.evidence);
+  const footprint=rectangularFootprint(building.walls);
+  if(footprint)building={...building,floors:[{id:'detected-footprint',kind:'drawn',points:footprint}]};
+  return {building,ignored:filtered.ignored,confidence:'review-required',method:'Local contrast + orientation estimation + line extraction',warnings:[
+    `${filtered.ignored.length} thin or small disconnected marks excluded as possible furniture/text. Restore any missed walls in review.`,
+    'Door/window suggestions use line symbols and must be checked. Unmarked gaps need your choice.',
     'Scale is estimated. Select a wall and enter its known length before trusting dimensions.',
-    'Local recognition finds near-horizontal and vertical strokes; perspective, symbols, labels and dimensions require review.',
+    'Orientation is estimated from dominant wall directions. Mixed-angle layouts, perspective, symbols, labels and dimensions still require review.',
     ...(!walls.length?['No reliable walls found. Trace walls over the image using the tools below.']:[]),
-    ...(!enclosedRooms(walls).length?['No closed rooms found. Close wall gaps before generating room floors.']:[]),
+    ...(!enclosedRooms(building.walls).length?['No closed rooms found. Close wall gaps before generating room floors.']:[]),
   ]};
 }
 export function transformImport(building: Building, scale=1, rotation=0, x=0, z=0): Building {
