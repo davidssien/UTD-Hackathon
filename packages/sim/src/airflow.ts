@@ -9,6 +9,11 @@ export const WIND_FROM = {
 } satisfies Record<string, Vec2>;
 export type WindFrom = keyof typeof WIND_FROM;
 
+/** An HVAC supply (scenario `vent` element): a small region held at positive pressure. */
+export interface AirVent { position: Vec2; radiusM: number }
+/** Relative pressure a supply vent holds; exterior apertures sit in [-1, 1] under wind. */
+export const VENT_PRESSURE = 3;
+
 export interface FloorAirflow {
   magnitude: ScalarField;
   /** Plan coordinates, +x east and +y north. Values are in relative pressure units per metre. */
@@ -31,7 +36,14 @@ function airDomain(doc: EgressDocument, floorId: string) {
   }) }, floorId);
 }
 
-export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFrom = 'west'): FloorAirflow {
+export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFrom = 'west', vents: AirVent[] = []): FloorAirflow {
+  const s = solveAir(doc, floorId, from, vents);
+  return { magnitude: { grid: s.grid, fieldId: 'air.flowMagnitude', aggregation: 'instant', units: 'relative pressure/m', values: s.values },
+    x: s.x, y: s.y, peak: s.peak, exteriorOpenings: s.exteriorOpenings };
+}
+
+/** The steady pressure solve plus the cell graph, aperture cells and gradient, for smoke transport. */
+export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, vents: AirVent[]) {
   const c = airDomain(doc, floorId);
   const { grid, navigable, blockedEdges } = c;
   const { width, height, cellSizeM } = grid;
@@ -44,6 +56,19 @@ export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFro
     for (const i of c.exitSeeds[e]) {
       fixed[i] = 1;
       pressure[i] = -(normal.x * wind.x + normal.y * wind.y);
+    }
+  }
+  // Supply vents: every open cell within the vent's radius is held at VENT_PRESSURE. A vent in a
+  // sealed room has no lower boundary, so that room settles to uniform pressure and no flow.
+  for (const v of vents) {
+    const r = Math.max(v.radiusM, cellSizeM * 0.75);
+    for (let gy = Math.floor((v.position.y - r - grid.origin.y) / cellSizeM); gy <= Math.floor((v.position.y + r - grid.origin.y) / cellSizeM); gy++) {
+      for (let gx = Math.floor((v.position.x - r - grid.origin.x) / cellSizeM); gx <= Math.floor((v.position.x + r - grid.origin.x) / cellSizeM); gx++) {
+        if (gx < 0 || gy < 0 || gx >= width || gy >= height) continue;
+        const i = gy * width + gx;
+        const cx = grid.origin.x + (gx + 0.5) * cellSizeM, cy = grid.origin.y + (gy + 0.5) * cellSizeM;
+        if (navigable[i] && Math.hypot(cx - v.position.x, cy - v.position.y) <= r) { fixed[i] = 1; pressure[i] = VENT_PRESSURE; }
+      }
     }
   }
   const offsets = [1, -1, width, -width];
@@ -128,7 +153,8 @@ export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFro
     values[i] = Math.hypot(x[i], y[i]);
     peak = Math.max(peak, values[i]);
   }
-  return { magnitude: { grid, fieldId: 'air.flowMagnitude', aggregation: 'instant', units: 'relative pressure/m', values },
-    x, y, peak, exteriorOpenings: c.exitSeeds.filter(seeds => seeds.length).length };
+  const outside = new Uint8Array(n);
+  for (const seeds of c.exitSeeds) for (const i of seeds) outside[i] = 1;
+  return { grid, navigable, neighbours, outside, x, y, values, peak, exteriorOpenings: c.exitSeeds.filter(seeds => seeds.length).length };
 }
 

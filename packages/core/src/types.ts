@@ -52,6 +52,8 @@ export const ACTOR_MOVING = 0;
 export const ACTOR_QUEUED = 1;
 export const ACTOR_TRANSITIONING = 2;
 export const ACTOR_EXITED = 3;
+/** Overcome by fire or smoke (hazard runs). Like exited, the person no longer moves; unlike exited, they did not get out. */
+export const ACTOR_DOWN = 4;
 
 /** One decoded simulation frame. Actor indices are stable for a whole run. */
 export interface ActorFrame {

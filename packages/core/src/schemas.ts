@@ -211,7 +211,11 @@ export const SimulationScenarioSchema = z.object({
    */
   elements: z.array(z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('fire'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().positive().max(20), startSeconds: z.number().nonnegative() }),
+    /** HVAC supply (Pass F): holds a small floor-to-ceiling region at positive pressure, pushing air toward open outlets. */
+    z.object({ kind: z.literal('vent'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().min(0.2).max(5) }),
   ])).max(50).optional(),
+  /** Assumed exterior wind for airflow and smoke (default west). */
+  windFrom: z.enum(['west', 'north', 'east', 'south']).optional(),
   /** Timeout in simulated seconds. */
   durationSeconds: z.number().positive().max(3600),
 });
@@ -277,6 +281,9 @@ export const SimulationMetricsSchema = z.object({
   /** Exit choice v0.2: total exit switches, and switches back to an exit the person had left (A→B→A). */
   exitSwitches: z.number().int().nonnegative().optional(),
   exitReversals: z.number().int().nonnegative().optional(),
+  /** Hazard runs: people overcome inside the flames, and by cumulative smoke exposure. */
+  fireDeaths: z.number().int().nonnegative().optional(),
+  smokeDeaths: z.number().int().nonnegative().optional(),
 });
 
 // ── Agent ───────────────────────────────────────────────────────────────────
