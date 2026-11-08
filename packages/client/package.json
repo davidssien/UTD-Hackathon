@@ -9,7 +9,8 @@
     "./react": "./src/react.ts"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "e2e:local": "node scripts/e2e-client.ts"
   },
   "dependencies": {
     "@egress/core": "0.1.0",

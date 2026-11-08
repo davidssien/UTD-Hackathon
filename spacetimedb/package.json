@@ -7,7 +7,8 @@
   "scripts": {
     "publish:dev": "spacetime publish egress-dev --server maincloud",
     "generate": "spacetime generate --lang typescript --import-extension ts --out-dir ../packages/client/src/bindings --module-path . --yes",
-    "publish:local": "spacetime publish egress-dev -p . -s http://127.0.0.1:3010 --anonymous --yes=skip-login"
+    "publish:local": "spacetime publish egress-local -p . -s http://127.0.0.1:3010 --yes",
+    "login:local": "spacetime login --server-issued-login http://127.0.0.1:3010"
   },
   "dependencies": {
     "@egress/core": "0.1.0",

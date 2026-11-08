@@ -5,7 +5,7 @@
  * → agent job → accept proposal.
  *
  *   spacetimedb-cli start --listen-addr 127.0.0.1:3010
- *   npm run publish:local -w @egress/spacetimedb
+^ *   npm run login:local -w @egress/spacetimedb && npm run publish:local -w @egress/spacetimedb
  *   node services/runner/scripts/e2e-local.ts [ws://127.0.0.1:3010] [egress-dev]
  */
 import { readFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ import { startRunner } from '../src/main.ts';
 import { connect, until } from '../src/spacetime.ts';
 
 const uri = process.argv[2] ?? 'ws://127.0.0.1:3010';
-const db = process.argv[3] ?? 'egress-dev';
+const db = process.argv[3] ?? 'egress-local';
 const doc = parseDocument(JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '..', 'content', 'scenes', 'two-rooms-corridor.json'), 'utf8')));
 const tag = Date.now().toString(36);
 const step = (msg: string) => console.log(`✓ ${msg}`);
