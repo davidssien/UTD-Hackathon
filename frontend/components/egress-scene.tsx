@@ -5,7 +5,7 @@
  * occluders, people and heatmap layers, blue-highlighted agent suggestions with
  * reason bubbles, and a CAD viewcube.
  */
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
@@ -15,7 +15,8 @@ import {
 import type { PlaybackController } from '@egress/client';
 import { WallLibrary } from '@/lib/wall-textures';
 import { encodeField, fieldScale } from '@/lib/heatmap';
-import { floorSurface, stairSteps, upEdgeOf } from '@/lib/stairs';
+import { stairSteps, upEdgeOf } from '@/lib/stairs';
+import { floorSurface, slabCutouts } from '@/lib/floor-surfaces';
 import { ViewCube } from './scene/viewcube';
 
 export type SceneTool = 'pan' | 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'slab' | 'stair';
@@ -553,7 +554,9 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           }
         } else {
           // Click: refinish the surface under the pointer, else fill the room.
-          const slab = state.doc.slabs.find(sl => sl.floorId === floorId && pointInPolygon(raw, sl.polygon));
+          ray.setFromCamera(ndc(e), camera);
+          const surface = ray.intersectObjects(floors.children).find(hit => hit.object.userData.slabId && hit.object.userData.floorId === floorId);
+          const slab = surface && state.doc.slabs.find(sl => sl.id === surface.object.userData.slabId);
           if (slab) { if (slab.material !== material) state.onEdit([{ kind: 'updateSlab', slabId: slab.id, patch: { material } }]); }
           else { const room = roomAt(raw, floorId); if (room) state.onEdit([{ kind: 'createSlab', floorId, polygon: room.polygon, material }]); }
         }
@@ -778,6 +781,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     r.renderer.domElement.style.cursor = painting ? 'crosshair' : '';
   }, [painting, props.editing, library]);
 
+  const finishCuts = useMemo(() => slabCutouts(props.doc?.slabs ?? []), [props.doc?.slabs]);
   // ── Geometry ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const r = runtime.current; if (!r) return;
@@ -880,8 +884,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     for (const slab of doc.slabs ?? []) {
       if (!shown.has(slab.floorId)) continue;
       const m = dimmed(style(r.library.floorMaterial(slab.material), [slab.id]), slab.floorId);
-      m.polygonOffset = true; m.polygonOffsetFactor = -1; m.polygonOffsetUnits = -1;
-      const mesh = new THREE.Mesh(floorSurface(slab.polygon, doc.stairs.filter(s => s.toFloorId === slab.floorId)), m);
+      const cutouts = [...doc.stairs.filter(s => s.toFloorId === slab.floorId), ...(finishCuts.get(slab.id) ?? [])];
+      const mesh = new THREE.Mesh(floorSurface(slab.polygon, cutouts), m);
       mesh.rotation.x = -Math.PI / 2; mesh.position.y = height(slab.floorId) + 0.008; mesh.receiveShadow = true;
       mesh.userData = { slabId: slab.id, floorId: slab.floorId, below: below(slab.floorId) };
       r.floors.add(mesh);
@@ -905,7 +909,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     for (const note of props.notes ?? []) { const at = entityAnchor.get(note.entityId); if (at) anchors.set(note.key, at); }
     r.anchors = anchors;
     if (framedProject.current !== doc.projectId) { framedProject.current = doc.projectId; r.frame(latest.current.editing ? 'top' : 'iso', false); }
-  }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, props.theme, library]);
+  }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, props.theme, library, finishCuts]);
 
   // Geometry above is ready before framing. Acknowledge the camera only after its final frame is drawn.
   useEffect(() => {

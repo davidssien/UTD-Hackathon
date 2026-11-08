@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { floorSurface, stairSteps, upEdgeOf } from '../lib/stairs.ts';
+import { stairSteps, upEdgeOf } from '../lib/stairs.ts';
+import { floorSurface, slabCutouts } from '../lib/floor-surfaces.ts';
+import type { Slab } from '@egress/core';
 
 test('upEdgeOf follows the drag along the longer side', () => {
   assert.equal(upEdgeOf({ x: 0, y: 0 }, { x: 1, y: 4 }), 'n');
@@ -38,4 +40,13 @@ test('a shaft cuts across adjoining slabs and overlapping shafts are only cut on
     assert.ok(Math.abs(area - 6) < 1e-6);
     surface.dispose();
   }
+});
+
+test('legacy event-hall finishes clip backstage from the hall irrespective of save order', () => {
+  const rect = (id: string, floorId: string, x: number, y: number, w: number, h: number): Slab => ({
+    id, floorId, kind: 'slab', material: 'basic', polygon: [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }],
+  });
+  const hall = rect('hall', 'ground', 8, 0, 28, 24), stage = rect('stage', 'ground', 31, 6, 5, 12);
+  const cuts = slabCutouts([hall, rect('upstairs', 'first', 31, 6, 5, 12), stage, rect('foyer', 'ground', 0, 0, 8, 24)]);
+  assert.deepEqual([...cuts], [['hall', [{ min: { x: 31, y: 6 }, max: { x: 36, y: 18 } }]]]);
 });

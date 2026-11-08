@@ -111,7 +111,12 @@ const eventHall = build('event-hall', [
     opening(d, f(0), p(0, 12), 'exit', 3), opening(d, f(0), p(20, 24), 'exit', 1.8), opening(d, f(0), p(20, 0), 'exit', 1.8), opening(d, f(0), p(36, 12), 'exit', 1),
     opening(d, f(0), p(14, 24), 'window', 3), opening(d, f(0), p(26, 24), 'window', 3), opening(d, f(0), p(14, 0), 'window', 3), opening(d, f(0), p(26, 0), 'window', 3),
   ],
-  (_d, f) => [slab(f(0), 8, 0, 36, 24, 'wood'), slab(f(0), 0, 5, 8, 19, 'tile'), slab(f(0), 0, 0, 8, 5, 'basic'), slab(f(0), 0, 19, 8, 24, 'tile'), slab(f(0), 31, 6, 36, 18, 'basic')],
+  (_d, f) => [
+    { kind: 'createSlab', floorId: f(0), material: 'wood',
+      polygon: [p(8, 0), p(36, 0), p(36, 6), p(31, 6), p(31, 18), p(36, 18), p(36, 24), p(8, 24)] },
+    slab(f(0), 0, 5, 8, 19, 'tile'), slab(f(0), 0, 0, 8, 5, 'basic'),
+    slab(f(0), 0, 19, 8, 24, 'tile'), slab(f(0), 31, 6, 36, 18, 'basic'),
+  ],
 ]);
 
 // ── Two-story clinic (20 × 15 m per floor): lobby, exam rooms, pharmacy; offices upstairs, joined by a stair ──
