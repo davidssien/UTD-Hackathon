@@ -13,7 +13,9 @@
 
 ## Status — Sat 2026-11-07, backend handoff verified
 
-**Latest branch demo:** current `main` was merged into `implement-backend` (`1c1cd88`), including the move into `frontend/` and sketch/QR import modules. The root page now uses one 3D scene with locked top-down Design, isometric/freecam in other modes, a viewcube, wall-only dithering, a switching bottom taskbar and a collapsible left menu. Save slots and **+ Create new** work without modal popups. `/` persists layout slots locally; `/?backend=maincloud` connects the same interface to the real backend. A real browser edit/undo and 50-person run were verified through that connection. See [docs/DEMO_UI.md](docs/DEMO_UI.md). These demo changes stay on our branch and are not pushed or published.
+**Current focus (Sun 2026-11-08, branch `backend-passes`):** build the goal UI from §8 "UI direction v2" on top of the merged demo, enough to demo every major backend feature that exists today. Backend follow-ups (share links, presence, compliance, multi-edit) come after. `implement-backend` is merged in and will be deleted; `backend-passes` merges into `main` when the project is done.
+
+**Previous branch demo (superseded by UI v2):** current `main` was merged into `implement-backend` (`1c1cd88`), including the move into `frontend/` and sketch/QR import modules. The root page now uses one 3D scene with locked top-down Design, isometric/freecam in other modes, a viewcube, wall-only dithering, a switching bottom taskbar and a collapsible left menu. Save slots and **+ Create new** work without modal popups. `/` persists layout slots locally; `/?backend=maincloud` connects the same interface to the real backend. A real browser edit/undo and 50-person run were verified through that connection. See [docs/DEMO_UI.md](docs/DEMO_UI.md). These demo changes stay on our branch and are not pushed or published.
 
 **Working now, on `main`:** open `/dev` (`npm run dev`, then http://localhost:3000/dev). Everything below runs in the browser through the mock client.
 - **Edit:** pen, box, erase and door/exit/window tools on a planar wall graph, with T-junction splitting and boxes that share sides.
@@ -506,43 +508,71 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
 ## 8. UI contract — modes, toolbars, `@egress/client`
 
-### UI direction (Cody, Sat 19:10) — for the frontend lane
+### UI direction v2 (Cody, Sun 2026-11-08 00:00) — supersedes the Sat 19:10 notes, D47 (no modals) and D48 (local save slots)
 
-- **One 3D scene; Edit is always top-down.** Every asset is 3D. Editing locks the same scene to an orthographic overhead camera, with no orbit or tilt. Exiting Edit transitions naturally to isometric and enables freecam; there is no secondary 2D visual model. The canonical plan graph and simulation grid remain data beneath the scene.
-- **Viewcube and floor visibility:** a top-left viewcube reflects orientation and offers presets outside Edit, kept clear of File. Bound freecam above the active floor (initial tuning proposal: no roll, roughly 10–90° elevation). Only walls that obscure the interior floor, including their attached trim/frames, receive dithering. Furniture/placeables remain opaque. These are frontend decisions, not saved domain fields.
-- **Preserved GUI references:** prioritize the top Design / Simulate / Analysis selector, switching bottom taskbar and side menu from the current frontend and supplied sketches. The latest user direction forbids modal popups: save switching is inline, and the left menu has a pull handle and collapses after bottom-toolbar use. Other styling is open to discussion. The archive and superseded details are recorded in [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md); current implementation is in [docs/DEMO_UI.md](docs/DEMO_UI.md). Fire and the legacy import adapter remain outside this demo's backend scope.
-- **Blueprint look:** the floor is blueprint blue. Walls, and anything added from now on (openings, furniture, guides), are drawn in white lines.
-- **Layers button (heatmaps).** One button picks the active layer:
-  - **People flow** (now): field `people.congestion`, `people.density` or `people.speed`, with aggregation Current / Average / Peak.
-    - Actors (dots) on or off.
-    - Granularity of 0.25 / 0.5 / 1 m through `downsampleField(field, 1|2|4)`.
-    - Particle rendering options (dot size, trails) are client-only.
-  - **Air flow** (future): greyed out or hidden. Its fields (`air.velocity`, `air.flowMagnitude`, `smoke.concentration`) are already reserved in `FieldIdSchema`.
-- **Live-mode rules.**
-  - In Live, only the **distribution** (painting) and **elements** (future: fire, via the reserved `scenario.elements`) can change. Building edits happen in Edit mode.
-  - Changing either needs a run restart. There is a dedicated **Stop** button (`cancelRun`).
-  - Pause and scrub are client-side only; the server keeps simulating ahead while paused.
-  - Stop or restart cancels the server job at once: the runner checks every 100 ms, even while pacing, and the job is thrown away.
-- **Dot grid, thin walls.**
-  - The plan shows a grid of dots: every grid intersection is a dot, and walls are built along the grid lines between dots.
-  - Walls render with a small thickness.
-  - No contract change: dots are the 0.25 m snap points, and a wall's endpoints become `Vertex` entities when you click them.
-- **Custom wall textures are coming.**
-  - Walls carry an optional per-side `finish: { left?, right? }` holding texture IDs from a future finishes registry, where left and right are relative to start→end.
-  - Physics never reads `finish`; it uses `material` and geometry only.
-  - The 3D view should texture each side of the extruded `wallPolygons` piece from it, falling back to the material colour.
-- **Blender and furniture:** use the existing normal/reinforced/glass materials and authoritative wall geometry. Fit Blender GLB modules/materials to the wall structure, retaining procedural joins and opening dimensions. Furniture/placeables later validate footprints against walls/egress clearance; walls are not blocked by furniture, and conflicts are diagnosed. See [docs/3D_ASSET_PLAN.md](docs/3D_ASSET_PLAN.md); no furniture schema or asset API is added in this backend pass.
+Reference sketches: [layout-v2-rail-open.png](docs/reference/gui/sketches/layout-v2-rail-open.png) and [layout-v2-rail-closed.png](docs/reference/gui/sketches/layout-v2-rail-closed.png). Base the layout heavily on them.
 
-Mode tabs sit at the top, and the toolbar switches with the mode.
+**Principles**
+- Egress is a CAD studio: professional, clean, cut. **No taglines**, eyebrows, slogans or explanatory sentences in the chrome. Labels are short nouns; help lives in tooltips with the shortcut.
+- Buttons look and behave like CAD tool buttons: icon, tooltip, pressed state, keyboard shortcut.
+- [Heroicons](https://heroicons.com) are placeholder icons until custom ones exist.
+- Modals are allowed where they are the right tool: Projects (save/open), Share, Import.
+- Don't surface room recognition or opening recognition in the UI (no "N rooms" counts).
 
-| Mode | Toolbar |
+**Layout**
+
+| Region | Content |
 |---|---|
-| **Edit** | **Pen:** click-to-click wall chain; Esc ends it; snaps to 0.25 m and to existing vertices.<br>**Box:** drag to make 4 walls.<br>**Erase:** drag a line; every wall it crosses is deleted.<br>**Door / Exit / Window:** click a wall.<br>**Undo / Redo** |
-| **Live** | **Run setup:** population N, seed, pace.<br>**Transport:** `« 10` · `⏯` · `» 10`, jumping 10 **simulated seconds**.<br>**Bottom scrubber:** runs from 0 to the **LIVE** edge, the latest tick received. A `LIVE` badge jumps back to the edge, and turns into `END` once the run completes.<br>**Heatmap selector:** Current / Average / Peak.<br>**Metrics panel** |
-| **Analysis** | **A chat box replaces the toolbar.**<br>**Tool-step cards:** one per agent action.<br>**Ghost entities:** suggested edits render immediately, tinted and dashed, each with a "why" bubble.<br>**Accept / Reject** per proposal.<br>**Before/after metrics card** |
+| Canvas | The full-window 3D scene. |
+| Top center | Compact mode switch: `Edit \| Simulate \| Analysis`. |
+| Top left | Project name with sync state; the viewcube below it. |
+| Top right | Presence: a person icon and the number of people on the project; hover lists their tokens. Layers dropdown beside it. |
+| Left edge | **Pull tab.** Collapsed: a small tab with a chevron. Expanded: a vertical rail of meta actions (Projects, Share, Import, Export). |
+| Right | **Context pane**, only when the mode or selection has something to show. Its bottom box holds the primary action. |
+| Bottom center | **Context toolbar**, a tab attached to the bottom edge. It switches with the mode. |
 
-- **Default heatmap:** after a run completes, the heatmap shows time-averaged congestion. The final instantaneous density is empty and misleading.
-- **Paint wording:** population paint is labelled *initial distribution*, never congestion.
+**Modes**
+
+| Mode | Bottom toolbar | Right pane |
+|---|---|---|
+| **Edit** | Select · **Wall** (right-click the button for a small type menu: Normal / Reinforced / Glass) · Room · Door · Window · Exit · Erase · Undo · Redo. Right-clicking a wall in the canvas opens the same type menu plus Delete. | Inspector, only while something is selected. |
+| **Simulate** | Run/Stop at the left; **transport and timeline centered**: `« 10` · `⏯` · `» 10`, scrubber from 0 to the LIVE edge, `LIVE` / `END` badge, speed 1× / 2× / 4×. | Population: count, distribution, seed (painting later), then live metrics. Run in the bottom box. |
+| **Analysis** | **A chat bar** (prompt + send). | Grows live as the agent works: steps, measured results, proposals with Accept / Reject, before/after. It replaces the separate Report / Suggestions tabs. |
+
+**Analysis suggestions on the model**
+- Suggested edits are **highlighted in blue on the model itself**: created and changed walls/openings glow blue; removed ones are hatched red.
+- A proposal can hold **several edits**. A small bubble sits next to each edit with a one-line reason (`proposal.notes.byCommand[i]`).
+- The agent bases its changes on both **compliance** (code-style checks) and **measured safety** (simulation). See backend follow-ups.
+
+**Layers** (dropdown, select one)
+- **People** (now). Options: **Discrete** (people as dots) or **Heatmap**. Heatmap field: Density or Congestion. Statistic: Current / Average / Peak. After a run completes, Average is the default, because the final frame is an empty building.
+- **Airflow** (future): listed but disabled. Its fields (`air.velocity`, `air.flowMagnitude`, `smoke.concentration`) are reserved in `FieldIdSchema`.
+
+**Scene**
+- **One 3D scene; Edit is always top-down.** Edit locks the scene to an orthographic overhead camera. Leaving Edit transitions to isometric and enables orbit. There is no second 2D model.
+- **Viewcube works like a CAD viewcube** (D63): drag it to orbit the camera; click a face, edge or corner to snap to that view; it always mirrors the camera. Edit stays top-down, so in Edit the cube only offers Top.
+- **Blueprint look:** a blue floor and a **white dot grid**: 0.25 m snap dots, brighter every metre. **No grid lines.** Drawing previews are white.
+- **Occluding walls are cross-hatched, never dithered.** Top-down views never fade anything. Outside top-down, walls between the camera and the interior floor draw as evenly spaced screen-space cross-hatching. This matches the hand-drawn look planned for future models. Furniture stays opaque.
+- **Parametric vs placeable.** Only walls are parametric now; counters and similar runs are planned. Everything else is a placeable: **wall-attached** (doors, windows, exits) or **floor-placed** (furniture).
+- **Blender wall textures.** `frontend/public/assets/walls/manifest.json` maps each wall material, and later each `finish` id, to textures exported from Blender (base colour, optional normal and roughness). UVs are world-scale, so a texture repeats every `repeatM` metres on any wall length. A missing file falls back to the flat material colour. Physics never reads textures or `finish`.
+
+**Simulate rules** (unchanged from D36)
+- Only the **distribution** and **elements** (future: fire, via `scenario.elements`) change in Simulate. Building edits happen in Edit.
+- Either change needs a restart. Stop calls `cancelRun`.
+- Pause and scrub are client-side. The server keeps simulating while paused. Stop or restart cancels the server job within ~100 ms.
+- Population paint is labelled *initial distribution*, never congestion.
+
+**Storage, identity and collaboration**
+- **Project storage is never browser-local.** Projects live in SpacetimeDB: Maincloud `egress-dev` for the demo, or `?backend=local` for a local dev server. Browser storage holds only the SpacetimeDB token, the "cookie" that links this browser to its projects. The local save slots are removed.
+- **One permanent share link per project.** It works whether or not the owner is online, and joining through it always gives **viewer** access.
+- **Owners** can raise anyone to editor or owner. Every owner token sees the project in its Projects list; projects shared with you appear separately.
+- People are recognized by token for now.
+- Until the backend follow-up lands, Share issues a 14-day viewer invite through the existing `createInvite`.
+
+**Backend follow-ups** (next backend pass)
+1. Collaboration: a permanent `project_links` code, `join_by_link`, presence (an online-connections table plus an `active_presence` view), and `members`, `presence`, `shareLink()` and `setMemberRole()` on `EgressClient`.
+2. Compliance checks as an agent tool. Each is a modeled check, not a certification: door, exit and corridor minimum widths; exit count against occupant load; travel distance.
+3. Multi-edit proposals: combine non-conflicting winning candidates into one batch, re-test the batch, and give each command its own reason.
 
 ### `@egress/client` (sketch, finalized in Pass 0)
 
@@ -874,7 +904,16 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D49 | 11-07 | **Before/after comparison:** `open_compare` + `active_compare_results` + `EgressClient.compareRuns(baseline, candidate)` return both runs' metrics, `metricsDelta`, and a congestion difference map. The delta math now lives in core and is shared with the agent. |
 | D50 | 11-07 | **Three-seed robustness:** the agent re-tests the winning change on two more crowds (`confirm_candidate`) and only proposes it if the mean improves. The spread is part of the evidence. |
 | D45 | 11-07 | **Runner token isolation:** Maincloud rejected the legacy local token with 401. Persist tokens by URI/database in separate gitignored files and leave the legacy file untouched. Maincloud startup and reconnection with the saved cloud token both passed, retaining the same service identity. No shared contract changed. |
-| D46 | 11-07 | **Frontend merge:** current main moved the web app into `frontend/` and added sketch/QR import. Merged into `implement-backend` at `1c1cd88`; this supersedes D3's root app location. Root scripts delegate to the frontend workspace. |
-| D47 | 11-07 | **Simple branch demo:** prioritize top-down editing in the same 3D scene, the transition to freecam and a good viewcube. Keep the top mode selector, switching bottom taskbar and side menu. No modal popups. The left menu collapses through a handle and after every bottom-toolbar action. Styling beyond those patterns remains open. |
-| D48 | 11-07 | **Save slots:** `/` uses a frontend persistence wrapper around the existing mock client to retain multiple canonical layout documents and the active slot in localStorage. Save opens an inline switcher with named Create new. `/?backend=maincloud` uses existing server projects through the same client interface. No shared schema expansion. |
-| D49 | 11-07 | **Branch boundary:** demo changes and logical commits remain on `implement-backend`; do not push to main or publish yet. Backend gaps for future furniture/GLB work are recorded in `docs/DEMO_UI.md`. |
+| D51 | 11-07 | **Frontend merge:** current main moved the web app into `frontend/` and added sketch/QR import. Merged into `implement-backend` at `1c1cd88`; this supersedes D3's root app location. Root scripts delegate to the frontend workspace. |
+| D52 | 11-07 | ~~**Simple branch demo:**~~ *Superseded by D55.* prioritize top-down editing in the same 3D scene, the transition to freecam and a good viewcube. Keep the top mode selector, switching bottom taskbar and side menu. No modal popups. The left menu collapses through a handle and after every bottom-toolbar action. Styling beyond those patterns remains open. |
+| D53 | 11-07 | ~~**Save slots:**~~ *Superseded by D58: no browser-local project storage.* `/` uses a frontend persistence wrapper around the existing mock client to retain multiple canonical layout documents and the active slot in localStorage. Save opens an inline switcher with named Create new. `/?backend=maincloud` uses existing server projects through the same client interface. No shared schema expansion. |
+| D54 | 11-07 | **Branch boundary:** demo changes and logical commits remain on `implement-backend`; do not push to main or publish yet. Backend gaps for future furniture/GLB work are recorded in `docs/DEMO_UI.md`. |
+| D55 | 11-08 | **UI v2 layout** (Plan.md §8): full-window scene; compact mode switch at top center; presence and Layers at top right; a left pull tab that expands to a meta-action rail; an optional right context pane with a bottom action box; a bottom context toolbar attached to the bottom edge. No taglines; CAD-style tool buttons; modals allowed for Projects, Share and Import. |
+| D56 | 11-08 | **Placeholder icons are Heroicons** (`@heroicons/react`), replacing lucide in the studio. |
+| D57 | 11-08 | **Cross-hatching replaces dithering** for walls that hide the floor. Never in top-down views; evenly spaced in screen space; furniture stays opaque. |
+| D58 | 11-08 | **No browser-local project storage.** Projects live only in SpacetimeDB (Maincloud by default). Browser storage keeps only the SpacetimeDB token that links the browser to its projects. Local save slots are removed. |
+| D59 | 11-08 | **Collaboration model:** one permanent share link per project; joining gives viewer access; owners promote anyone; every owner sees the project in their list; people are identified by token; a presence count with hover-for-tokens sits at top right. Backend pieces are the next backend pass; until then Share issues a 14-day viewer invite. |
+| D60 | 11-08 | **Parametric vs placeable:** only walls (later counters and similar runs) are parametric. Doors, windows and exits are wall-attached placeables; furniture is floor-placed. |
+| D61 | 11-08 | **Agent suggestions:** several edits per proposal, highlighted in blue on the model with one short reason bubble each. The agent weighs compliance checks and measured safety. Compliance tooling and multi-edit batching are the next backend pass. |
+| D62 | 11-08 | **Blender wall textures:** a manifest at `frontend/public/assets/walls/manifest.json` maps materials (later `finish` ids) to exported textures with world-scale UVs and a flat-colour fallback. |
+| D63 | 11-08 | **Viewcube behaves like a CAD viewcube:** drag it to orbit; click faces, edges and corners for those views; it mirrors the camera. Edit still locks top-down. |
