@@ -3,7 +3,7 @@
  * SpacetimeDB (runs become real `sim_runs` rows); the mock client and tests use
  * `LocalEnvironment`, which runs the same simulation in-process.
  */
-import type { AgentStepKind, EditCommand, EgressDocument, ID, ProposalNotes, SimulationMetrics, SimulationScenario } from '@egress/core';
+import type { AgentStepKind, EditCommand, EgressDocument, ID, ProposalNotes, ScalarField, SimulationMetrics, SimulationScenario } from '@egress/core';
 import { layoutHash } from '@egress/core';
 import { runSimulation, type InitialActors } from '@egress/sim';
 
@@ -17,6 +17,8 @@ export interface RunRecord {
   /** People that had to be respawned because the candidate layout blocked their start spot. */
   respawned: number;
   computeMs: number;
+  /** Time-averaged congestion, kept for before/after difference maps. */
+  congestionAverage?: ScalarField;
 }
 
 export interface RunRequest {
@@ -94,6 +96,7 @@ export class LocalEnvironment implements AgentEnvironment {
     const record: RunRecord = {
       runId, label: request.label, scenario: request.scenario, layoutHash: layoutHash(request.document), metrics: result.metrics,
       initialActors: result.state.initial, respawned: result.state.respawned, computeMs: result.computeMs,
+      congestionAverage: result.state.fields.field('people.congestion', 'timeAverage') ?? undefined,
     };
     this.runs.set(runId, record);
     this.onRun?.(record);

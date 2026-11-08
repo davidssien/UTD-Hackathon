@@ -59,6 +59,9 @@ await until(() => client.agentJobs.get().some(j => j.id === jobId && (j.status =
 const proposal = client.proposals.get().find(p => p.jobId === jobId);
 ok(`agent ${client.agentJobs.get().find(j => j.id === jobId)!.status}, ${client.agentSteps.get().filter(s => s.jobId === jobId).length} steps, proposal ghost: ${!!proposal?.ghost}`);
 if (proposal) {
+  const cmp = await client.compareRuns(proposal.baselineRunId, proposal.candidateRunId);
+  const diff = Array.from(cmp.congestionDiff?.values ?? []).filter(Number.isFinite);
+  ok(`compareRuns: Δ evacuation ${cmp.delta.evacuationTimeSeconds} s, Δ max queue ${cmp.delta.maxQueueLength}; difference map ${cmp.congestionDiff?.grid.width}×${cmp.congestionDiff?.grid.height}, most relieved cell ${Math.min(...diff).toFixed(2)}`);
   const rev = client.document.get().doc!.revision;
   await client.acceptProposal(proposal.id);
   await until(() => client.document.get().doc!.revision === rev + 1, 10_000, 'proposal applied');

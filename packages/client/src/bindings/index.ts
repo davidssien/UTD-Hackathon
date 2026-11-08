@@ -47,6 +47,7 @@ import DeleteProjectReducer from "./delete_project_reducer.ts";
 import FailSimulationReducer from "./fail_simulation_reducer.ts";
 import FinishAgentJobReducer from "./finish_agent_job_reducer.ts";
 import JoinProjectReducer from "./join_project_reducer.ts";
+import OpenCompareReducer from "./open_compare_reducer.ts";
 import OpenProjectReducer from "./open_project_reducer.ts";
 import OpenRunReducer from "./open_run_reducer.ts";
 import PublishProposalReducer from "./publish_proposal_reducer.ts";
@@ -69,6 +70,7 @@ import StartAgentRunReducer from "./start_agent_run_reducer.ts";
 // Import all table schema definitions
 import ActiveAgentJobsRow from "./active_agent_jobs_table.ts";
 import ActiveAgentStepsRow from "./active_agent_steps_table.ts";
+import ActiveCompareResultsRow from "./active_compare_results_table.ts";
 import ActiveEditLogRow from "./active_edit_log_table.ts";
 import ActiveEntitiesRow from "./active_entities_table.ts";
 import ActiveMembersRow from "./active_members_table.ts";
@@ -105,6 +107,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ActiveAgentStepsRow),
+  activeCompareResults: __table({
+    name: 'active_compare_results',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ActiveCompareResultsRow),
   activeEditLog: __table({
     name: 'active_edit_log',
     indexes: [
@@ -241,6 +250,7 @@ const reducersSchema = __reducers(
   __reducerSchema("fail_simulation", FailSimulationReducer),
   __reducerSchema("finish_agent_job", FinishAgentJobReducer),
   __reducerSchema("join_project", JoinProjectReducer),
+  __reducerSchema("open_compare", OpenCompareReducer),
   __reducerSchema("open_project", OpenProjectReducer),
   __reducerSchema("open_run", OpenRunReducer),
   __reducerSchema("publish_proposal", PublishProposalReducer),
@@ -269,6 +279,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "active_agent_jobs": Omit<typeof tablesSchema.schemaType.tables["activeAgentJobs"], "accessorName"> & { readonly accessorName: "active_agent_jobs" };
     /** @deprecated Use `activeAgentSteps` instead. This alias will be removed in the next major version. */
     readonly "active_agent_steps": Omit<typeof tablesSchema.schemaType.tables["activeAgentSteps"], "accessorName"> & { readonly accessorName: "active_agent_steps" };
+    /** @deprecated Use `activeCompareResults` instead. This alias will be removed in the next major version. */
+    readonly "active_compare_results": Omit<typeof tablesSchema.schemaType.tables["activeCompareResults"], "accessorName"> & { readonly accessorName: "active_compare_results" };
     /** @deprecated Use `activeEditLog` instead. This alias will be removed in the next major version. */
     readonly "active_edit_log": Omit<typeof tablesSchema.schemaType.tables["activeEditLog"], "accessorName"> & { readonly accessorName: "active_edit_log" };
     /** @deprecated Use `activeEntities` instead. This alias will be removed in the next major version. */
@@ -323,6 +335,7 @@ const REMOTE_MODULE = {
 const tableAccessorAliases = {
   "active_agent_jobs": "activeAgentJobs",
   "active_agent_steps": "activeAgentSteps",
+  "active_compare_results": "activeCompareResults",
   "active_edit_log": "activeEditLog",
   "active_entities": "activeEntities",
   "active_members": "activeMembers",
@@ -364,6 +377,8 @@ export type DbView = __DbViewBase & {
   readonly "active_agent_jobs": __DbViewBase["activeAgentJobs"];
   /** @deprecated Use `activeAgentSteps` instead. This alias will be removed in the next major version. */
   readonly "active_agent_steps": __DbViewBase["activeAgentSteps"];
+  /** @deprecated Use `activeCompareResults` instead. This alias will be removed in the next major version. */
+  readonly "active_compare_results": __DbViewBase["activeCompareResults"];
   /** @deprecated Use `activeEditLog` instead. This alias will be removed in the next major version. */
   readonly "active_edit_log": __DbViewBase["activeEditLog"];
   /** @deprecated Use `activeEntities` instead. This alias will be removed in the next major version. */
@@ -406,6 +421,8 @@ export type Tables = __TablesBase & {
   readonly "active_agent_jobs": __TablesBase["activeAgentJobs"];
   /** @deprecated Use `activeAgentSteps` instead. This alias will be removed in the next major version. */
   readonly "active_agent_steps": __TablesBase["activeAgentSteps"];
+  /** @deprecated Use `activeCompareResults` instead. This alias will be removed in the next major version. */
+  readonly "active_compare_results": __TablesBase["activeCompareResults"];
   /** @deprecated Use `activeEditLog` instead. This alias will be removed in the next major version. */
   readonly "active_edit_log": __TablesBase["activeEditLog"];
   /** @deprecated Use `activeEntities` instead. This alias will be removed in the next major version. */

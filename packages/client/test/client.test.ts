@@ -126,3 +126,18 @@ test('mock agent runs real tools and simulations, and Accept applies exactly the
   assert.equal(client.proposals.get()[0].status, 'accepted');
   client.dispose();
 });
+
+test('compareRuns returns measured deltas and a congestion difference map for an agent proposal', async () => {
+  const client = createMockClient({ seed: [{ name: 'Two rooms', doc: fixture('two-rooms-corridor.json') }] });
+  const runId = await client.startRun(scenario(client.document.get().projectId!, 80), 'unpaced');
+  await until(() => client.playback(runId).state.get().complete);
+  const jobId = await client.askAgent('Investigate', { runId });
+  await until(() => client.agentJobs.get().find(j => j.id === jobId)?.status !== 'running', 30000);
+  const proposal = client.proposals.get()[0];
+  const cmp = await client.compareRuns(proposal.baselineRunId, proposal.candidateRunId);
+  assert.ok(cmp.delta.evacuationTimeSeconds < 0, JSON.stringify(cmp.delta));
+  assert.ok(cmp.congestionDiff, 'difference map present');
+  const finite = Array.from(cmp.congestionDiff!.values).filter(Number.isFinite);
+  assert.ok(Math.min(...finite) < -0.1, 'some cells got less congested');
+  client.dispose();
+});

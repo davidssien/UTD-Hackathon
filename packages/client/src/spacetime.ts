@@ -8,7 +8,8 @@
  * Edits are optimistic (OptimisticDocument), replay chunks feed Playback.
  */
 import {
-  ACTOR_EXITED, canonicalJson, decodeChunk, DomainError, entitiesToDocument, parseDocumentJson, sha256Hex, TICK_RATE_HZ,
+  ACTOR_EXITED, canonicalJson, decodeChunk, decodeFieldBundle, DomainError, entitiesToDocument, fieldDifference, metricsDelta, parseDocumentJson,
+  sha256Hex, TICK_RATE_HZ, type ScalarField,
   type AgentContext, type DomainErrorData, type EditCommand, type EgressDocument, type Entity, type ID, type Pace, type Role,
   type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
@@ -18,7 +19,7 @@ import { OptimisticDocument } from './optimistic.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunnerStatus, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
 } from './types.ts';
 
 export interface SpacetimeClientOptions {
@@ -85,7 +86,7 @@ class SpacetimeEgressClient implements EgressClient {
             .subscribe([
               tables.myProfile, tables.mySession, tables.myProjects, tables.myMemberships, tables.activeMembers, tables.activeEntities,
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
-              tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus,
+              tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus, tables.activeCompareResults,
             ]);
         })
         .onConnectError((_ctx, error) => { this.status.set('error'); reject(error); })
@@ -119,7 +120,7 @@ class SpacetimeEgressClient implements EgressClient {
     const handles = [
       conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
-      conn.db.activeRunLayout, conn.db.runnerStatus,
+      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
@@ -333,6 +334,30 @@ class SpacetimeEgressClient implements EgressClient {
     const projectId = this.activeProjectId;
     await this.call(c => c.reducers.requestAgentJob({ jobId, projectId, prompt, context: canonicalJson(context) }));
     return jobId;
+  }
+
+  async compareRuns(baselineRunId: ID, candidateRunId: ID): Promise<RunComparison> {
+    await this.call(c => c.reducers.openCompare({ baselineRunId, candidateRunId }));
+    const conn = await this.ready;
+    const deadline = Date.now() + 30_000;
+    const find = (id: ID) => [...conn.db.activeCompareResults.iter()].find(r => r.runId === id);
+    while (!(find(baselineRunId) && find(candidateRunId))) {
+      if (Date.now() > deadline) throw new DomainError('NOT_FOUND', 'Both runs need finished results before they can be compared.');
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    const load = (id: ID) => {
+      const row = find(id)!;
+      const metrics = JSON.parse(row.metrics) as SimulationMetrics;
+      const bundle = decodeFieldBundle(row.fields);
+      const values = bundle.fields['people.congestion/timeAverage'];
+      const field: ScalarField | null = values ? { fieldId: 'people.congestion', aggregation: 'timeAverage', grid: bundle.grid, units: 'congestion index', values } : null;
+      return { metrics, field };
+    };
+    const a = load(baselineRunId), b = load(candidateRunId);
+    return {
+      baselineRunId, candidateRunId, baseline: a.metrics, candidate: b.metrics, delta: metricsDelta(a.metrics, b.metrics),
+      congestionDiff: a.field && b.field ? fieldDifference(a.field, b.field) : null,
+    };
   }
 
   async acceptProposal(proposalId: ID) {

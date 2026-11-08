@@ -16,6 +16,9 @@ export type ActiveAgentJobs = __Infer<typeof ActiveAgentJobs>;
 export const ActiveAgentSteps = __t.object("ActiveAgentSteps", {});
 export type ActiveAgentSteps = __Infer<typeof ActiveAgentSteps>;
 
+export const ActiveCompareResults = __t.object("ActiveCompareResults", {});
+export type ActiveCompareResults = __Infer<typeof ActiveCompareResults>;
+
 export const ActiveEditLog = __t.object("ActiveEditLog", {});
 export type ActiveEditLog = __Infer<typeof ActiveEditLog>;
 
@@ -205,6 +208,13 @@ export const ServiceIdentities = __t.object("ServiceIdentities", {
   registeredAt: __t.timestamp(),
 });
 export type ServiceIdentities = __Infer<typeof ServiceIdentities>;
+
+export const SessionCompare = __t.object("SessionCompare", {
+  identity: __t.identity(),
+  baselineRunId: __t.string(),
+  candidateRunId: __t.string(),
+});
+export type SessionCompare = __Infer<typeof SessionCompare>;
 
 export const Sessions = __t.object("Sessions", {
   identity: __t.identity(),

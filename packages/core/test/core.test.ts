@@ -209,3 +209,21 @@ test('field bundle codec round-trips Float32 arrays including NaN', async () => 
   assert.ok(Number.isNaN(decoded.fields['people.congestion/timeAverage'][0]));
   assert.equal(decoded.fields['people.congestion/timeAverage'][5], 2.5);
 });
+
+test('metricsDelta and fieldDifference compare runs (candidate − baseline), resampling across grids', async () => {
+  const { metricsDelta, fieldDifference } = await import('@egress/core');
+  const m = (t: number | null, q: number, remaining = 0) => ({
+    runId: 'r', tick: 0, simulatedSeconds: 100, initialPeople: 10, evacuatedPeople: 10 - remaining, remainingPeople: remaining, unreachablePeople: 0,
+    evacuationTimeSeconds: t, maxQueueLength: q, meanCongestion: 1, peakCongestion: 2, perExitThroughput: {}, bottlenecks: [], complete: true,
+  });
+  const d = metricsDelta(m(100, 10), m(80, 4));
+  assert.equal(d.evacuationTimeSeconds, -20);
+  assert.equal(d.evacuationTimePercent, -20);
+  assert.equal(d.maxQueueLength, -6);
+  assert.equal(metricsDelta(m(null, 10, 2), m(90, 10)).effectiveTimeSeconds, -30, 'timeouts count 10 s per person still inside');
+  const grid = (ox: number, w: number) => ({ floorId: 'f', origin: { x: ox, y: 0 }, cellSizeM: 1, width: w, height: 1 });
+  const base = { fieldId: 'people.congestion' as const, aggregation: 'timeAverage' as const, grid: grid(0, 3), units: 'c', values: Float32Array.from([1, 2, NaN]) };
+  const cand = { ...base, grid: grid(-1, 4), values: Float32Array.from([9, 0.5, 2, 5]) }; // shifted by one cell
+  const diff = fieldDifference(base, cand);
+  assert.deepEqual(Array.from(diff.values).map(v => (Number.isNaN(v) ? 'NaN' : v)), [-0.5, 0, 'NaN']);
+});

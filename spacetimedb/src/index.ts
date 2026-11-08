@@ -196,9 +196,16 @@ const runner_heartbeats = table({ name: 'runner_heartbeats' }, {
   lastSeen: t.timestamp(),
 });
 
+/** The pair of runs a caller is comparing in Analysis mode (baseline vs candidate). */
+const session_compare = table({ name: 'session_compare' }, {
+  identity: t.identity().primaryKey(),
+  baselineRunId: t.string(),
+  candidateRunId: t.string(),
+});
+
 const spacetimedb = schema({
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
-  layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats,
+  layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats, session_compare,
 });
 export default spacetimedb;
 
@@ -634,6 +641,18 @@ export const finish_agent_job = spacetimedb.reducer(
   }),
 );
 
+/** Choose two runs of the same project to compare (both '' clears). */
+export const open_compare = spacetimedb.reducer({ baselineRunId: t.string(), candidateRunId: t.string() }, (ctx, { baselineRunId, candidateRunId }) => guard(() => {
+  for (const id of [baselineRunId, candidateRunId]) {
+    if (!id) continue;
+    const run = ctx.db.sim_runs.id.find(id) ?? fail('NOT_FOUND', `Run ${id} does not exist.`);
+    requireRole(ctx, run!.projectId, 'viewer');
+  }
+  const row = { identity: ctx.sender, baselineRunId, candidateRunId };
+  if (ctx.db.session_compare.identity.find(ctx.sender)) ctx.db.session_compare.identity.update(row);
+  else ctx.db.session_compare.insert(row);
+}));
+
 /** Runner liveness ping (every few seconds). */
 export const runner_heartbeat = spacetimedb.reducer(
   { agentModel: t.string(), activeRuns: t.u32(), activeJobs: t.u32(), version: t.string() },
@@ -725,6 +744,24 @@ export const active_run_layout = spacetimedb.view({ name: 'active_run_layout', p
   if (!run) return [];
   const snapshot = ctx.db.layout_snapshots.hash.find(run.layoutHash);
   return snapshot ? [snapshot] : [];
+});
+
+/** Stored results (metrics + heatmap bundle) of the caller's comparison pair. */
+export const active_compare_results = spacetimedb.view({ name: 'active_compare_results', public: true }, t.array(sim_results.rowType), ctx => {
+  const pair = ctx.db.session_compare.identity.find(ctx.sender);
+  if (!pair) return [];
+  const out = [];
+  for (const id of [pair.baselineRunId, pair.candidateRunId]) {
+    if (!id) continue;
+    const run = ctx.db.sim_runs.id.find(id);
+    if (!run) continue;
+    // Re-check membership at read time: roles can change after open_compare.
+    let member = false;
+    for (const m of ctx.db.project_members.projectId.filter(run.projectId)) if (m.identity.isEqual(ctx.sender)) member = true;
+    const result = member ? ctx.db.sim_results.runId.find(id) : undefined;
+    if (result) out.push(result);
+  }
+  return out;
 });
 
 /** Runner liveness for every client (no project data). Clients treat a runner as online if seen in the last ~20 s. */

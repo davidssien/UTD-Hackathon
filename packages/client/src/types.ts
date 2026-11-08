@@ -104,6 +104,17 @@ export interface PlaybackController {
   dispose(): void;
 }
 
+/** Before/after comparison of two finished runs (Analysis mode). Deltas are candidate − baseline. */
+export interface RunComparison {
+  baselineRunId: ID;
+  candidateRunId: ID;
+  baseline: SimulationMetrics;
+  candidate: SimulationMetrics;
+  delta: Record<string, number>;
+  /** Candidate − baseline time-averaged congestion on the baseline grid; negative cells = crowding relieved. */
+  congestionDiff: ScalarField | null;
+}
+
 export interface AgentStep {
   id: string;
   jobId: ID;
@@ -169,6 +180,8 @@ export interface EgressClient {
   playback(runId: ID): PlaybackController;
 
   askAgent(prompt: string, context?: AgentContext): Promise<ID>;
+  /** Resolves once both runs have stored results. */
+  compareRuns(baselineRunId: ID, candidateRunId: ID): Promise<RunComparison>;
   acceptProposal(proposalId: ID): Promise<void>;
   rejectProposal(proposalId: ID): Promise<void>;
 

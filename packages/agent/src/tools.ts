@@ -5,7 +5,7 @@
  */
 import { z } from 'zod';
 import {
-  applyEdit, deriveLayout, DomainError, EditCommandSchema, openingCenter,
+  applyEdit, deriveLayout, DomainError, EditCommandSchema, effectiveTime, metricsDelta, openingCenter,
   type EditCommand, type ID, type SimulationMetrics,
 } from '@egress/core';
 import type { AgentEnvironment, RunRecord } from './environment.ts';
@@ -202,20 +202,9 @@ export class ToolBox {
   }
 }
 
-const KEYS = ['evacuationTimeSeconds', 'maxQueueLength', 'peakCongestion', 'meanCongestion', 'evacuatedPeople', 'unreachablePeople'] as const;
-
-/** Evacuation time, or for runs that timed out, the time elapsed plus 10 s per person still inside. */
-export const effectiveTime = (m: SimulationMetrics) => m.evacuationTimeSeconds ?? m.simulatedSeconds + 10 * m.remainingPeople;
-
-export function delta(base: SimulationMetrics, cand: SimulationMetrics): Record<string, number> {
-  const out: Record<string, number> = { effectiveTimeSeconds: round(effectiveTime(cand) - effectiveTime(base)) };
-  for (const k of KEYS) {
-    const a = base[k], b = cand[k];
-    if (typeof a === 'number' && typeof b === 'number') out[k] = round(b - a);
-  }
-  if (base.evacuationTimeSeconds && cand.evacuationTimeSeconds) out.evacuationTimePercent = round(((cand.evacuationTimeSeconds - base.evacuationTimeSeconds) / base.evacuationTimeSeconds) * 100);
-  return out;
-}
+/** Moved to @egress/core so the UI clients compute identical deltas; kept here for existing imports. */
+export { effectiveTime };
+export const delta = (base: SimulationMetrics, cand: SimulationMetrics): Record<string, number> => metricsDelta(base, cand);
 
 export function describeDelta(d: Record<string, number>): string {
   const parts: string[] = [];

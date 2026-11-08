@@ -5,7 +5,7 @@
  * the runner (one 2 s chunk every 2 s ÷ pace) so the LIVE edge behaves the same.
  */
 import {
-  applyEdit, DomainError, emptyDocument, layoutHash,
+  applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, metricsDelta,
   type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type SimulationScenario,
 } from '@egress/core';
 import { initialize, simulateChunks, type RunChunk, type SimState } from '@egress/sim';
@@ -14,7 +14,7 @@ import { ghostFor } from './ghost.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunnerStatus, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
 } from './types.ts';
 
 type PatchCommand = Extract<EditCommand, { kind: 'applyPatch' }>;
@@ -215,6 +215,7 @@ class MockEgressClient implements EgressClient {
         this.runRecords.set(runId, {
           runId, projectId: project.summary.id, label: scenario.name, scenario, layoutHash: state.compiled.layoutHash,
           metrics: chunk.metrics, initialActors: state.initial, respawned: 0, computeMs: 0,
+          congestionAverage: state.fields.field('people.congestion', 'timeAverage') ?? undefined,
         });
       }
       else this.later(emit, chunkMs);
@@ -256,10 +257,13 @@ class MockEgressClient implements EgressClient {
       document, scenario, jobId,
       existingRuns: [...this.runRecords.values()].filter(r => r.projectId === projectId && r.layoutHash === layoutHash(document)),
       onStep: step => this.agentSteps.update(list => [...list, { ...step, id: `${jobId}.${seq}`, jobId, seq: seq++, at: Date.now() }]),
-      onRun: run => this.runs.update(list => [{
-        id: run.runId, projectId, status: 'complete', pace: 'unpaced', seed: run.scenario.population.seed, scenarioName: run.label,
-        population: run.metrics.initialPeople, layoutRevision: document.revision, progressTick: run.metrics.tick, agentJobId: jobId, createdAt: Date.now(), error: null,
-      }, ...list]),
+      onRun: run => {
+        this.runRecords.set(run.runId, { ...run, projectId });
+        this.runs.update(list => [{
+          id: run.runId, projectId, status: 'complete', pace: 'unpaced', seed: run.scenario.population.seed, scenarioName: run.label,
+          population: run.metrics.initialPeople, layoutRevision: document.revision, progressTick: run.metrics.tick, agentJobId: jobId, createdAt: Date.now(), error: null,
+        }, ...list]);
+      },
     });
     void (async () => {
       try {
@@ -276,6 +280,15 @@ class MockEgressClient implements EgressClient {
       }
     })();
     return jobId;
+  }
+
+  async compareRuns(baselineRunId: ID, candidateRunId: ID): Promise<RunComparison> {
+    const a = this.runRecords.get(baselineRunId), b = this.runRecords.get(candidateRunId);
+    if (!a || !b) throw new DomainError('NOT_FOUND', 'Both runs must have finished in this session to compare them.');
+    return {
+      baselineRunId, candidateRunId, baseline: a.metrics, candidate: b.metrics, delta: metricsDelta(a.metrics, b.metrics),
+      congestionDiff: a.congestionAverage && b.congestionAverage ? fieldDifference(a.congestionAverage, b.congestionAverage) : null,
+    };
   }
 
   async acceptProposal(proposalId: ID) {
