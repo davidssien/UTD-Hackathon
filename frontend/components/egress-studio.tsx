@@ -10,12 +10,12 @@ import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
-  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, ShareIcon, SignalSlashIcon,
+  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, ShareIcon, SignalSlashIcon, UserIcon,
   Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
-import { parseDocument, type EditCommand, type EgressDocument, type Opening, type SimulationMetrics, type Wall, type WallMaterial } from '@egress/core';
+import { parseDocument, type EditCommand, type EgressDocument, type Opening, type Role, type SimulationMetrics, type Wall, type WallMaterial } from '@egress/core';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import type { HeatOverlay, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
@@ -69,6 +69,8 @@ export default function EgressStudio() {
         try {
           // The saves page is the landing page; only a share link or a project URL opens the editor directly.
           const join = params.get('join'), wanted = params.get('project');
+          const link = params.get('link');
+          if (link) { await client.joinByLink(link); return; }
           if (join) { await client.joinProject(join); return; }
           if (wanted && client.projects.get().some(p => p.id === wanted)) await client.openProject(wanted);
         } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -86,12 +88,12 @@ export default function EgressStudio() {
 
 function Studio({ client, backend, bootError }: { client: EgressClient; backend: string; bootError: string }) {
   const view = useEgress(client.document), projects = useEgress(client.projects), status = useEgress(client.status), connectionError = useEgress(client.connectionError);
-  const runs = useEgress(client.runs), runner = useEgress(client.runner), proposals = useEgress(client.proposals), jobs = useEgress(client.agentJobs);
+  const runs = useEgress(client.runs), runner = useEgress(client.runner), proposals = useEgress(client.proposals), jobs = useEgress(client.agentJobs), members = useEgress(client.members);
   const [mode, setMode] = useState<Mode>('edit');
   // Saves page first (D69) unless the URL asks for a project or carries a share link.
   const [screen, setScreen] = useState<'saves' | 'editor'>(() => {
     const p = new URLSearchParams(location.search);
-    return p.has('project') || p.has('join') ? 'editor' : 'saves';
+    return p.has('project') || p.has('join') || p.has('link') ? 'editor' : 'saves';
   });
   const [tool, setTool] = useState<SceneTool>('select');
   const [wallType, setWallType] = useState<WallMaterial>('normal');
@@ -134,7 +136,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   // Keep the URL pointing at the open project while editing, so it can be shared or reloaded.
   useEffect(() => {
     const url = new URL(location.href);
-    url.searchParams.delete('join');
+    url.searchParams.delete('join'); url.searchParams.delete('link');
     if (screen === 'editor' && view.projectId) url.searchParams.set('project', view.projectId);
     else url.searchParams.delete('project');
     if (url.href !== location.href) history.replaceState(null, '', url);
@@ -255,6 +257,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     <div className="right-column">
       <div className="hud-right">
         {!runner.online && backend !== 'mock' && <span className="chip warn" data-tip="Runs and the agent wait until the simulation server is back"><SignalSlashIcon />Sim server offline</span>}
+        {members.length > 0 && <div className="presence" tabIndex={0} aria-label={`${members.filter(m => m.online).length} people on this project`}>
+          <UserIcon /><span>{members.filter(m => m.online).length}</span>
+          <div className="presence-pop" role="tooltip">
+            {members.filter(m => m.online).map(m => <div key={m.identity}><i className="dot on" /><code>{m.identity.slice(0, 10)}…</code>{m.me && <em>You</em>}<span>{m.role}</span></div>)}
+          </div>
+        </div>}
         <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
       </div>
       {layersOpen && <LayersPanel layer={layer} onChange={setLayer} />}
@@ -556,26 +564,43 @@ function ModalFrame({ title, onClose, children }: { title: string; onClose(): vo
   </div>;
 }
 
-function ShareModal({ client, role, backend, onClose }: { client: EgressClient; role: string; backend: string; onClose(): void }) {
-  const [link, setLink] = useState(''), [copied, setCopied] = useState(false), [error, setError] = useState('');
-  const create = () => {
-    setError('');
-    void client.createInvite('viewer', 24 * 14).then(code => {
-      const url = new URL(location.origin + location.pathname);
-      if (backend !== 'server') url.searchParams.set('backend', backend);
-      const params = new URLSearchParams(location.search);
-      for (const k of ['uri', 'db']) { const v = params.get(k); if (v) url.searchParams.set(k, v); }
-      url.searchParams.set('join', code);
-      setLink(url.toString());
-    }).catch(e => setError(e instanceof Error ? e.message : String(e)));
-  };
+function ShareModal({ client, role, backend, onClose }: { client: EgressClient; role: Role; backend: string; onClose(): void }) {
+  const members = useEgress(client.members);
+  const [code, setCode] = useState(''), [copied, setCopied] = useState(false), [error, setError] = useState('');
+  const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+  useEffect(() => { let live = true; client.shareLink().then(c => { if (live) setCode(c); }).catch(fail); return () => { live = false; }; }, [client]);
+  const url = useMemo(() => {
+    if (!code) return '';
+    const u = new URL(location.origin + location.pathname);
+    if (backend !== 'server') u.searchParams.set('backend', backend);
+    const params = new URLSearchParams(location.search);
+    for (const k of ['uri', 'db']) { const v = params.get(k); if (v) u.searchParams.set(k, v); }
+    u.searchParams.set('link', code);
+    return u.toString();
+  }, [code, backend]);
+  const owner = role === 'owner';
+  const owners = members.filter(m => m.role === 'owner').length;
   return <ModalFrame title="Share" onClose={onClose}>
     <div className="share">
-      <p className="fine">People who open the link join as viewers. Owners can change roles.</p>
-      {role !== 'owner' ? <p className="note warn">Only owners can create links.</p>
-        : link ? <div className="link-row"><LinkIcon /><input readOnly value={link} onFocus={e => e.target.select()} aria-label="Share link" />
-          <button className="button" onClick={() => { void navigator.clipboard.writeText(link).then(() => setCopied(true)); }}>{copied ? <CheckIcon /> : null}{copied ? 'Copied' : 'Copy'}</button></div>
-        : <button className="button primary" onClick={create}><LinkIcon />Create viewer link</button>}
+      <p className="fine">Anyone with the link joins as a viewer. Owners can change roles.</p>
+      <div className="link-row"><LinkIcon /><input readOnly value={url || 'Creating link…'} onFocus={e => e.target.select()} aria-label="Share link" />
+        <button className="button" disabled={!url} onClick={() => { void navigator.clipboard.writeText(url).then(() => setCopied(true)); }}>{copied ? <CheckIcon /> : null}{copied ? 'Copied' : 'Copy'}</button>
+        {owner && <button className="button" data-tip="Replace the link; the old one stops working" onClick={() => { setCopied(false); void client.resetShareLink().then(setCode).catch(fail); }}><ArrowPathIcon />Reset</button>}
+      </div>
+      <div className="list-label">People ({members.filter(m => m.online).length} online)</div>
+      <ul className="member-list">
+        {members.map(m => <li key={m.identity}>
+          <i className={`dot ${m.online ? 'on' : ''}`} aria-label={m.online ? 'Online' : 'Offline'} />
+          <code title={m.identity}>{m.identity.slice(0, 10)}…</code>
+          {m.me && <em>You</em>}
+          <select aria-label={`Role of ${m.identity.slice(0, 10)}`} value={m.role} disabled={!owner || (m.role === 'owner' && owners === 1)}
+            onChange={e => void client.setMemberRole(m.identity, e.target.value as Role).catch(fail)}>
+            <option value="viewer">Viewer</option><option value="editor">Editor</option><option value="owner">Owner</option>
+          </select>
+          {(owner || m.me) && !(m.role === 'owner' && owners === 1) && <button className="icon-button" aria-label={m.me ? 'Leave project' : 'Remove from project'} data-tip={m.me ? 'Leave' : 'Remove'}
+            onClick={() => void client.removeMember(m.identity).catch(fail)}><XMarkIcon /></button>}
+        </li>)}
+      </ul>
       {error && <p className="note error">{error}</p>}
     </div>
   </ModalFrame>;
