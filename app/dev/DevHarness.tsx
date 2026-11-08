@@ -13,6 +13,7 @@ import {
 } from '@egress/core';
 import { createMockClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
 import { useEgress } from '@egress/client/react';
+import { compileFloor, structuralField, type StructuralFieldId } from '@egress/sim';
 import oneRoom from '../../content/scenes/one-room.json';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import hall from '../../content/scenes/hall.json';
@@ -78,6 +79,20 @@ function EditMode({ client }: { client: EgressClient }) {
   const [hover, setHover] = useState<Vec2 | null>(null);
   const doc = view.doc;
   const floorId = doc?.floors[0]?.id;
+  // Static structural analysis (not a crowd simulation), debounced after edits.
+  const [analysis, setAnalysis] = useState<StructuralFieldId | 'off'>('people.routeDemand');
+  const [structural, setStructural] = useState<{ field: ScalarField; max: number } | null>(null);
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      if (!doc || analysis === 'off' || !doc.openings.some(o => o.openingKind === 'exit')) { setStructural(null); return; }
+      const field = structuralField(compileFloor(doc), analysis);
+      let max = 0;
+      for (const v of field.values) if (v > max) max = v;
+      setStructural({ field, max: max || 1 });
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [doc, analysis]);
+  const heat = useMemo(() => (structural ? () => structural.field : undefined), [structural]);
 
   const commit = (commands: EditCommand[]) => void client.edit(commands);
   const finishChain = () => {
@@ -138,8 +153,11 @@ function EditMode({ client }: { client: EgressClient }) {
           {tool === 'pen' ? 'Click points; Esc/Enter ends the chain.' : tool === 'box' ? 'Drag a rectangle.' : tool === 'erase' ? 'Drag a line across walls to delete them.' : 'Click a wall.'}
           {' '}Snap {CELL_SIZE_M} m.
         </span>
+        <label title='Static estimate from the geometry, assuming people start evenly spread. Not observed congestion.'>Estimate <select value={analysis} onChange={e => setAnalysis(e.target.value as typeof analysis)}>
+          <option value='people.routeDemand'>potential bottlenecks (route demand)</option><option value='people.exitDistance'>distance to exit</option><option value='off'>off</option>
+        </select></label>
       </Toolbar>
-      <PlanCanvas doc={doc} onPointer={onPointer} overlay={overlay} />
+      <PlanCanvas doc={doc} onPointer={onPointer} overlay={overlay} heat={heat} heatMax={structural?.max} />
     </>
   );
 }
@@ -271,13 +289,15 @@ function AnalysisMode({ client, runId }: { client: EgressClient; runId: string |
 
 // ── Plan canvas ─────────────────────────────────────────────────────────────
 
-function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat }: {
+function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat, heatMax = 4 }: {
   doc: EgressDocument | null;
   onPointer?: (kind: 'down' | 'move' | 'up', world: Vec2) => void;
   overlay?: (ctx: CanvasRenderingContext2D, toScreen: (p: Vec2) => Vec2) => void;
   playback?: PlaybackController | null;
   ghosts?: ProposalView[];
   heat?: () => ScalarField | null;
+  /** Value that maps to full colour. */
+  heatMax?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const transform = useRef({ scale: 30, ox: 40, oy: 40, h: 600 });
@@ -312,7 +332,7 @@ function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat }: {
       for (let i = 0; i < field.values.length; i++) {
         const v = field.values[i];
         if (!(v > 0.05)) continue;
-        const t = Math.min(1, v / 4);
+        const t = Math.min(1, v / heatMax);
         const cx = i % width, cy = (i - cx) / width;
         const s = toScreen({ x: origin.x + cx * cs, y: origin.y + (cy + 1) * cs });
         ctx.fillStyle = `rgba(${Math.round(250 - 30 * t)}, ${Math.round(190 - 160 * t)}, ${Math.round(60 - 30 * t)}, ${0.25 + 0.55 * t})`;

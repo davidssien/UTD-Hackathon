@@ -14,3 +14,4 @@ export {
   frame, initialize, isComplete, metrics, MODEL_ID, MODEL_VERSION, PARAMS, step, type FrozenSimulationInput, type InitialActors, type SimState,
 } from './model.ts';
 export { runSimulation, simulateChunks, type RunChunk, type RunResult } from './run.ts';
+export { structuralField, type StructuralFieldId } from './structural.ts';

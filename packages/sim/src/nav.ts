@@ -15,6 +15,8 @@ export interface Navigation {
   /** Path distance to exit e from (x, y); Infinity if unreachable. */
   distanceAt(exit: number, x: number, y: number): number;
   cellAt(x: number, y: number): number;
+  /** Neighbour of `cell` with the lowest distance to exit e (walls respected), or -1 if none is lower. */
+  steepestNeighbor(exit: number, cell: number): number;
 }
 
 /** Paths closer than this to a wall edge cost more, so people are routed through the middle of openings. */
@@ -56,6 +58,16 @@ export function buildNavigation(grid: GridDefinition, navigable: Uint8Array, exi
     fields,
     nearWall,
     cellAt,
+    steepestNeighbor(exit, cell) {
+      const field = fields[exit];
+      const cx = cell % width, cy = (cell - cx) / width;
+      let best = -1, bestD = field[cell];
+      for (let k = 0; k < 8; k++) {
+        const j = passableStep(cx, cy, k);
+        if (j >= 0 && field[j] < bestD) { bestD = field[j]; best = j; }
+      }
+      return best;
+    },
     distanceAt(exit, x, y) {
       const i = cellAt(x, y);
       return i < 0 ? Infinity : fields[exit][i];

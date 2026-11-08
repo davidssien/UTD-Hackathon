@@ -87,3 +87,20 @@ test('the congestion heatmap survives the end of the evacuation and peaks at the
   assert.ok(Math.hypot(top.regionCenter.x - 5, top.regionCenter.y - 0) < 2.5, `worst hotspot near the exit, got ${JSON.stringify(top.regionCenter)}`);
   assert.equal(metrics(state).complete, true);
 });
+
+test('structural route demand converges on doors and the exit; exit distance grows away from it', async () => {
+  const { structuralField } = await import('@egress/sim');
+  const doc = fixture('two-rooms-corridor.json');
+  const c = compileFloor(doc);
+  const demand = structuralField(c, 'people.routeDemand');
+  const dist = structuralField(c, 'people.exitDistance');
+  let maxI = 0;
+  demand.values.forEach((v, i) => { if (v > demand.values[maxI] || !(demand.values[maxI] >= 0)) maxI = i; });
+  const cx = maxI % c.grid.width, cy = (maxI - cx) / c.grid.width;
+  const p = { x: c.grid.origin.x + (cx + 0.5) * 0.25, y: c.grid.origin.y + (cy + 0.5) * 0.25 };
+  assert.ok(Math.hypot(p.x - 0, p.y - 1) < 1, `peak demand at the exit, got ${JSON.stringify(p)}`);
+  const roomCell = demand.values[c.nav.cellAt(4, 8)];
+  assert.ok(demand.values[maxI] > 50 * roomCell, `exit demand ${demand.values[maxI]} dwarfs a room cell ${roomCell}`);
+  const far = dist.values[c.nav.cellAt(15, 11)], near = dist.values[c.nav.cellAt(1, 1)];
+  assert.ok(far > 20 && near < 2, `far ${far}, near ${near}`);
+});
