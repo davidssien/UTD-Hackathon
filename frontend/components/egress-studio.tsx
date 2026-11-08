@@ -10,7 +10,7 @@ import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
-  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, ShareIcon, SignalSlashIcon,
+  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, ShareIcon, SignalSlashIcon,
   Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
@@ -19,12 +19,13 @@ import { parseDocument, type EditCommand, type EgressDocument, type Opening, typ
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import type { HeatOverlay, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
+import SavesPage from './saves-page';
 import { buildingToDocument } from '@/lib/import-building';
 
 const Scene = dynamic(() => import('./egress-scene'), { ssr: false, loading: () => <div className="scene-loading" /> });
 
 type Mode = 'edit' | 'simulate' | 'analysis';
-type Modal = 'projects' | 'share' | 'import' | null;
+type Modal = 'share' | 'import' | null;
 type Menu = { x: number; y: number; wallId: string | null; openingId: string | null } | null;
 
 const WALL_TYPES: { id: WallMaterial; name: string }[] = [{ id: 'normal', name: 'Normal' }, { id: 'reinforced', name: 'Reinforced' }, { id: 'glass', name: 'Glass' }];
@@ -66,12 +67,10 @@ export default function EgressStudio() {
       queueMicrotask(async () => {
         if (disposed) return;
         try {
+          // The saves page is the landing page; only a share link or a project URL opens the editor directly.
           const join = params.get('join'), wanted = params.get('project');
           if (join) { await client.joinProject(join); return; }
-          const projects = [...client.projects.get()].sort((a, b) => b.updatedAt - a.updatedAt);
-          if (wanted && projects.some(p => p.id === wanted)) await client.openProject(wanted);
-          else if (projects.length) await client.openProject(projects[0].id);
-          else await client.createProject('Untitled plan', example());
+          if (wanted && client.projects.get().some(p => p.id === wanted)) await client.openProject(wanted);
         } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
       });
     };
@@ -89,6 +88,11 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const view = useEgress(client.document), projects = useEgress(client.projects), status = useEgress(client.status), connectionError = useEgress(client.connectionError);
   const runs = useEgress(client.runs), runner = useEgress(client.runner), proposals = useEgress(client.proposals), jobs = useEgress(client.agentJobs);
   const [mode, setMode] = useState<Mode>('edit');
+  // Saves page first (D69) unless the URL asks for a project or carries a share link.
+  const [screen, setScreen] = useState<'saves' | 'editor'>(() => {
+    const p = new URLSearchParams(location.search);
+    return p.has('project') || p.has('join') ? 'editor' : 'saves';
+  });
   const [tool, setTool] = useState<SceneTool>('select');
   const [wallType, setWallType] = useState<WallMaterial>('normal');
   const [selected, setSelected] = useState<string | null>(null);
@@ -127,15 +131,28 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const activeRun = runs.find(r => r.id === activeRunId);
   const running = activeRun?.status === 'queued' || activeRun?.status === 'running';
 
-  // Keep the URL pointing at the open project so it can be shared or reloaded.
+  // Keep the URL pointing at the open project while editing, so it can be shared or reloaded.
   useEffect(() => {
-    if (!view.projectId) return;
     const url = new URL(location.href);
     url.searchParams.delete('join');
-    if (url.searchParams.get('project') !== view.projectId) { url.searchParams.set('project', view.projectId); history.replaceState(null, '', url); }
-  }, [view.projectId]);
+    if (screen === 'editor' && view.projectId) url.searchParams.set('project', view.projectId);
+    else url.searchParams.delete('project');
+    if (url.href !== location.href) history.replaceState(null, '', url);
+  }, [view.projectId, screen]);
+  // A project URL that never opens (deleted, or no access) falls back to the saves page.
+  useEffect(() => {
+    if (screen !== 'editor' || status !== 'connected' || view.projectId) return;
+    const timer = setTimeout(() => setScreen('saves'), 2500);
+    return () => clearTimeout(timer);
+  }, [screen, status, view.projectId]);
 
   const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+  const openFromSaves = (projectId: string) => {
+    void client.openProject(projectId).then(() => {
+      setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select'); setScreen('editor');
+    }).catch(fail);
+  };
+  const toSaves = () => { setRail(false); setMenu(null); setTypeMenu(null); setLayersOpen(false); setExportOpen(false); setScreen('saves'); };
   const edit = (commands: EditCommand[]) => {
     if (!canEdit) { setError('You have view access to this project.'); return; }
     void client.edit(commands).then(r => { if (!r.ok) setError(r.error.message); }).catch(fail);
@@ -170,7 +187,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   // Keyboard: tools, history, modes.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.closest('input, textarea, select, dialog')) return;
+      if (screen === 'saves' || (e.target as HTMLElement)?.closest('input, textarea, select, dialog')) return;
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'y')) {
         if (mode !== 'edit') return;
@@ -215,14 +232,14 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
   const saving = view.pending > 0;
 
-  return <main className={`studio mode-${mode} theme-${theme} ${menu || typeMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
+  return <main className={`studio on-${screen} mode-${mode} theme-${theme} ${menu || typeMenu || exportOpen ? 'menus-open' : ''}`} onContextMenu={e => e.preventDefault()}>
     <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={canEdit ? tool : 'select'} wallType={wallType} selected={selected}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
       onContext={(at, hit) => { setTypeMenu(null); setMenu(hit && canEdit ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null } : null); if (hit) setSelected(hit.openingId ?? hit.wallId ?? null); }} />
 
     {/* Top left: project + sync state */}
-    <button className="project-chip" onClick={() => setModal('projects')} data-tip="Projects">
+    <button className="project-chip" onClick={toSaves} data-tip="Saves">
       <i className={`sync ${status !== 'connected' ? 'off' : saving ? 'busy' : 'ok'}`} />
       <span>{project?.name ?? (status === 'connected' ? 'Untitled plan' : status === 'error' ? 'Not connected' : 'Connecting…')}</span>
       {role !== 'owner' && project && <em>{role}</em>}
@@ -253,7 +270,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
 
     {/* Left: pull tab → meta rail */}
     {rail ? <nav className="rail" aria-label="Project">
-      <RailButton tip="Projects" onClick={() => setModal('projects')}><FolderIcon /></RailButton>
+      <RailButton tip="Saves" onClick={toSaves}><FolderIcon /></RailButton>
       <RailButton tip="Share" onClick={() => setModal('share')}><ShareIcon /></RailButton>
       <RailButton tip="Import plan image" onClick={() => setModal('import')}><ArrowUpTrayIcon /></RailButton>
       <div className="rail-anchor">
@@ -303,12 +320,15 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
 
     {(error || view.lastError || (status === 'error' && connectionError)) && <div className="toast" role="alert"><span>{error || view.lastError?.message || connectionError}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
 
-    {modal === 'projects' && <ProjectsModal client={client} onClose={() => setModal(null)} onOpened={() => { setSelected(null); setRunId(null); setPreviewId(null); setModal(null); switchMode('edit'); }} onError={fail} />}
+    <SavesPage client={client} active={screen === 'saves'} onOpen={openFromSaves} onImportImage={() => setModal('import')}
+      onCreateExample={() => client.createProject('Courtyard study', example())} onError={fail} />
+
     {modal === 'share' && <ShareModal client={client} role={role} backend={backend} onClose={() => setModal(null)} />}
     {modal === 'import' && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal import-host">
       <SketchImporter current={null} onClose={() => setModal(null)} onImport={building => {
         const name = `Imported plan ${new Date().toLocaleDateString()}`;
-        void client.createProject(name, buildingToDocument(building)).then(() => { setSelected(null); setRunId(null); switchMode('edit'); }).catch(fail);
+        // CV floor-plan scanning is the partner's area; this seam stays stable (PLAN.md D87).
+        void client.createProject(name, buildingToDocument(building)).then(() => { setSelected(null); setRunId(null); switchMode('edit'); setScreen('editor'); }).catch(fail);
       }} />
     </div></div>}
   </main>;
@@ -534,27 +554,6 @@ function ModalFrame({ title, onClose, children }: { title: string; onClose(): vo
   return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="modal"><header><h2>{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose}><XMarkIcon /></button></header>{children}</div>
   </div>;
-}
-
-function ProjectsModal({ client, onClose, onOpened, onError }: { client: EgressClient; onClose(): void; onOpened(): void; onError(e: unknown): void }) {
-  const projects = useEgress(client.projects), view = useEgress(client.document);
-  const [name, setName] = useState('');
-  const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
-  const mine = sorted.filter(p => p.role === 'owner'), shared = sorted.filter(p => p.role !== 'owner');
-  const row = (p: typeof projects[number]) => <button key={p.id} className={`project-row ${p.id === view.projectId ? 'current' : ''}`} onClick={() => void client.openProject(p.id).then(onOpened).catch(onError)}>
-    <FolderIcon /><span>{p.name}</span>{p.role !== 'owner' && <em>{p.role}</em>}<time>{new Date(p.updatedAt).toLocaleDateString()}</time>
-  </button>;
-  return <ModalFrame title="Projects" onClose={onClose}>
-    <form className="new-project" onSubmit={e => { e.preventDefault(); void client.createProject(name.trim() || 'Untitled plan').then(onOpened).catch(onError); }}>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="New project name" aria-label="New project name" maxLength={80} />
-      <button className="button primary" type="submit"><PlusIcon />New</button>
-    </form>
-    <div className="project-list">
-      <div className="list-label">Owned</div>
-      {mine.length ? mine.map(row) : <p className="empty">None</p>}
-      {shared.length > 0 && <><div className="list-label">Shared with you</div>{shared.map(row)}</>}
-    </div>
-  </ModalFrame>;
 }
 
 function ShareModal({ client, role, backend, onClose }: { client: EgressClient; role: string; backend: string; onClose(): void }) {

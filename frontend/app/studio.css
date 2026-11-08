@@ -218,3 +218,56 @@
   .dock{max-width:calc(100% - 40px);overflow-x:auto}
   .timeline input{width:28vw}
 }
+
+/* Saves page: the landing page (D69). It slides left to reveal the editor; the editor's
+   chrome slides in from its nearest edge, and back out when Saves is chosen again. */
+.saves{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;background:var(--chrome-2);color:var(--ink);transition:transform .45s cubic-bezier(.4,0,.2,1),visibility 0s linear .45s;user-select:text}
+.saves.shown{transform:translateX(0);visibility:visible;transition:transform .45s cubic-bezier(.4,0,.2,1),visibility 0s}
+.saves.hidden{transform:translateX(-100%);visibility:hidden}
+.saves-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--chrome)}
+.brand{display:flex;align-items:center;gap:10px}
+.logo-slot{width:30px;height:30px;border:1.5px solid var(--line-2);border-radius:8px}
+.brand strong{font-size:20px;font-weight:650;letter-spacing:-.3px;color:#178a4c}
+.saves-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.saves-actions .new-project{padding:0}
+.saves-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;padding:16px 20px}
+.saves-list{overflow:auto;background:var(--chrome);border:1px solid var(--line);border-radius:12px}
+.saves-list table{width:100%;border-collapse:collapse}
+.saves-list th{position:sticky;top:0;background:var(--chrome);text-align:left;font-weight:600;color:var(--muted);font-size:11.5px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.saves-list td{padding:9px 12px;border-bottom:1px solid var(--chrome-2);white-space:nowrap}
+.saves-list tbody tr:not(.group){cursor:default}
+.saves-list tbody tr:not(.group):hover{background:var(--chrome-2)}
+.saves-list tr.selected{background:var(--accent-2)!important}
+.saves-list tr.group td{font-size:11px;color:var(--muted);padding:12px 12px 4px;border:0}
+.saves-list td.name{max-width:0;width:50%;overflow:hidden;text-overflow:ellipsis;font-weight:550}
+.saves-list td.name em{font-style:normal;font-size:11px;font-weight:600;color:var(--accent);margin-left:8px}
+.saves-list td.name input{width:100%;height:26px;padding:0 6px;border:1px solid var(--accent);border-radius:5px}
+.saves-list td.role{text-transform:capitalize;color:var(--muted)}
+.saves-list .num{text-align:right;font-variant-numeric:tabular-nums}
+.saves-list td.actions{text-align:right;width:84px}
+.saves-list td.actions .icon-button{display:inline-grid}
+.row-menu{position:relative;display:inline-block}
+.row-menu .menu{right:0;top:30px;min-width:150px}
+.saves-detail{display:flex;flex-direction:column;background:var(--chrome);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:0;overflow:auto}
+.plan-frame{aspect-ratio:4/3;background:#fff;border:1px solid var(--line);border-radius:8px;display:grid;place-items:center;overflow:hidden}
+.plan-frame svg{width:100%;height:100%;padding:10px}
+.plan-frame svg path{fill:#000}
+.plan-frame svg circle.exit{fill:#fff;stroke:#000;stroke-width:.08}
+.plan-frame .loading{color:var(--muted)}
+.saves-detail h2{margin:12px 0 6px;font-size:16px;font-weight:650;overflow-wrap:anywhere}
+.details{margin:0 0 12px}
+.details>div{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--chrome-2)}
+.details dt{color:var(--muted)}
+.details dd{margin:0;font-variant-numeric:tabular-nums;font-weight:550;text-transform:none}
+.detail-actions{margin-top:auto;display:flex;gap:8px;justify-content:space-between;align-items:center}
+.button.open{height:44px;padding:0 28px;font-size:14px}
+.saves .empty{color:var(--muted);padding:16px}
+.project-chip,.mode-switch,.right-column,.dock,.rail,.rail-tab,.pane-tab,.viewcube-host{transition:transform .45s cubic-bezier(.4,0,.2,1),opacity .3s}
+.studio.on-saves .project-chip,.studio.on-saves .viewcube-host{transform:translateY(-160px)}
+.studio.on-saves .mode-switch{transform:translate(-50%,-80px)}
+.studio.on-saves .right-column{transform:translateX(360px)}
+.studio.on-saves .pane-tab{transform:translate(60px,-50%)}
+.studio.on-saves .dock{transform:translate(-50%,120px)}
+.studio.on-saves .rail,.studio.on-saves .rail-tab{transform:translate(-90px,-50%)}
+@media (max-width:900px){.saves-body{grid-template-columns:1fr;overflow:auto}.saves-detail{min-height:420px}}
+@media (prefers-reduced-motion:reduce){.saves,.project-chip,.mode-switch,.right-column,.dock,.rail,.rail-tab,.pane-tab,.viewcube-host{transition:none}}
