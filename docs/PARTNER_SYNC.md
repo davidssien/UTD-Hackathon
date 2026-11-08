@@ -13,6 +13,23 @@ Item 6 in the table below explains how the UI will read and write project data.
 
 ---
 
+## 0. What you can use today (on `main`, Sat 19:00)
+
+Open **http://localhost:3000/dev** after `npm install && npm run dev`. It's a plain reference UI for all three modes, built only on the APIs below. Copy whatever helps.
+
+| Need | Use |
+|---|---|
+| All data (projects, document, edits, undo/redo, runs, playback, agent) | `createMockClient({ seed })` from `@egress/client`, with `useEgress(store)` from `@egress/client/react`. The mock runs the **real** simulation and agent in the browser. The SpacetimeDB client will have the same interface. |
+| Wall outlines with mitered corners, junction hubs and door gaps | `deriveLayout(doc).walls.pieces` / `.hubs`: one CCW polygon each, in plan meters (+y north). Extrude for 3D, fill for 2D. |
+| Rooms and diagnostics | `deriveLayout(doc).topology.rooms` and `deriveLayout(doc).diagnostics` (cached per document object). |
+| Edit-mode "potential bottleneck" overlay | `structuralField(compileFloor(doc), 'people.routeDemand' or 'people.exitDistance')` from `@egress/sim`. |
+| Live heatmaps | `playback.field('people.congestion' or 'people.density', 'instant' / 'timeAverage' / 'perCellPeak')` returns a `ScalarField` grid at 0.25 m. Values are NaN on walls. |
+| Actor dots | `playback.actorsNow()` returns `{ actorXY, actorFlags }`, interpolated. Flag 1 means queued (draw red); flag 3 means exited (hide). |
+| Painting preview | `paintWeights(compileFloor(doc), strokes)`: per-cell weights in 0–4. Pass the strokes in `scenario.population.strokes`. |
+| Ghost previews | `proposal.ghost.doc`, plus `createdIds` / `changedIds` / `removedIds`. The bubble text is `proposal.notes.byCommand[i]`. |
+
+Fixtures: `content/scenes/{one-room,two-rooms-corridor,hall}.json`. Don't hand-edit them; regenerate with `node content/scenes/generate.mts`.
+
 ## 1. What we're asking the UI for
 
 1. **Mode tabs at the top: Edit / Live / Analysis.** The toolbar switches with the mode. Your current tools fit under Edit.

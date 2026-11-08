@@ -10,6 +10,30 @@
 
 **Deadline:** Sun 2026-11-08 12:00 CST · **Written:** Sat 2026-11-07 17:10 CST · **Branch:** `implement-backend`
 
+## Status — Sat 19:00 CST
+
+**Working now, on `main`:** open `/dev` (`npm run dev`, then http://localhost:3000/dev). Everything below runs in the browser through the mock client.
+- **Edit:** pen, box, erase and door/exit/window tools on a planar wall graph, with T-junction splitting and boxes that share sides.
+  - Walls draw as polygons with computed corners.
+  - Rooms, diagnostics and the route-demand "potential bottleneck" estimate update as you edit.
+- **Live:** the real pedestrian model, egress-pedestrian v0.1, at 10 Hz.
+  - Paced runs with `« 10` / `⏯` / `» 10` controls and a scrubber up to the LIVE edge (END once the run finishes).
+  - Current, Average and Peak heatmaps; the Average heatmap persists after everyone has left.
+  - Population painting.
+  - Benchmark: 500 people clear the hall in about 142 s simulated, at about 1.5 ms per tick.
+- **Analysis:** the real agent tools run real simulations on the same people.
+  - Example: on the two-rooms fixture it measured "widen the exit to 1.8 m: −40 s (−35%)" and proposed it.
+  - Proposals show as a ghost with a "why" bubble; Accept applies exactly the ghosted edit.
+- **Agent CLI:** `npm run agent:local -w @egress/runner -- hall.json 300` runs the agent from the command line. It uses Nemotron when `NVIDIA_API_KEY` is set, otherwise the measured heuristic planner.
+
+**Blocked on humans:**
+1. Install the SpacetimeDB CLI, then run `spacetime login`. That unlocks:
+   - publishing `egress-dev`
+   - generating bindings
+   - `SpacetimeEgressClient`
+   - the runner's database loop (1.4, 1.5, 2.7, 2.8, 3.3)
+2. Put `NVIDIA_API_KEY` in `services/runner/.env` to switch the agent from the heuristic to Nemotron.
+
 **Pitch:** Egress is a collaborative building editor. You draw a floor plan, drop in a crowd, run a pedestrian-flow evacuation, watch congestion build up, and scrub the replay. A Nemotron agent then tests design changes against measured results.
 
 ---
@@ -552,17 +576,17 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 ### Pass 1 — Saved editing (19:30–22:30)
 
-- [ ] **1.1 Graph operations in `applyEdit`:**
+- [x] **1.1 Graph operations in `applyEdit`:**
   - Snapping and vertex merging.
   - T-junction and crossing splits, moving each opening onto the right piece.
   - Orphan cleanup.
   - Commands: `eraseByLine`, `moveVertex`, `updateWall`, `createOpening`, `updateOpening`, `applyPatch`.
   - `inverse` generation.
   - Port the partner's validation rules.
-- [ ] **1.2 `wallPolygons`:**
+- [x] **1.2 `wallPolygons`:**
   - Corners and opening subtraction.
   - Tests: an L-corner has no notch; T and X junctions; 45°; a 15° bevel; a door cut.
-- [ ] **1.3 Derived values and tests:** `rooms`, `exteriorBoundary`, `diagnostics`, with tests adapted from `tests/rooms.test.ts`.
+- [x] **1.3 Derived values and tests:** `rooms`, `exteriorBoundary`, `diagnostics`, with tests adapted from `tests/rooms.test.ts`.
 - [ ] **1.4 Module reducers:**
   - `applyEdit`: load → apply → diff → write → revision++ → `edit_log`.
   - Projects, invites and roles.
@@ -573,7 +597,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - View subscriptions build the `DocumentView`.
   - An optimistic queue of pending edits, reconciled by `requestId` against `edit_log`.
   - Undo and redo through inverse patches.
-- [ ] **1.6 `/dev` Edit mode:**
+- [x] **1.6 `/dev` Edit mode:** — *(against the mock client)*
   - Pen, box, erase-by-line, and door/exit placement.
   - Project list, create, invite code, join.
 
@@ -588,12 +612,12 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 ### Pass 2 — Congestion core (22:30–03:30) · FUNCTIONAL BASE
 
-- [ ] **2.1 `sim/compile`:** grid, walkable fraction, interior, portals and regions, cached by `layoutHash`.
-- [ ] **2.2 `sim/nav`:** distance fields and unreachable detection.
-- [ ] **2.3 `sim/population`:** uniform seeded sampling and `POPULATION_INFEASIBLE`.
-- [ ] **2.4 `sim/step`:** per §6.
-- [ ] **2.5 `sim/fields` and `sim/metrics`.**
-- [ ] **2.6 Tests:**
+- [x] **2.1 `sim/compile`:** grid, walkable fraction, interior, portals and regions, cached by `layoutHash`.
+- [x] **2.2 `sim/nav`:** distance fields and unreachable detection.
+- [x] **2.3 `sim/population`:** uniform seeded sampling and `POPULATION_INFEASIBLE`.
+- [x] **2.4 `sim/step`:** per §6.
+- [x] **2.5 `sim/fields` and `sim/metrics`.**
+- [x] **2.6 Tests:**
   - No actor is ever inside a wall polygon (fuzzed over seeds).
   - A 0.9 m door is passable on the 0.25 m grid.
   - A queue forms in the corridor fixture.
@@ -609,11 +633,11 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - Run, replay and result views.
   - `openRun`.
 - [ ] **2.8 Runner run loop:** per §7, with pacing and performance logs.
-- [ ] **2.9 Client:**
+- [x] **2.9 Client:** — *(Playback, LIVE edge, heatmaps from frames; the mock runs the real sim in the browser)*
   - `startRun`.
   - `PlaybackController`: buffers chunks, interpolates, tracks the LIVE edge, handles ±10 s skips and seeking.
   - Fields computed client-side from frames, with final aggregates from `sim_results`.
-- [ ] **2.10 `/dev` Live mode:** toolbar, time bar, heatmap, metrics.
+- [x] **2.10 `/dev` Live mode:** toolbar, time bar, heatmap, metrics.
 
 **Done when:**
 - 300 people evacuate the corridor fixture with a visible queue.
@@ -626,15 +650,15 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 ### Pass 3 — Analysis agent (03:30–07:00)
 
-- [ ] **3.1 Agent loop:** the Nemotron client, the tool loop, the budget, step logging.
-- [ ] **3.2 Tools:** per §7. Candidate runs execute unpaced in-process and are recorded with `recordAgentRun`, so they appear as ordinary runs.
+- [x] **3.1 Agent loop:** the Nemotron client, the tool loop, the budget, step logging.
+- [x] **3.2 Tools:** per §7. Candidate runs execute unpaced in-process and are recorded with `recordAgentRun`, so they appear as ordinary runs.
 - [ ] **3.3 Module:**
   - Agent reducers and views.
   - `acceptProposal` through `core.applyEdit` with `requestId = proposalId`.
-- [ ] **3.4 Client:**
+- [x] **3.4 Client:** — *(the mock runs the real agent tools and heuristic planner in the browser)*
   - `agent.ask`, `steps`, `proposals`, `accept`, `reject`.
   - The ghost diff: the proposal patch applied to a copy of the document, then diffed against the current one.
-- [ ] **3.5 `/dev` Analysis mode:**
+- [x] **3.5 `/dev` Analysis mode:**
   - Chat and step cards.
   - Ghost entities with bubbles.
   - Accept / Reject.
@@ -652,12 +676,12 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 - [ ] **4.1 Full merge with the partner UI:** wire their components to `@egress/client`, and drop `/dev` from navigation (keep the route).
 - [ ] **4.2 Venue scene:** `content/scenes/venue.json`, drawn in the editor and labelled approximate. Image detection only if time allows.
-- [ ] **4.3 Population painting:**
+- [x] **4.3 Population painting:**
   - Scenario strokes.
   - Compartments split at walls and door thresholds.
   - Erase restores weight 1.
   - Total N never changes.
-- [ ] **4.4 Edit-mode static heatmap:** exit distance and route demand from `sim/nav`, labelled "potential bottleneck estimate".
+- [x] **4.4 Edit-mode static heatmap:** exit distance and route demand from `sim/nav`, labelled "potential bottleneck estimate".
 - [ ] **4.5 Deploy:**
   - Web host (likely Vercel; confirm with the partner).
   - Maincloud prod database `egress`.
@@ -744,3 +768,10 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D22 | 11-07 | **Views:** SpacetimeDB 2.14 supports view parameters on the server, but the client subscription syntax for them is unverified. We keep the `sessions`-scoped views, written as query-builder semijoins so they stay incremental. Runner views are procedural and gated on `service_identities`. |
 | D23 | 11-07 | **Toolchain findings:**<br>• Node type stripping works through npm-workspace symlinks, which resolves the §12 risk.<br>• Turbopack transpiles workspace packages automatically, so `next.config.ts` is unchanged.<br>• Binary columns use `t.byteArray()`.<br>• The root `tsconfig.json` excludes `spacetimedb/`, `services/` and `docs/`. |
 | D24 | 11-07 | **Agent-started runs:** `start_agent_run` creates candidate and baseline runs already claimed by the runner. They use the normal chunk and result reducers, so they appear as ordinary runs. |
+| D25 | 11-07 | **Overlapping walls are reused, not rejected.** Drawing over an existing collinear wall reuses it and only adds the uncovered stretch, so the box tool can draw adjacent rooms. This replaces ExitCraft's "overlap rejected" rule. |
+| D26 | 11-07 | **Navigation respects thin walls.** Walls are thinner than a 0.25 m cell, so every step between cell centers that crosses a wall edge is blocked. Path costs grow within 0.35 m of a wall, so routes run through the middle of openings. Dijkstra runs in float64. |
+| D27 | 11-07 | **Jam handling.**<br>• Walls repel from the single closest point only.<br>• Stalled people yield to the lower index.<br>• Someone stalled 2 s next to an opening turns sideways (0.13 m contact radius for 6 s).<br>• Exits are detected by position, and separation can never push anyone through a door or exit.<br>Every seed of every fixture now evacuates completely. |
+| D28 | 11-07 | **The mock client runs the real model.** It runs `@egress/sim` and `@egress/agent` in the browser (client-cpu). This is the guaranteed demo path if SpacetimeDB or Nemotron are unavailable. The runner runs the same code server-side. |
+| D29 | 11-07 | **Agent design:**<br>• `get_hotspots` returns validated `suggestionId`s, and the model picks among them rather than authoring geometry.<br>• `test_edit_batch` reruns the baseline's exact people.<br>• Candidates are ranked by effective time: a timed-out run counts 10 s per person still inside.<br>• `runLlmAgent` falls back to the heuristic sequence on model errors. |
+| D30 | 11-07 | **Painting** sets per-cell relative weights in [0, 4]. Strokes apply per cell (no blur through walls), erase restores 1, and N never changes. |
+| D31 | 11-07 | **Edit-mode estimate:** route demand is the floor area whose shortest route passes through each cell, smoothed within rooms; exit distance is also available. It is labelled a potential-bottleneck estimate, never congestion. |
