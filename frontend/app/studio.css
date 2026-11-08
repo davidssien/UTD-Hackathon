@@ -286,3 +286,20 @@
 .member-list li{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--chrome-2)}
 .member-list select{margin-left:auto;height:28px;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .share code,.presence code{font-size:12px}
+
+/* Room tags (D73) and escape plans */
+.room-tag{position:absolute;left:0;top:0;z-index:4;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.92);color:var(--ink);font-size:11px;font-weight:600;border:1px solid var(--line-2);white-space:nowrap;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.room-tag.muted{color:var(--muted);font-weight:500}
+.room-tag:hover{border-color:var(--accent)}
+.room-menu{width:220px;gap:6px;padding:8px;transform:translate(8px,8px)}
+.room-menu input,.room-menu select{height:30px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.menu-row{display:flex;justify-content:flex-end;gap:6px}
+.menu-row button{height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--line)}
+.menu-row button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.modal.wide{width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+.plans{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;padding:14px 16px 16px;overflow:auto}
+.plan-card{border:1px solid var(--line);border-radius:10px;padding:10px;background:#fff}
+.plan-card header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.plan-card h3{margin:0;font-size:13.5px}
+.plan-card svg{width:100%;height:auto;border:1px solid var(--chrome-3);border-radius:6px}
+.plan-card .details{margin:8px 0 0}

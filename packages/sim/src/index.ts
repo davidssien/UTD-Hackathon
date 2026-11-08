@@ -15,4 +15,5 @@ export {
 } from './model.ts';
 export { runSimulation, simulateChunks, type RunChunk, type RunResult } from './run.ts';
 export { structuralField, type StructuralFieldId } from './structural.ts';
+export { escapeRoutes, type EscapeRoute } from './routes.ts';
 export { isSpawnable, MAX_PAINT_WEIGHT, paintWeights } from './paint.ts';

@@ -23,6 +23,7 @@ export interface SceneLayer { people: PeopleView; field: HeatField; stat: HeatSt
 export interface HeatOverlay { field: ScalarField; diverging: boolean }
 export interface SceneNote { key: string; text: string; entityId: string }
 export interface SceneHit { wallId?: string; openingId?: string }
+export interface SceneTag { key: string; text: string; at: Vec2; muted?: boolean }
 export interface SceneHandle { view(view: 'top' | 'iso' | 'fit'): void; exportImage(): void }
 
 interface Props {
@@ -34,6 +35,9 @@ interface Props {
   /** Entity ids drawn in suggestion blue (created or changed by a proposal). */
   highlight?: ReadonlySet<string>;
   notes?: SceneNote[];
+  /** Room tags on the floor (Edit): click to correct a room's kind or name. */
+  tags?: SceneTag[];
+  onTag?(key: string, at: { x: number; y: number }): void;
   playback?: PlaybackController | null;
   layer: SceneLayer;
   /** Scene background: black (default) or the original blueprint blue (D70). */
@@ -180,6 +184,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
   const cubeHost = useRef<HTMLDivElement>(null);
   const dim = useRef<HTMLDivElement>(null);
   const noteEls = useRef(new Map<string, HTMLDivElement>());
+  const tagEls = useRef(new Map<string, HTMLButtonElement>());
   const runtime = useRef<Runtime | null>(null);
   const latest = useRef(props);
   const framedProject = useRef<string | null>(null);
@@ -568,6 +573,12 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         bubble.style.visibility = visible ? 'visible' : 'hidden';
         bubble.style.transform = `translate(${(screen.x + 1) / 2 * w}px, ${(1 - screen.y) / 2 * h}px)`;
       }
+      // Room tags sit on the floor at each room's centre.
+      for (const tag of latest.current.tags ?? []) {
+        const el = tagEls.current.get(tag.key); if (!el) continue;
+        screen.set(tag.at.x, 0.05, -tag.at.y).project(camera);
+        el.style.transform = `translate(${(screen.x + 1) / 2 * w}px, ${(1 - screen.y) / 2 * h}px) translate(-50%, -50%)`;
+      }
     };
     raf = requestAnimationFrame(loop);
 
@@ -684,6 +695,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     <div className="viewcube-host" ref={cubeHost} title={props.editing ? 'Edit is top-down' : 'Drag to orbit · click a face, edge or corner'} />
     <div className="scene-dim" ref={dim} hidden />
     {(props.notes ?? []).map(n => <div key={n.key} className="scene-note" ref={el => { if (el) noteEls.current.set(n.key, el); else noteEls.current.delete(n.key); }}><span>{n.text}</span></div>)}
+    {(props.tags ?? []).map(t => <button key={t.key} className={`room-tag ${t.muted ? 'muted' : ''}`} ref={el => { if (el) tagEls.current.set(t.key, el); else tagEls.current.delete(t.key); }}
+      onClick={e => { const r = host.current!.getBoundingClientRect(); props.onTag?.(t.key, { x: e.clientX - r.left, y: e.clientY - r.top }); }}>{t.text}</button>)}
   </div>;
 });
 

@@ -10,22 +10,23 @@ import dynamic from 'next/dynamic';
 import {
   ArrowDownTrayIcon, ArrowPathIcon, ArrowRightEndOnRectangleIcon, ArrowRightStartOnRectangleIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon,
   ArrowUturnRightIcon, ArrowsPointingOutIcon, BackspaceIcon, BackwardIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon,
-  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, ShareIcon, SignalSlashIcon, UserIcon,
+  CursorArrowRaysIcon, FolderIcon, ForwardIcon, LinkIcon, PaperAirplaneIcon, PauseIcon, PencilIcon, PlayIcon, ShareIcon, SignalSlashIcon, UserIcon, MapIcon,
   Square3Stack3DIcon, StopIcon, TrashIcon, WindowIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
-import { parseDocument, type EditCommand, type EgressDocument, type Opening, type Role, type SimulationMetrics, type Wall, type WallMaterial } from '@egress/core';
+import { describeRooms, parseDocument, roomFacts, type EditCommand, type RoomKind, type EgressDocument, type Opening, type Role, type SimulationMetrics, type Wall, type WallMaterial } from '@egress/core';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import type { HeatOverlay, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
+import EscapePlans from './escape-plans';
 import { buildingToDocument } from '@/lib/import-building';
 
 const Scene = dynamic(() => import('./egress-scene'), { ssr: false, loading: () => <div className="scene-loading" /> });
 
 type Mode = 'edit' | 'simulate' | 'analysis';
-type Modal = 'share' | 'import' | null;
+type Modal = 'share' | 'import' | 'plans' | null;
 type Menu = { x: number; y: number; wallId: string | null; openingId: string | null } | null;
 
 const WALL_TYPES: { id: WallMaterial; name: string }[] = [{ id: 'normal', name: 'Normal' }, { id: 'reinforced', name: 'Reinforced' }, { id: 'glass', name: 'Glass' }];
@@ -124,6 +125,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const scene = useRef<SceneHandle>(null);
 
   const doc = view.doc;
+  // Rooms and their labels (D73): editors ask the runner to label rooms that have none yet.
+  const roomLabelRows = useEgress(client.roomLabels);
+  const labelMap = useMemo(() => new Map(roomLabelRows.map(l => [l.roomHash, l])), [roomLabelRows]);
+  const rooms = useMemo(() => (doc ? describeRooms(doc) : []), [doc]);
+  const roomKey = rooms.map(r => r.roomHash).sort().join(',');
+  const [tagMenu, setTagMenu] = useState<{ hash: string; x: number; y: number } | null>(null);
   const project = projects.find(p => p.id === view.projectId);
   const role = project?.role ?? 'viewer';
   const canEdit = role !== 'viewer';
@@ -132,6 +139,11 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const playback = useMemo(() => (activeRunId ? client.playback(activeRunId) : null), [client, activeRunId]);
   const activeRun = runs.find(r => r.id === activeRunId);
   const running = activeRun?.status === 'queued' || activeRun?.status === 'running';
+  useEffect(() => {
+    if (!canEdit || screen !== 'editor' || !rooms.length || rooms.every(r => labelMap.has(r.roomHash))) return;
+    const timer = setTimeout(() => { void client.requestRoomLabels(rooms.map(roomFacts)).catch(() => { /* labels are optional */ }); }, 1500);
+    return () => clearTimeout(timer);
+  }, [roomKey, canEdit, screen, client]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep the URL pointing at the open project while editing, so it can be shared or reloaded.
   useEffect(() => {
@@ -229,6 +241,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   };
 
   const sceneDoc = ghost?.doc ?? doc;
+  const tags = mode === 'edit' ? rooms.map(r => ({ key: r.roomHash, text: labelMap.get(r.roomHash)?.name ?? '…', at: r.center, muted: !labelMap.has(r.roomHash) })) : [];
   const wall = doc?.walls.find(w => w.id === selected) ?? null;
   const opening = doc?.openings.find(o => o.id === selected) ?? null;
   const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
@@ -238,6 +251,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     <Scene ref={scene} theme={theme} doc={sceneDoc} editing={mode === 'edit'} tool={canEdit ? tool : 'select'} wallType={wallType} selected={selected}
       highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
       onSelect={setSelected} onEdit={edit}
+      tags={tags} onTag={(hash, at) => { if (canEdit) setTagMenu({ hash, ...at }); }}
       onContext={(at, hit) => { setTypeMenu(null); setMenu(hit && canEdit ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null } : null); if (hit) setSelected(hit.openingId ?? hit.wallId ?? null); }} />
 
     {/* Top left: project + sync state */}
@@ -280,6 +294,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     {rail ? <nav className="rail" aria-label="Project">
       <RailButton tip="Saves" onClick={toSaves}><FolderIcon /></RailButton>
       <RailButton tip="Share" onClick={() => setModal('share')}><ShareIcon /></RailButton>
+      <RailButton tip="Escape plans" onClick={() => setModal('plans')}><MapIcon /></RailButton>
       <RailButton tip="Import plan image" onClick={() => setModal('import')}><ArrowUpTrayIcon /></RailButton>
       <div className="rail-anchor">
         <RailButton tip="Export" onClick={() => setExportOpen(v => !v)}><ArrowDownTrayIcon /></RailButton>
@@ -331,6 +346,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     <SavesPage client={client} active={screen === 'saves'} onOpen={openFromSaves} onImportImage={() => setModal('import')}
       onCreateExample={() => client.createProject('Courtyard study', example())} onError={fail} />
 
+    {tagMenu && <RoomTagMenu at={tagMenu} label={labelMap.get(tagMenu.hash)} onClose={() => setTagMenu(null)}
+      onSave={(kind, name) => { void client.setRoomLabel(tagMenu.hash, kind, name).catch(fail); setTagMenu(null); }} />}
+    {modal === 'plans' && doc && <ModalFrame title="Escape plans" wide onClose={() => setModal(null)}><EscapePlans doc={doc} labels={labelMap} projectName={project?.name ?? 'Plan'} /></ModalFrame>}
     {modal === 'share' && <ShareModal client={client} role={role} backend={backend} onClose={() => setModal(null)} />}
     {modal === 'import' && <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal import-host">
       <SketchImporter current={null} onClose={() => setModal(null)} onImport={building => {
@@ -558,11 +576,26 @@ function AnalysisPane({ client, preview, comparison, diffMap, canEdit, onDiffMap
 
 // ── Modals ──────────────────────────────────────────────────────────────────
 
-function ModalFrame({ title, onClose, children }: { title: string; onClose(): void; children: ReactNode }) {
+function ModalFrame({ title, onClose, children, wide }: { title: string; onClose(): void; children: ReactNode; wide?: boolean }) {
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
   return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-    <div className="modal"><header><h2>{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose}><XMarkIcon /></button></header>{children}</div>
+    <div className={`modal ${wide ? 'wide' : ''}`}><header><h2>{title}</h2><button className="icon-button" aria-label="Close" onClick={onClose}><XMarkIcon /></button></header>{children}</div>
   </div>;
+}
+
+const ROOM_KINDS: { id: RoomKind; name: string }[] = [
+  { id: 'room', name: 'Room' }, { id: 'hallway', name: 'Hallway' }, { id: 'lobby', name: 'Lobby' },
+  { id: 'stair', name: 'Stair' }, { id: 'closet', name: 'Closet' }, { id: 'other', name: 'Other' },
+];
+
+function RoomTagMenu({ at, label, onSave, onClose }: { at: { x: number; y: number }; label: { kind: RoomKind; name: string; source: string } | undefined; onSave(kind: RoomKind, name: string): void; onClose(): void }) {
+  const [kind, setKind] = useState<RoomKind>(label?.kind ?? 'room'), [name, setName] = useState(label?.name ?? '');
+  return <form className="menu room-menu" style={{ left: at.x, top: at.y }} onSubmit={e => { e.preventDefault(); if (name.trim()) onSave(kind, name.trim()); }} onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
+    <div className="menu-label">Room{label ? ` · labelled by ${label.source === 'nemotron' ? 'Nemotron' : label.source}` : ''}</div>
+    <input autoFocus value={name} onChange={e => setName(e.target.value)} maxLength={60} aria-label="Room name" placeholder="Name" />
+    <select value={kind} onChange={e => setKind(e.target.value as RoomKind)} aria-label="Room kind">{ROOM_KINDS.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}</select>
+    <div className="menu-row"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary">Save</button></div>
+  </form>;
 }
 
 function ShareModal({ client, role, backend, onClose }: { client: EgressClient; role: Role; backend: string; onClose(): void }) {
