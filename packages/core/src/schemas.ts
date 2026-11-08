@@ -225,6 +225,8 @@ export const SimulationScenarioSchema = z.object({
    */
   elements: z.array(z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('fire'), id: IdSchema, floorId: IdSchema, position: Vec2Schema, radiusM: z.number().positive().max(20), startSeconds: z.number().nonnegative() }),
+    /** A lassoed area that starts burning (final sprint); several may be placed, on any floor. */
+    z.object({ kind: z.literal('fireArea'), id: IdSchema, floorId: IdSchema, polygon: z.array(Vec2Schema).min(3).max(512), startSeconds: z.number().nonnegative() }),
   ])).max(50).optional(),
   /** Assumed exterior wind for airflow and smoke (default west). */
   windFrom: z.enum(['west', 'north', 'east', 'south']).optional(),

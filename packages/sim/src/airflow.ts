@@ -13,6 +13,8 @@ export type WindFrom = keyof typeof WIND_FROM;
 export interface AirVent { position: Vec2; radiusM: number }
 /** Relative pressure a supply vent holds; exterior apertures sit in [-1, 1] under wind. */
 export const VENT_PRESSURE = 3;
+/** Burning cells expand hot gas: they act like small supply vents and push air (and smoke) outward. */
+export const FIRE_PRESSURE = 2.5;
 
 export interface FloorAirflow {
   magnitude: ScalarField;
@@ -43,7 +45,17 @@ export function floorAirflow(doc: EgressDocument, floorId: string, from: WindFro
 }
 
 /** The steady pressure solve plus the cell graph, aperture cells and gradient, for smoke transport. */
-export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, extraVents: AirVent[] = []) {
+export interface SolveOptions {
+  /** Burning cells, held at FIRE_PRESSURE. */
+  burning?: Uint8Array;
+  /** Start from this pressure field (a previous solve of the same floor) instead of zero. */
+  guess?: Float64Array;
+  /** Stop when the summed squared residual falls below this; default is relative (1e-12 of the start). */
+  absTolerance?: number;
+}
+
+export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, extraVents: AirVent[] = [], options: SolveOptions = {}) {
+  const { burning, guess } = options;
   const c = airDomain(doc, floorId);
   // HVAC vents placed in the building, plus any given explicitly.
   const vents = [...(doc.placeables ?? []).filter(p => p.floorId === floorId && PLACEABLES[p.item].suppliesAir)
@@ -74,6 +86,7 @@ export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, e
       }
     }
   }
+  if (burning) for (let i = 0; i < n; i++) if (burning[i] && navigable[i]) { fixed[i] = 1; pressure[i] = FIRE_PRESSURE; }
   const offsets = [1, -1, width, -width];
   for (let i = 0; i < n; i++) {
     if (!navigable[i]) continue;
@@ -105,7 +118,7 @@ export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, e
     for (let k = 0; k < size; k++) {
       const i = queue[k];
       if (fixed[i]) continue;
-      if (high - low > 1e-8) free.push(i);
+      if (high - low > 1e-8) { free.push(i); if (guess && guess.length === n) pressure[i] = guess[i]; }
       else pressure[i] = Number.isFinite(low) ? low : 0;
     }
   }
@@ -125,9 +138,10 @@ export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, e
     direction[i] = residual[i] = -laplacian(pressure, i);
     norm += residual[i] ** 2;
   }
-  const tolerance = norm * 1e-12;
+  const tolerance = options.absTolerance ?? norm * 1e-12;
   const maxIterations = Math.min(1400, Math.max(100, 7 * (width + height)));
-  for (let iter = 0; iter < maxIterations && norm > tolerance; iter++) {
+  let iterations = 0;
+  for (let iter = 0; iter < maxIterations && norm > tolerance; iter++, iterations++) {
     let denom = 0;
     for (const i of free) { product[i] = laplacian(direction, i); denom += direction[i] * product[i]; }
     if (denom <= 0) break;
@@ -158,6 +172,6 @@ export function solveAir(doc: EgressDocument, floorId: string, from: WindFrom, e
   }
   const outside = new Uint8Array(n);
   for (const seeds of c.exitSeeds) for (const i of seeds) outside[i] = 1;
-  return { grid, navigable, neighbours, outside, x, y, values, peak, exteriorOpenings: c.exitSeeds.filter(seeds => seeds.length).length };
+  return { grid, navigable, neighbours, outside, x, y, values, peak, pressure, iterations, exteriorOpenings: c.exitSeeds.filter(seeds => seeds.length).length };
 }
 

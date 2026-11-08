@@ -14,7 +14,7 @@ import { compileFloor, type CompiledFloor, type Portal } from './compile.ts';
 import { buildNavigation } from './nav.ts';
 import { buildingRoutes, STAIR_SPEED_FACTOR, type FloorRoutes, type Descent } from './building.ts';
 import { FieldAccumulator } from './fields.ts';
-import { burningAt, cellOf, createHazard, fireRadius, HAZARD, stepHazard, type Hazard } from './hazards.ts';
+import { burningAt, cellOf, createHazards, HAZARD, stepHazard, type Hazard } from './hazards.ts';
 import { isSpawnable, paintWeights } from './paint.ts';
 import { ActorHash, closestOnSegment, segmentsIntersect } from './spatial.ts';
 
@@ -158,10 +158,8 @@ export interface SimState {
   exited: number;
   unreachable: number;
   /** Hazard runs: fire and smoke on one floor, each person's smoke dose, and who was overcome by what. */
-  readonly hazard: Hazard | null;
-  readonly hazardFloor: number;
-  /** Fire radius the fire floor's routes were last solved around. */
-  routedRadius: number;
+  /** One per floor with fire: the hazard, the floor index, and how much fire its routes were solved around. */
+  readonly hazards: { hazard: Hazard; floor: number; routedBurning: number }[];
   readonly dose: Float32Array;
   fireDeaths: number;
   smokeDeaths: number;
@@ -275,8 +273,9 @@ export function initialize(input: FrozenSimulationInput): SimState {
     queue: new Int32Array(route.destinations.length), stairReady: new Int32Array(route.destinations.length),
     closed: new Uint8Array(route.destinations.length), started: 0, stairDescents: 0,
   }));
-  const hazard = createHazard(input.document, scenario);
-  const hazardFloor = hazard ? floors.findIndex(f => f.floor.id === hazard.floorId) : -1;
+  const hazards = createHazards(input.document, { ...scenario, seed: scenario.population.seed })
+    .map(hazard => ({ hazard, floor: floors.findIndex(f => f.floor.id === hazard.floorId), routedBurning: 0 }))
+    .filter(h => h.floor >= 0);
   const compiled = floors[0].compiled;
   const { x, y, r, vPref, respawned, actorFloor } = spawnPopulation(floors.map(f => f.compiled), scenario.population, input.initialActors);
 
@@ -304,7 +303,7 @@ export function initialize(input: FrozenSimulationInput): SimState {
     switches: 0, reversals: 0, fields: floors[0].fields,
     maxTicks: Math.round(scenario.durationSeconds * TICK_RATE_HZ), maxQueue: 0, lastExitTick: 0, lastProgressTick: 0, exited: 0, unreachable: 0,
     initial: { x: Array.from(x), y: Array.from(y), r: Array.from(r), vPref: Array.from(vPref), floorIds: Array.from(actorFloor, f => floors[f].floor.id) },
-    respawned, hazard: hazardFloor >= 0 ? hazard : null, hazardFloor, routedRadius: -1, dose: new Float32Array(n), fireDeaths: 0, smokeDeaths: 0,
+    respawned, hazards, dose: new Float32Array(n), fireDeaths: 0, smokeDeaths: 0,
   };
   // Start: nearest exit, then one round of the full rule so the split accounts for everyone else.
   for (let a = 0; a < n; a++) {
@@ -559,7 +558,7 @@ export function step(state: SimState): void {
   separateOverlaps(state);
   const exitedBefore = state.exited;
   sweepExited(state);
-  if (state.hazard) applyHazard(state, state.hazard);
+  for (const h of state.hazards) applyHazard(state, h);
   // Stabilization (D38): progress = someone left, or the people inside are still moving.
   let active = 0, speedSum = 0;
   for (let a = 0; a < n; a++) if (flag[a] < ACTOR_EXITED) { active++; speedSum += Math.hypot(vx[a], vy[a]); }
@@ -576,32 +575,32 @@ export function step(state: SimState): void {
  * everyone on that floor accumulates smoke dose, and every second exits and stairs inside the
  * fire close, sending the people bound for them to their next choice.
  */
-function applyHazard(state: SimState, hazard: Hazard) {
+function applyHazard(state: SimState, entry: SimState['hazards'][number]) {
+  const { hazard } = entry;
   stepHazard(hazard);
-  if (hazard.tick < hazard.ignitionTick) return;
-  const floor = state.floors[state.hazardFloor];
-  if (hazard.tick % TICK_RATE_HZ === 0) {
+  if (hazard.tick <= hazard.ignitionTick) return;
+  const floor = state.floors[entry.floor], floorIndex = entry.floor;
+  if ((hazard.tick - hazard.ignitionTick) % TICK_RATE_HZ === 1) {
     const newlyClosed: number[] = [];
     floor.destinations.forEach((dest, e) => {
-      if (!floor.closed[e] && burningAt(hazard, dest.center, hazard.tick, HAZARD.exitAvoidM)) { floor.closed[e] = 1; newlyClosed.push(e); }
+      if (!floor.closed[e] && burningAt(hazard, dest.center, HAZARD.exitAvoidM)) { floor.closed[e] = 1; newlyClosed.push(e); }
     });
     // Routes bend around the flames: re-solve this floor's distance fields with burning cells
-    // (plus one cell of margin) removed whenever the fire has grown by half a metre.
-    const radius = fireRadius(hazard, hazard.tick);
-    const rerouted = radius - state.routedRadius >= 0.5;
+    // (plus a margin) removed whenever the fire has grown by a tenth since the last solve.
+    const rerouted = hazard.burningCount > entry.routedBurning * 1.1 + 4;
     if (rerouted) {
-      state.routedRadius = radius;
+      entry.routedBurning = hazard.burningCount;
       const c = floor.compiled, navigable = c.navigable.slice();
       for (let i = 0; i < navigable.length; i++) {
         if (!navigable[i]) continue;
         const p = { x: c.grid.origin.x + ((i % c.grid.width) + 0.5) * c.grid.cellSizeM, y: c.grid.origin.y + (Math.floor(i / c.grid.width) + 0.5) * c.grid.cellSizeM };
-        if (burningAt(hazard, p, hazard.tick, HAZARD.routeAvoidM)) navigable[i] = 0;
+        if (burningAt(hazard, p, HAZARD.routeAvoidM)) navigable[i] = 0;
       }
       floor.nav = buildNavigation(c.grid, navigable, floor.seeds, c.blockedEdges, c.clearance);
     }
     if (newlyClosed.length || rerouted) {
       for (let a = 0; a < state.n; a++) {
-        if (state.actorFloor[a] !== state.hazardFloor || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
+        if (state.actorFloor[a] !== floorIndex || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
         if (newlyClosed.includes(state.exit[a])) { state.exit[a] = -1; state.prevExit[a] = -1; state.cooldownUntil[a] = 0; chooseExit(state, a, 'initial'); }
         else chooseExit(state, a, 'replan');
       }
@@ -610,7 +609,7 @@ function applyHazard(state: SimState, hazard: Hazard) {
   const dt = DT_SECONDS;
   let exposed = false;
   for (let a = 0; a < state.n; a++) {
-    if (state.actorFloor[a] !== state.hazardFloor || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
+    if (state.actorFloor[a] !== floorIndex || state.flag[a] >= ACTOR_EXITED || state.transit[a]) continue;
     const p = { x: state.x[a], y: state.y[a] };
     if (burningAt(hazard, p)) { overcome(state, a); state.fireDeaths++; continue; }
     const cell = cellOf(hazard, p);
@@ -787,7 +786,7 @@ export function metrics(state: SimState): SimulationMetrics {
     endReason: endReason(state) ?? undefined,
     exitSwitches: state.switches,
     exitReversals: state.reversals,
-    ...(state.hazard ? { fireDeaths: state.fireDeaths, smokeDeaths: state.smokeDeaths } : {}),
+    ...(state.hazards.length ? { fireDeaths: state.fireDeaths, smokeDeaths: state.smokeDeaths } : {}),
     complete,
   };
 }

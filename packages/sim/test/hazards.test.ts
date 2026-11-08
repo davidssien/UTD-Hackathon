@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { applyEditOrThrow, parseDocument, type EgressDocument, type SimulationScenario } from '@egress/core';
-import { compileFloor, floorAirflow, runSimulation } from '@egress/sim';
+import { advanceHazard, compileFloor, createHazards, floorAirflow, runSimulation } from '@egress/sim';
+import { solveAir } from '../src/airflow.ts';
 
 const root = join(import.meta.dirname, '..', '..', '..', 'content');
 const load = (path: string) => parseDocument(JSON.parse(readFileSync(join(root, path), 'utf8')));
@@ -49,4 +50,31 @@ test('placeables: a table stops people but not air; a ceiling vent drives air to
   assert.ok(Number.isFinite(air.magnitude.values[cell]) && air.y[cell] < 0, 'air passes over the table, south from the vent toward the exit');
   const sealed = floorAirflow({ ...doc, openings: doc.openings.map(o => ({ ...o, state: 'closed' as const })) }, floorId, 'north');
   assert.equal(sealed.peak, 0);
+});
+
+test('lassoed fire areas burn per floor and spread by seeded chance', () => {
+  const doc = load('examples/clinic.json');
+  const [ground, upper] = [...doc.floors].sort((a, b) => a.level - b.level);
+  const square = (x: number, y: number) => [{ x, y }, { x: x + 2, y }, { x: x + 2, y: y + 2 }, { x, y: y + 2 }];
+  const elements: SimulationScenario['elements'] = [
+    { kind: 'fireArea', id: 'a', floorId: ground.id, polygon: square(2, 2), startSeconds: 0 },
+    { kind: 'fireArea', id: 'b', floorId: upper.id, polygon: square(15, 2), startSeconds: 5 },
+  ];
+  const burn = (seed: number) => { const hs = createHazards(doc, { elements, seed }); for (const h of hs) advanceHazard(h, 600); return hs; };
+  const [a, b, c] = [burn(1), burn(1), burn(2)];
+  assert.deepEqual(a.map(h => h.floorId), [ground.id, upper.id]);
+  assert.ok(a.every(h => h.burningCount > 64), `each area burns and spreads (${a.map(h => h.burningCount)})`);
+  assert.deepEqual(a.map(h => h.burningCount), b.map(h => h.burningCount), 'same seed, same fire');
+  assert.notDeepEqual(a.map(h => [...h.burning].join('')), c.map(h => [...h.burning].join('')), 'another seed spreads differently');
+});
+
+test('burning cells push air like a supply vent: a stagnant room flows out of its exit', () => {
+  const doc = load('scenes/one-room.json'), floorId = doc.floors[0].id;
+  const still = solveAir(doc, floorId, 'north');
+  assert.equal(still.peak, 0, 'one aperture and no sources: no through-flow');
+  const burning = new Uint8Array(still.navigable.length), g = still.grid;
+  const at = (x: number, y: number) => Math.floor((y - g.origin.y) / g.cellSizeM) * g.width + Math.floor((x - g.origin.x) / g.cellSizeM);
+  for (let x = 4; x <= 6; x += 0.25) for (let y = 6.5; y <= 7.5; y += 0.25) burning[at(x, y)] = 1;
+  const fire = solveAir(doc, floorId, 'north', [], { burning });
+  assert.ok(fire.y[at(5, 4)] < 0, 'air in the middle of the room moves south, away from the fire toward the exit');
 });
