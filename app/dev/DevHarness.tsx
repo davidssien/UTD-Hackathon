@@ -9,12 +9,13 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ACTOR_EXITED, ACTOR_QUEUED, CELL_SIZE_M, TICK_RATE_HZ, deriveLayout, parseDocument, projectOnSegment,
-  type EditCommand, type EgressDocument, type OpeningKind, type Pace, type Vec2,
+  type Aggregation, type EditCommand, type EgressDocument, type OpeningKind, type Pace, type ScalarField, type Vec2,
 } from '@egress/core';
 import { createMockClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import oneRoom from '../../content/scenes/one-room.json';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
+import hall from '../../content/scenes/hall.json';
 
 type Mode = 'edit' | 'live' | 'analysis';
 type Tool = 'pen' | 'box' | 'erase' | 'door' | 'exit' | 'window';
@@ -30,6 +31,7 @@ export default function DevHarness() {
     seed: [
       { name: 'Two rooms + corridor', doc: parseDocument(twoRooms) },
       { name: 'One room', doc: parseDocument(oneRoom) },
+      { name: 'Hall (30 × 20 m)', doc: parseDocument(hall) },
     ],
   }) : null), [isBrowser]);
   if (!client) return <div style={{ padding: 24, fontFamily: 'system-ui' }}>Starting mock backend…</div>;
@@ -146,9 +148,18 @@ function EditMode({ client }: { client: EgressClient }) {
 
 function LiveMode({ client, playback, onRun }: { client: EgressClient; playback: PlaybackController | null; onRun: (id: string) => void }) {
   const view = useEgress(client.document);
-  const [count, setCount] = useState(200);
+  const [count, setCount] = useState(150);
   const [seed, setSeed] = useState(1);
   const [pace, setPace] = useState<Pace>('x1');
+  const [heatField, setHeatField] = useState<'people.congestion' | 'people.density' | 'off'>('people.congestion');
+  const [heatAgg, setHeatAgg] = useState<Aggregation | 'auto'>('auto');
+  const runs = useEgress(client.runs);
+  const run = playback ? runs.find(r => r.id === playback.state.get().runId) : undefined;
+  const heat = useMemo(() => (heatField === 'off' || !playback ? undefined : () => {
+    // Default: Current while running, Average once complete (the last frame is an empty building).
+    const agg = heatAgg !== 'auto' ? heatAgg : playback.state.get().complete ? 'timeAverage' : 'instant';
+    return playback.field(heatField, agg);
+  }), [heatField, heatAgg, playback]);
   const start = async () => {
     if (!view.projectId) return;
     const id = await client.startRun({
@@ -166,8 +177,15 @@ function LiveMode({ client, playback, onRun }: { client: EgressClient; playback:
         <label>Pace <select value={pace} onChange={e => setPace(e.target.value as Pace)}>{(['x1', 'x2', 'x4', 'unpaced'] as const).map(p => <option key={p}>{p}</option>)}</select></label>
         <button onClick={start}>Evacuate</button>
         {playback && <Transport playback={playback} />}
+        <label>Heatmap <select value={heatField} onChange={e => setHeatField(e.target.value as typeof heatField)}>
+          <option value="people.congestion">congestion</option><option value="people.density">density</option><option value="off">off</option>
+        </select></label>
+        <select value={heatAgg} onChange={e => setHeatAgg(e.target.value as typeof heatAgg)}>
+          <option value="auto">auto</option><option value="instant">current</option><option value="timeAverage">average</option><option value="perCellPeak">peak</option>
+        </select>
+        {run?.error && <span style={{ color: '#b42318' }}>{run.error.code}: {run.error.message}</span>}
       </Toolbar>
-      <PlanCanvas doc={view.doc} playback={playback} />
+      <PlanCanvas doc={view.doc} playback={playback} heat={heat} />
       {playback && <Scrubber playback={playback} />}
     </>
   );
@@ -247,12 +265,13 @@ function AnalysisMode({ client }: { client: EgressClient }) {
 
 // ── Plan canvas ─────────────────────────────────────────────────────────────
 
-function PlanCanvas({ doc, onPointer, overlay, playback, ghosts }: {
+function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat }: {
   doc: EgressDocument | null;
   onPointer?: (kind: 'down' | 'move' | 'up', world: Vec2) => void;
   overlay?: (ctx: CanvasRenderingContext2D, toScreen: (p: Vec2) => Vec2) => void;
   playback?: PlaybackController | null;
   ghosts?: ProposalView[];
+  heat?: () => ScalarField | null;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const transform = useRef({ scale: 30, ox: 40, oy: 40, h: 600 });
@@ -280,6 +299,20 @@ function PlanCanvas({ doc, onPointer, overlay, playback, ghosts }: {
     if (doc) drawDoc(ctx, doc, toScreen, scale, {});
     for (const g of ghosts ?? []) if (g.ghost) drawGhost(ctx, doc, g, toScreen, scale);
 
+    const field = heat?.();
+    if (field) {
+      // Sequential ramp: transparent → amber → red. Congestion and density both saturate around 4.
+      const { origin, cellSizeM: cs, width } = field.grid;
+      for (let i = 0; i < field.values.length; i++) {
+        const v = field.values[i];
+        if (!(v > 0.05)) continue;
+        const t = Math.min(1, v / 4);
+        const cx = i % width, cy = (i - cx) / width;
+        const s = toScreen({ x: origin.x + cx * cs, y: origin.y + (cy + 1) * cs });
+        ctx.fillStyle = `rgba(${Math.round(250 - 30 * t)}, ${Math.round(190 - 160 * t)}, ${Math.round(60 - 30 * t)}, ${0.25 + 0.55 * t})`;
+        ctx.fillRect(s.x, s.y, cs * scale + 0.5, cs * scale + 0.5);
+      }
+    }
     const actors = playback?.actorsNow();
     if (actors) {
       for (let i = 0; i < actors.actorFlags.length; i++) {

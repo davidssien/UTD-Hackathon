@@ -1,13 +1,14 @@
 /**
  * MockEgressClient: an in-memory, single-user implementation of EgressClient
  * so the UI can be built before the backend is live. Edits use the real
- * `applyEdit`; runs use a deliberately simple canned walker (straight lines to
- * the nearest exit with a door-capacity queue) until @egress/sim lands in Pass 2.
+ * `applyEdit`; runs execute the real @egress/sim model in the browser, paced like
+ * the runner (one 2 s chunk every 2 s ÷ pace) so the LIVE edge behaves the same.
  */
 import {
-  ACTOR_EXITED, ACTOR_MOVING, ACTOR_QUEUED, applyEdit, createRng, emptyDocument, FRAMES_PER_CHUNK, TICK_RATE_HZ,
-  type ActorFrame, type EditCommand, type EgressDocument, type ID, type Pace, type SimulationMetrics, type SimulationScenario, type Vec2,
+  applyEdit, DomainError, emptyDocument,
+  type EditCommand, type EgressDocument, type ID, type Pace, type SimulationScenario,
 } from '@egress/core';
+import { initialize, simulateChunks, type RunChunk } from '@egress/sim';
 import { ghostFor } from './ghost.ts';
 import { Playback } from './playback.ts';
 import { writable } from './store.ts';
@@ -52,6 +53,7 @@ class MockEgressClient implements EgressClient {
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private readonly latency: number;
   private active: ID | null = null;
+  private readonly cancelled = new Set<ID>();
 
   constructor(options: MockClientOptions) {
     this.latency = options.latencyMs ?? 0;
@@ -175,32 +177,39 @@ class MockEgressClient implements EgressClient {
       population: scenario.population.count, layoutRevision: project.doc.revision, progressTick: 0, agentJobId: null, createdAt: Date.now(), error: null,
     };
     this.runs.update(list => [summary, ...list]);
-    const { frames, metrics } = cannedRun(project.doc, scenario, runId);
     const playback = this.playback(runId);
-    playback.setStatus('running');
+    playback.setLayout(project.doc);
+    const update = (patch: Partial<RunSummary>) => this.runs.update(list => list.map(r => (r.id === runId ? { ...r, ...patch } : r)));
 
+    // The real model, in the browser (client-cpu). The runner uses the same code server-side.
+    let chunks: Generator<RunChunk>;
+    try {
+      chunks = simulateChunks(initialize({ runId, document: project.doc, scenario }));
+    } catch (e) {
+      const error = e instanceof DomainError ? e.toJSON() : { code: 'INTERNAL_ERROR' as const, message: String(e) };
+      update({ status: 'failed', error });
+      playback.setStatus('failed');
+      return runId;
+    }
+    playback.setStatus('running');
+    this.cancelled.delete(runId);
     const chunkMs = pace === 'unpaced' ? 0 : 2000 / Number(pace.slice(1));
-    let next = 0;
     const emit = () => {
-      const chunk = frames.slice(next, next + FRAMES_PER_CHUNK);
-      next += chunk.length;
-      playback.pushFrames(chunk);
-      const done = next >= frames.length;
-      this.runs.update(list => list.map(r => (r.id === runId ? { ...r, progressTick: next - 1, status: done ? 'complete' : 'running' } : r)));
-      if (done) {
-        playback.setMetrics(metrics);
-        playback.setStatus('complete');
-      } else if (chunkMs === 0) {
-        emit(); // unpaced: deliver everything now (timers are ~16 ms on Windows)
-      } else {
-        this.later(emit, chunkMs);
-      }
+      if (this.cancelled.has(runId)) return;
+      const { value: chunk, done } = chunks.next();
+      if (done || !chunk) return;
+      playback.pushFrames(chunk.frames);
+      playback.setMetrics(chunk.metrics);
+      update({ progressTick: chunk.frames[chunk.frames.length - 1].tick, status: chunk.last ? 'complete' : 'running' });
+      if (chunk.last) playback.setStatus('complete');
+      else this.later(emit, chunkMs);
     };
     this.later(emit, chunkMs);
     return runId;
   }
 
   async cancelRun(runId: ID) {
+    this.cancelled.add(runId);
     this.runs.update(list => list.map(r => (r.id === runId ? { ...r, status: 'cancelled' } : r)));
     this.playbacks.get(runId)?.setStatus('cancelled');
   }
@@ -296,63 +305,4 @@ class MockEgressClient implements EgressClient {
   private wait() {
     return new Promise<void>(resolve => (this.latency ? this.later(resolve, this.latency) : resolve()));
   }
-}
-
-/**
- * Canned walker for the mock: spawn inside the vertex bounding box, walk
- * straight to the nearest exit, queue at ~1.3 persons/m/s. Not physics —
- * it ignores walls. Replaced by @egress/sim in Pass 2.
- */
-export function cannedRun(doc: EgressDocument, scenario: SimulationScenario, runId: ID): { frames: ActorFrame[]; metrics: SimulationMetrics } {
-  const rng = createRng(scenario.population.seed);
-  const vertexById = new Map(doc.vertices.map(v => [v.id, v.position]));
-  const exits = doc.openings.filter(o => o.openingKind === 'exit').map(o => {
-    const wall = doc.walls.find(w => w.id === o.wallId)!;
-    const a = vertexById.get(wall.startVertexId)!, b = vertexById.get(wall.endVertexId)!;
-    const len = Math.hypot(b.x - a.x, b.y - a.y);
-    return { id: o.id, at: { x: a.x + ((b.x - a.x) * o.offsetM) / len, y: a.y + ((b.y - a.y) * o.offsetM) / len }, perTick: (1.3 * o.widthM) / TICK_RATE_HZ, tokens: 0, through: 0 };
-  });
-  const xs = doc.vertices.map(v => v.position.x), ys = doc.vertices.map(v => v.position.y);
-  const box = xs.length ? { x0: Math.min(...xs) + 0.5, x1: Math.max(...xs) - 0.5, y0: Math.min(...ys) + 0.5, y1: Math.max(...ys) - 0.5 } : { x0: 0, x1: 10, y0: 0, y1: 8 };
-  const n = scenario.population.count;
-  const pos: Vec2[] = Array.from({ length: n }, () => ({ x: rng.range(box.x0, box.x1), y: rng.range(box.y0, box.y1) }));
-  const speed = Array.from({ length: n }, () => Math.min(1.8, Math.max(0.8, rng.normal(1.34, 0.26))));
-  const target = pos.map(p => (exits.length ? exits.reduce((best, e) => (Math.hypot(e.at.x - p.x, e.at.y - p.y) < Math.hypot(best.at.x - p.x, best.at.y - p.y) ? e : best)) : null));
-  const flags = new Uint8Array(n);
-  const frames: ActorFrame[] = [];
-  const maxTicks = Math.round(scenario.durationSeconds * TICK_RATE_HZ);
-  let maxQueue = 0, lastExitTick = 0;
-  for (let tick = 0; tick <= maxTicks; tick++) {
-    const xy = new Float32Array(n * 2);
-    for (let i = 0; i < n; i++) { xy[i * 2] = pos[i].x; xy[i * 2 + 1] = pos[i].y; }
-    frames.push({ tick, actorXY: xy, actorFlags: flags.slice() });
-    if (!exits.length || flags.every(f => f === ACTOR_EXITED)) break;
-    for (const e of exits) e.tokens = Math.min(1, e.tokens + e.perTick);
-    let queued = 0;
-    for (let i = 0; i < n; i++) {
-      const e = target[i];
-      if (!e || flags[i] === ACTOR_EXITED) continue;
-      const dx = e.at.x - pos[i].x, dy = e.at.y - pos[i].y, d = Math.hypot(dx, dy);
-      if (d < 0.6) {
-        if (e.tokens >= 1) { e.tokens -= 1; e.through++; flags[i] = ACTOR_EXITED; lastExitTick = tick; }
-        else { flags[i] = ACTOR_QUEUED; queued++; }
-        continue;
-      }
-      const step = Math.min(d - 0.5, speed[i] / TICK_RATE_HZ);
-      pos[i] = { x: pos[i].x + (dx / d) * step, y: pos[i].y + (dy / d) * step };
-      flags[i] = ACTOR_MOVING;
-    }
-    maxQueue = Math.max(maxQueue, queued);
-  }
-  const evacuated = flags.filter(f => f === ACTOR_EXITED).length;
-  const last = frames[frames.length - 1];
-  return {
-    frames,
-    metrics: {
-      runId, tick: last.tick, simulatedSeconds: last.tick / TICK_RATE_HZ, initialPeople: n, evacuatedPeople: evacuated,
-      remainingPeople: n - evacuated, unreachablePeople: exits.length ? 0 : n,
-      evacuationTimeSeconds: evacuated === n ? lastExitTick / TICK_RATE_HZ : null, maxQueueLength: maxQueue,
-      meanCongestion: 0, peakCongestion: 0, perExitThroughput: Object.fromEntries(exits.map(e => [e.id, e.through])), bottlenecks: [], complete: true,
-    },
-  };
 }

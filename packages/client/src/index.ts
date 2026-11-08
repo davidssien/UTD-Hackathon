@@ -6,7 +6,7 @@
  *   await client.edit([{ kind: 'createBox', ... }]);
  */
 export type * from './types.ts';
-export { createMockClient, cannedRun, type MockClientOptions } from './mock.ts';
+export { createMockClient, type MockClientOptions } from './mock.ts';
 export { Playback, type PlaybackClock } from './playback.ts';
 export { ghostFor } from './ghost.ts';
 export { writable, WritableStore } from './store.ts';

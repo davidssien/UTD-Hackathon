@@ -6,8 +6,9 @@
  */
 import {
   ACTOR_EXITED, TICK_RATE_HZ, type ActorFrame, type Aggregation, type FieldId, type ID, type RunStatus, type ScalarField,
-  type SimulationMetrics,
+  type EgressDocument, type SimulationMetrics,
 } from '@egress/core';
+import { compileFloor, FieldAccumulator, PARAMS } from '@egress/sim';
 import { writable, type WritableStore } from './store.ts';
 import type { PlaybackController, PlaybackState } from './types.ts';
 
@@ -34,6 +35,9 @@ export class Playback implements PlaybackController {
   private timer: unknown = null;
   private lastWall = 0;
   private finished = false;
+  private layout: EgressDocument | null = null;
+  private accumulator: FieldAccumulator | null = null;
+  private accumulatedTo = -1;
 
   constructor(runId: ID, clock: PlaybackClock = systemClock) {
     this.clock = clock;
@@ -109,9 +113,11 @@ export class Playback implements PlaybackController {
     this.seek(this.state.get().tick + seconds * TICK_RATE_HZ);
   }
 
+  /** Jump to the LIVE edge and follow it; on a finished run, jump to END and stop there. */
   goLive(): void {
     this.seek(this.state.get().liveTick);
-    this.play();
+    if (this.state.get().complete) this.pause();
+    else this.play();
   }
 
   setSpeed(speed: number): void {
@@ -136,8 +142,34 @@ export class Playback implements PlaybackController {
     return { tick: t, actorXY: xy, actorFlags: a.actorFlags };
   }
 
-  field(_id: FieldId, _aggregation: Aggregation): ScalarField | null {
-    return null; // Pass 2: computed from frames with @egress/sim field functions.
+  /** The run's frozen layout; enables heatmaps computed from frames (D15). */
+  setLayout(doc: EgressDocument): void {
+    if (this.layout === doc) return;
+    this.layout = doc;
+    this.accumulator = null;
+    this.accumulatedTo = -1;
+  }
+
+  /**
+   * Heatmap at the playhead: 'instant' is the latest 2 Hz sample at or before it;
+   * 'timeAverage' and 'perCellPeak' accumulate from the start of the run up to it.
+   * Scrubbing backwards recomputes from tick 0 (cheap: ~25 cell updates per person per sample).
+   */
+  field(id: FieldId, aggregation: Aggregation): ScalarField | null {
+    if (!this.layout) return null;
+    const every = PARAMS.fieldEvery;
+    const target = Math.floor(this.state.get().tick / every) * every;
+    if (!this.accumulator || target < this.accumulatedTo) {
+      this.accumulator = new FieldAccumulator(compileFloor(this.layout));
+      this.accumulatedTo = -every;
+    }
+    for (let t = this.accumulatedTo + every; t <= target; t += every) {
+      const f = this.frames[t];
+      if (!f) break;
+      this.accumulator.addFrame(f, this.frames[t - 1] ?? null);
+      this.accumulatedTo = t;
+    }
+    return this.accumulator.field(id, aggregation);
   }
 
   /** All frames received so far, in tick order (gaps skipped). */
