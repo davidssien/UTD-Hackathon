@@ -1481,5 +1481,293 @@
       "upEdge": "n"
     }
   ],
+  "placeables": [
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.0",
+      "floorId": "clinic.floor0",
+      "item": "counter",
+      "position": {
+        "x": 9,
+        "y": 5.5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.1",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 1.2,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.10",
+      "floorId": "clinic.floor0",
+      "item": "table",
+      "position": {
+        "x": 7.5,
+        "y": 13.4
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.11",
+      "floorId": "clinic.floor0",
+      "item": "table",
+      "position": {
+        "x": 12,
+        "y": 13.4
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.12",
+      "floorId": "clinic.s3.0",
+      "item": "desk",
+      "position": {
+        "x": 3.5,
+        "y": 1.4
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.13",
+      "floorId": "clinic.s3.0",
+      "item": "chair",
+      "position": {
+        "x": 3.5,
+        "y": 2.15
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.14",
+      "floorId": "clinic.s3.0",
+      "item": "desk",
+      "position": {
+        "x": 10.5,
+        "y": 1.4
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.15",
+      "floorId": "clinic.s3.0",
+      "item": "chair",
+      "position": {
+        "x": 10.5,
+        "y": 2.15
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.16",
+      "floorId": "clinic.s3.0",
+      "item": "desk",
+      "position": {
+        "x": 17,
+        "y": 1.4
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.17",
+      "floorId": "clinic.s3.0",
+      "item": "chair",
+      "position": {
+        "x": 17,
+        "y": 2.15
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.18",
+      "floorId": "clinic.s3.0",
+      "item": "desk",
+      "position": {
+        "x": 2.5,
+        "y": 13.6
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.19",
+      "floorId": "clinic.s3.0",
+      "item": "chair",
+      "position": {
+        "x": 2.5,
+        "y": 12.85
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.2",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 1.8,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.20",
+      "floorId": "clinic.s3.0",
+      "item": "desk",
+      "position": {
+        "x": 7.5,
+        "y": 13.6
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.21",
+      "floorId": "clinic.s3.0",
+      "item": "chair",
+      "position": {
+        "x": 7.5,
+        "y": 12.85
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.22",
+      "floorId": "clinic.s3.0",
+      "item": "desk",
+      "position": {
+        "x": 12,
+        "y": 13.6
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.23",
+      "floorId": "clinic.s3.0",
+      "item": "chair",
+      "position": {
+        "x": 12,
+        "y": 12.85
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.24",
+      "floorId": "clinic.floor0",
+      "item": "vent",
+      "position": {
+        "x": 4,
+        "y": 5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.25",
+      "floorId": "clinic.s3.0",
+      "item": "vent",
+      "position": {
+        "x": 10,
+        "y": 9
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.3",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 2.4,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.4",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 3,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.5",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 9.2,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.6",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 9.8,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.7",
+      "floorId": "clinic.floor0",
+      "item": "chair",
+      "position": {
+        "x": 10.4,
+        "y": 1.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.8",
+      "floorId": "clinic.floor0",
+      "item": "counter",
+      "position": {
+        "x": 16,
+        "y": 5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "clinic.s8.9",
+      "floorId": "clinic.floor0",
+      "item": "table",
+      "position": {
+        "x": 2.5,
+        "y": 13.4
+      },
+      "rotationDeg": 0
+    }
+  ],
   "furniture": []
 }

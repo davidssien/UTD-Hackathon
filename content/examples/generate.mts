@@ -10,7 +10,7 @@ import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  applyEditOrThrow, emptyDocument, floorsByLevel, projectOnSegment, type EditCommand, type EgressDocument, type OpeningKind, type SlabMaterial,
+  applyEditOrThrow, emptyDocument, floorsByLevel, projectOnSegment, type EditCommand, type EgressDocument, type OpeningKind, type PlaceableItem, type SlabMaterial,
   type Vec2, type WallMaterial,
 } from '@egress/core';
 
@@ -51,6 +51,11 @@ const slab = (floorId: string, x0: number, y0: number, x1: number, y1: number, m
 const box = (floorId: string, x0: number, y0: number, x1: number, y1: number, material: WallMaterial = 'normal', t = 0.2): EditCommand =>
   ({ kind: 'createBox', floorId, min: p(x0, y0), max: p(x1, y1), ...wall(material, t) });
 const line = (floorId: string, ...points: Vec2[]): EditCommand => ({ kind: 'createWallChain', floorId, points, ...wall() });
+/** A placeable (furniture or a ceiling HVAC vent). */
+const put = (floorId: string, item: PlaceableItem, x: number, y: number, rotationDeg = 0): EditCommand =>
+  ({ kind: 'createPlaceable', floorId, item, position: p(x, y), rotationDeg });
+/** A desk with its chair on the side facing `chairDy` (metres in y). */
+const workstation = (floorId: string, x: number, y: number, chairDy = -0.75): EditCommand[] => [put(floorId, 'desk', x, y), put(floorId, 'chair', x, y + chairDy)];
 
 // ── Office Floor (24 × 16 m): open plan, three offices, a meeting room, a corridor ──
 const office = build('office', [
@@ -71,6 +76,17 @@ const office = build('office', [
   (_d, f) => [
     slab(f(0), 0, 9.5, 5, 16, 'wood'), slab(f(0), 5, 9.5, 10, 16, 'wood'), slab(f(0), 10, 9.5, 15, 16, 'wood'), slab(f(0), 15, 9.5, 24, 16, 'wood'),
     slab(f(0), 0, 7, 24, 9.5, 'tile'), slab(f(0), 0, 0, 16, 7, 'wood'), slab(f(0), 16, 0, 20, 7, 'tile'), slab(f(0), 20, 0, 24, 7, 'basic'),
+  ],
+  (_d, f) => [
+    // Private offices: a desk against the window wall.
+    ...[2.5, 7.5, 12.5].flatMap(x => workstation(f(0), x, 14.6)),
+    // Meeting room: a table and four chairs.
+    put(f(0), 'table', 19.5, 13), ...[[18.8, 12.2], [20.2, 12.2], [18.8, 13.8], [20.2, 13.8]].map(([x, y]) => put(f(0), 'chair', x, y)),
+    // Open plan: two rows of desks, aisles left clear to both doors and the south exit.
+    ...[2, 5.5, 10.5, 14].flatMap(x => [...workstation(f(0), x, 2.5, 0.75), ...workstation(f(0), x, 5, -0.75)]),
+    // Kitchen counter, and ceiling supply vents in the open plan and the corridor.
+    put(f(0), 'counter', 19.5, 3, 90),
+    put(f(0), 'vent', 8, 3.75), put(f(0), 'vent', 12, 8.25),
   ],
 ]);
 
@@ -95,6 +111,18 @@ const school = build('school', [
     ...[0, 8, 16, 24, 32, 40].map(x => slab(f(0), x, 11.5, x + 8, 20, 'wood')),
     ...[[0, 10], [10, 20], [28, 38], [38, 48]].map(([a, b]) => slab(f(0), a, 0, b, 8.5, 'wood')),
   ],
+  (_d, f) => [
+    // North classrooms: two rows of two desks either side of a central aisle from the door, plus a teacher's desk.
+    ...[4, 12, 20, 28, 36, 44].flatMap(c => [
+      ...[c - 2.2, c + 2.2].flatMap(x => [...workstation(f(0), x, 15), ...workstation(f(0), x, 17.4)]),
+      put(f(0), 'desk', c, 19.2),
+    ]),
+    // South classrooms: the same, facing the corridor.
+    ...[5, 15, 33, 43].flatMap(c => [...[c - 2.4, c + 2.4].flatMap(x => [...workstation(f(0), x, 5, 0.75), ...workstation(f(0), x, 2.6, 0.75)])]),
+    // Lobby reception counter, and corridor ceiling vents.
+    put(f(0), 'counter', 24, 4.5),
+    put(f(0), 'vent', 12, 10), put(f(0), 'vent', 36, 10),
+  ],
 ]);
 
 // ── Event Hall (36 × 24 m): foyer, main hall, backstage; sized for a big crowd ──
@@ -116,6 +144,13 @@ const eventHall = build('event-hall', [
       polygon: [p(8, 0), p(36, 0), p(36, 6), p(31, 6), p(31, 18), p(36, 18), p(36, 24), p(8, 24)] },
     slab(f(0), 0, 5, 8, 19, 'tile'), slab(f(0), 0, 0, 8, 5, 'basic'),
     slab(f(0), 0, 19, 8, 24, 'tile'), slab(f(0), 31, 6, 36, 18, 'basic'),
+  ],
+  (_d, f) => [
+    // Banquet tables in the hall, with a clear 3 m lane between the north and south exits.
+    ...[13, 17, 23, 27].flatMap(x => [5, 9, 15, 19].map(y => put(f(0), 'table', x, y))),
+    // Foyer bar counter, backstage counter, and two ceiling supply vents over the hall.
+    put(f(0), 'counter', 1.5, 16, 90), put(f(0), 'counter', 34.5, 15, 90),
+    put(f(0), 'vent', 15, 12), put(f(0), 'vent', 25, 12),
   ],
 ]);
 
@@ -154,6 +189,18 @@ const clinic = build('clinic', [
     slab(f(0), 0, 10, 5, 15, 'basic'), slab(f(0), 5, 10, 10, 15, 'basic'), slab(f(0), 10, 10, 14, 15, 'basic'),
     slab(f(1), 0, 0, 7, 8, 'wood'), slab(f(1), 7, 0, 14, 8, 'wood'), slab(f(1), 14, 0, 20, 8, 'wood'), slab(f(1), 0, 8, 20, 10, 'tile'),
     slab(f(1), 0, 10, 5, 15, 'wood'), slab(f(1), 5, 10, 10, 15, 'wood'), slab(f(1), 10, 10, 14, 15, 'wood'), slab(f(1), 14, 10, 20, 15, 'tile'),
+  ],
+  (_d, f) => [
+    // Lobby: reception counter and a row of waiting chairs either side of the entrance path.
+    put(f(0), 'counter', 9, 5.5), ...[1.2, 1.8, 2.4, 3.0, 9.2, 9.8, 10.4].map(x => put(f(0), 'chair', x, 1.2)),
+    // Pharmacy counter; an exam table in each exam room.
+    put(f(0), 'counter', 16, 5),
+    ...[2.5, 7.5, 12].map(x => put(f(0), 'table', x, 13.4)),
+    // Upstairs offices: desks by the windows.
+    ...[3.5, 10.5, 17].flatMap(x => workstation(f(1), x, 1.4, 0.75)),
+    ...[2.5, 7.5, 12].flatMap(x => workstation(f(1), x, 13.6)),
+    // Ceiling supply vents in the lobby and the upstairs corridor.
+    put(f(0), 'vent', 4, 5), put(f(1), 'vent', 10, 9),
   ],
 ]);
 

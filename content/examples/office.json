@@ -829,5 +829,337 @@
     }
   ],
   "stairs": [],
+  "placeables": [
+    {
+      "kind": "placeable",
+      "id": "office.s4.0",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 2.5,
+        "y": 14.6
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.1",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 2.5,
+        "y": 13.85
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.10",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 20.2,
+        "y": 13.8
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.11",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 2,
+        "y": 2.5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.12",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 2,
+        "y": 3.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.13",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 2,
+        "y": 5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.14",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 2,
+        "y": 4.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.15",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 5.5,
+        "y": 2.5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.16",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 5.5,
+        "y": 3.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.17",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 5.5,
+        "y": 5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.18",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 5.5,
+        "y": 4.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.19",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 10.5,
+        "y": 2.5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.2",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 7.5,
+        "y": 14.6
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.20",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 10.5,
+        "y": 3.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.21",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 10.5,
+        "y": 5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.22",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 10.5,
+        "y": 4.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.23",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 14,
+        "y": 2.5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.24",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 14,
+        "y": 3.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.25",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 14,
+        "y": 5
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.26",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 14,
+        "y": 4.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.27",
+      "floorId": "office.floor0",
+      "item": "counter",
+      "position": {
+        "x": 19.5,
+        "y": 3
+      },
+      "rotationDeg": 90
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.28",
+      "floorId": "office.floor0",
+      "item": "vent",
+      "position": {
+        "x": 8,
+        "y": 3.75
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.29",
+      "floorId": "office.floor0",
+      "item": "vent",
+      "position": {
+        "x": 12,
+        "y": 8.25
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.3",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 7.5,
+        "y": 13.85
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.4",
+      "floorId": "office.floor0",
+      "item": "desk",
+      "position": {
+        "x": 12.5,
+        "y": 14.6
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.5",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 12.5,
+        "y": 13.85
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.6",
+      "floorId": "office.floor0",
+      "item": "table",
+      "position": {
+        "x": 19.5,
+        "y": 13
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.7",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 18.8,
+        "y": 12.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.8",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 20.2,
+        "y": 12.2
+      },
+      "rotationDeg": 0
+    },
+    {
+      "kind": "placeable",
+      "id": "office.s4.9",
+      "floorId": "office.floor0",
+      "item": "chair",
+      "position": {
+        "x": 18.8,
+        "y": 13.8
+      },
+      "rotationDeg": 0
+    }
+  ],
   "furniture": []
 }
