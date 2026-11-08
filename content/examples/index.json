@@ -1,0 +1,30 @@
+[
+  {
+    "id": "office",
+    "name": "Office floor",
+    "note": "24 × 16 m · offices, meeting room, open plan",
+    "people": 120,
+    "file": "office.json"
+  },
+  {
+    "id": "school",
+    "name": "School wing",
+    "note": "48 × 20 m · eleven classrooms off one corridor",
+    "people": 320,
+    "file": "school.json"
+  },
+  {
+    "id": "event-hall",
+    "name": "Event hall",
+    "note": "36 × 24 m · foyer, hall and backstage",
+    "people": 500,
+    "file": "event-hall.json"
+  },
+  {
+    "id": "clinic",
+    "name": "Two-storey clinic",
+    "note": "20 × 15 m · two floors joined by a stair",
+    "people": 80,
+    "file": "clinic.json"
+  }
+]

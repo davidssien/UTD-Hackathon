@@ -5,17 +5,19 @@
  * details. Open (or double-click) slides this page away to reveal the editor.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownTrayIcon, DocumentArrowUpIcon, EllipsisHorizontalIcon, PencilSquareIcon, PhotoIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, ChevronDownIcon, DocumentArrowUpIcon, EllipsisHorizontalIcon, PencilSquareIcon, PhotoIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import type { EgressClient, ProjectStats, ProjectSummary } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import { deriveLayout, type EgressDocument } from '@egress/core';
+import { EXAMPLES, type ExampleSave } from '@/lib/examples';
 
 interface Props {
   client: EgressClient;
   active: boolean;
   onOpen(projectId: string): void;
   onImportImage(): void;
-  onCreateExample(): Promise<string>;
+  /** Creates a new project from an example save; resolves to its id. */
+  onCreateExample(example: ExampleSave): Promise<string>;
   onError(e: unknown): void;
 }
 
@@ -36,6 +38,7 @@ export default function SavesPage({ client, active, onOpen, onImportImage, onCre
   const [name, setName] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const byId = useMemo(() => new Map(stats.map(s => [s.projectId, s])), [stats]);
   const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -107,7 +110,14 @@ export default function SavesPage({ client, active, onOpen, onImportImage, onCre
           <input value={name} onChange={e => setName(e.target.value)} placeholder="New project name" aria-label="New project name" maxLength={80} />
           <button className="button primary" type="submit" disabled={status !== 'connected'}><PlusIcon />New</button>
         </form>
-        <button className="button" onClick={() => void onCreateExample().then(setSelected).catch(onError)} disabled={status !== 'connected'}><PlusIcon />Example</button>
+        <span className="examples-anchor">
+          <button className="button" aria-expanded={examplesOpen} onClick={() => setExamplesOpen(v => !v)} disabled={status !== 'connected'}><PlusIcon />Example<ChevronDownIcon /></button>
+          {examplesOpen && <div className="menu examples-menu" role="menu" onMouseLeave={() => setExamplesOpen(false)}>
+            {EXAMPLES.map(x => <button key={x.id} role="menuitem" onClick={() => { setExamplesOpen(false); void onCreateExample(x).then(setSelected).catch(onError); }}>
+              <span className="example-name">{x.name}</span><span className="example-note">{x.note} · about {x.people} people</span>
+            </button>)}
+          </div>}
+        </span>
         <button className="button" onClick={() => fileInput.current?.click()} disabled={status !== 'connected'}><DocumentArrowUpIcon />Import JSON</button>
         <button className="button" onClick={onImportImage} disabled={status !== 'connected'}><PhotoIcon />Import image</button>
         <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ''; }} />

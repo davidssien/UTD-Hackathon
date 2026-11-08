@@ -1,0 +1,833 @@
+{
+  "docVersion": 1,
+  "projectId": "example-office",
+  "revision": 0,
+  "floors": [
+    {
+      "kind": "floor",
+      "id": "office.floor0",
+      "level": 0,
+      "name": "Ground floor",
+      "elevationM": 0,
+      "ceilingHeightM": 3
+    }
+  ],
+  "vertices": [
+    {
+      "kind": "vertex",
+      "id": "office.s0.0",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s0.1",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 24,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s0.3",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 24,
+        "y": 16
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s0.5",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 0,
+        "y": 16
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.0",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 0,
+        "y": 7
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.1",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 24,
+        "y": 7
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.10",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 5,
+        "y": 9.5
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.11",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 5,
+        "y": 16
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.15",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 10,
+        "y": 9.5
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.16",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 10,
+        "y": 16
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.20",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 15,
+        "y": 9.5
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.21",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 15,
+        "y": 16
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.25",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 16,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.26",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 16,
+        "y": 7
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.30",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 20,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.31",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 20,
+        "y": 7
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.5",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 0,
+        "y": 9.5
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "office.s1.6",
+      "floorId": "office.floor0",
+      "position": {
+        "x": 24,
+        "y": 9.5
+      }
+    }
+  ],
+  "walls": [
+    {
+      "kind": "wall",
+      "id": "office.s0.2",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s0.0",
+      "endVertexId": "office.s1.25",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s0.4",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s0.1",
+      "endVertexId": "office.s1.1",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s0.6",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s0.3",
+      "endVertexId": "office.s1.21",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s0.7",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s0.5",
+      "endVertexId": "office.s1.5",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.12",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.10",
+      "endVertexId": "office.s1.11",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.13",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.11",
+      "endVertexId": "office.s0.5",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.14",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.10",
+      "endVertexId": "office.s1.15",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.17",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.15",
+      "endVertexId": "office.s1.16",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.18",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.16",
+      "endVertexId": "office.s1.11",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.19",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.15",
+      "endVertexId": "office.s1.20",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.2",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.0",
+      "endVertexId": "office.s1.26",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.22",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.20",
+      "endVertexId": "office.s1.21",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.23",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.21",
+      "endVertexId": "office.s1.16",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.24",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.20",
+      "endVertexId": "office.s1.6",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.27",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.25",
+      "endVertexId": "office.s1.26",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.28",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.25",
+      "endVertexId": "office.s1.30",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.29",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.26",
+      "endVertexId": "office.s1.31",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.3",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.1",
+      "endVertexId": "office.s1.6",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.32",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.30",
+      "endVertexId": "office.s1.31",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.33",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.30",
+      "endVertexId": "office.s0.1",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.34",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.31",
+      "endVertexId": "office.s1.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.4",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.0",
+      "endVertexId": "office.s0.0",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.7",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.5",
+      "endVertexId": "office.s1.10",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.8",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.5",
+      "endVertexId": "office.s1.0",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    },
+    {
+      "kind": "wall",
+      "id": "office.s1.9",
+      "floorId": "office.floor0",
+      "startVertexId": "office.s1.6",
+      "endVertexId": "office.s0.3",
+      "thicknessM": 0.3,
+      "heightM": 2.8,
+      "material": "reinforced"
+    }
+  ],
+  "openings": [
+    {
+      "kind": "opening",
+      "id": "office.s2.0",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.7",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.1",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.14",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.10",
+      "floorId": "office.floor0",
+      "wallId": "office.s0.2",
+      "openingKind": "exit",
+      "offsetM": 8,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.11",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.13",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.12",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.18",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.13",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.23",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.14",
+      "floorId": "office.floor0",
+      "wallId": "office.s0.6",
+      "openingKind": "window",
+      "offsetM": 4.5,
+      "widthM": 2.4,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.15",
+      "floorId": "office.floor0",
+      "wallId": "office.s0.2",
+      "openingKind": "window",
+      "offsetM": 3,
+      "widthM": 1.8,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.16",
+      "floorId": "office.floor0",
+      "wallId": "office.s0.2",
+      "openingKind": "window",
+      "offsetM": 13,
+      "widthM": 1.8,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.2",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.19",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.3",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.24",
+      "openingKind": "door",
+      "offsetM": 4.5,
+      "widthM": 1.6,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.4",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.2",
+      "openingKind": "door",
+      "offsetM": 4,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.5",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.2",
+      "openingKind": "door",
+      "offsetM": 12,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.6",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.29",
+      "openingKind": "door",
+      "offsetM": 2,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.7",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.34",
+      "openingKind": "door",
+      "offsetM": 2,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.8",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.8",
+      "openingKind": "exit",
+      "offsetM": 1.25,
+      "widthM": 1.6,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "office.s2.9",
+      "floorId": "office.floor0",
+      "wallId": "office.s1.3",
+      "openingKind": "exit",
+      "offsetM": 1.25,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    }
+  ],
+  "slabs": [
+    {
+      "kind": "slab",
+      "id": "office.s3.0",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 9.5
+        },
+        {
+          "x": 5,
+          "y": 9.5
+        },
+        {
+          "x": 5,
+          "y": 16
+        },
+        {
+          "x": 0,
+          "y": 16
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.1",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 5,
+          "y": 9.5
+        },
+        {
+          "x": 10,
+          "y": 9.5
+        },
+        {
+          "x": 10,
+          "y": 16
+        },
+        {
+          "x": 5,
+          "y": 16
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.2",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 10,
+          "y": 9.5
+        },
+        {
+          "x": 15,
+          "y": 9.5
+        },
+        {
+          "x": 15,
+          "y": 16
+        },
+        {
+          "x": 10,
+          "y": 16
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.3",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 15,
+          "y": 9.5
+        },
+        {
+          "x": 24,
+          "y": 9.5
+        },
+        {
+          "x": 24,
+          "y": 16
+        },
+        {
+          "x": 15,
+          "y": 16
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.4",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 7
+        },
+        {
+          "x": 24,
+          "y": 7
+        },
+        {
+          "x": 24,
+          "y": 9.5
+        },
+        {
+          "x": 0,
+          "y": 9.5
+        }
+      ],
+      "material": "tile"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.5",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 16,
+          "y": 0
+        },
+        {
+          "x": 16,
+          "y": 7
+        },
+        {
+          "x": 0,
+          "y": 7
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.6",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 16,
+          "y": 0
+        },
+        {
+          "x": 20,
+          "y": 0
+        },
+        {
+          "x": 20,
+          "y": 7
+        },
+        {
+          "x": 16,
+          "y": 7
+        }
+      ],
+      "material": "tile"
+    },
+    {
+      "kind": "slab",
+      "id": "office.s3.7",
+      "floorId": "office.floor0",
+      "polygon": [
+        {
+          "x": 20,
+          "y": 0
+        },
+        {
+          "x": 24,
+          "y": 0
+        },
+        {
+          "x": 24,
+          "y": 7
+        },
+        {
+          "x": 20,
+          "y": 7
+        }
+      ],
+      "material": "basic"
+    }
+  ],
+  "stairs": [],
+  "furniture": []
+}

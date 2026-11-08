@@ -465,7 +465,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     {(error || view.lastError || (status === 'error' && connectionError)) && <div className="toast" role="alert"><span>{error || view.lastError?.message || connectionError}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
 
     <SavesPage client={client} active={screen === 'saves'} onOpen={openFromSaves} onImportImage={() => setModal('import')}
-      onCreateExample={() => client.createProject('Courtyard study', example())} onError={fail} />
+      onCreateExample={x => x.load().then(d => client.createProject(x.name, d))} onError={fail} />
 
     {tagMenu && <RoomTagMenu at={tagMenu} label={labelMap.get(tagMenu.hash)} onClose={() => setTagMenu(null)}
       onSave={(kind, name) => { void client.setRoomLabel(tagMenu.hash, kind, name).catch(fail); setTagMenu(null); }} />}

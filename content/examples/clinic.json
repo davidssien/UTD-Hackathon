@@ -1,0 +1,1485 @@
+{
+  "docVersion": 1,
+  "projectId": "example-clinic",
+  "revision": 0,
+  "floors": [
+    {
+      "kind": "floor",
+      "id": "clinic.floor0",
+      "level": 0,
+      "name": "Ground floor",
+      "elevationM": 0,
+      "ceilingHeightM": 3
+    },
+    {
+      "kind": "floor",
+      "id": "clinic.s3.0",
+      "name": "First floor",
+      "level": 1,
+      "elevationM": 3,
+      "ceilingHeightM": 3.2
+    }
+  ],
+  "vertices": [
+    {
+      "kind": "vertex",
+      "id": "clinic.s0.0",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s0.1",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 20,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s0.3",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 20,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s0.5",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.0",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.1",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 20,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.10",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 5,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.11",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 5,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.15",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 10,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.16",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 10,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.20",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 14,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.21",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 14,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.25",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.26",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 12,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.5",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 0,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s1.6",
+      "floorId": "clinic.floor0",
+      "position": {
+        "x": 20,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s4.0",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s4.1",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 20,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s4.3",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 20,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s4.5",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.0",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.1",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 20,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.10",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 5,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.11",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 5,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.15",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 10,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.16",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 10,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.20",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 14,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.21",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 14,
+        "y": 15
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.25",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 7,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.26",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 7,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.30",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 14,
+        "y": 0
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.31",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 14,
+        "y": 8
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.5",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 0,
+        "y": 10
+      }
+    },
+    {
+      "kind": "vertex",
+      "id": "clinic.s5.6",
+      "floorId": "clinic.s3.0",
+      "position": {
+        "x": 20,
+        "y": 10
+      }
+    }
+  ],
+  "walls": [
+    {
+      "kind": "wall",
+      "id": "clinic.s0.2",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s0.0",
+      "endVertexId": "clinic.s1.25",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s0.4",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s0.1",
+      "endVertexId": "clinic.s1.1",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s0.6",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s0.3",
+      "endVertexId": "clinic.s1.21",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s0.7",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s0.5",
+      "endVertexId": "clinic.s1.5",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.12",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.10",
+      "endVertexId": "clinic.s1.11",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.13",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.11",
+      "endVertexId": "clinic.s0.5",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.14",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.10",
+      "endVertexId": "clinic.s1.15",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.17",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.15",
+      "endVertexId": "clinic.s1.16",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.18",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.16",
+      "endVertexId": "clinic.s1.11",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.19",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.15",
+      "endVertexId": "clinic.s1.20",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.2",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.0",
+      "endVertexId": "clinic.s1.26",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.22",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.20",
+      "endVertexId": "clinic.s1.21",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.23",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.21",
+      "endVertexId": "clinic.s1.16",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.24",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.20",
+      "endVertexId": "clinic.s1.6",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.27",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.25",
+      "endVertexId": "clinic.s1.26",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.28",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.25",
+      "endVertexId": "clinic.s0.1",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.29",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.26",
+      "endVertexId": "clinic.s1.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.3",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.1",
+      "endVertexId": "clinic.s1.6",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.4",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.0",
+      "endVertexId": "clinic.s0.0",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.7",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.5",
+      "endVertexId": "clinic.s1.10",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.8",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.5",
+      "endVertexId": "clinic.s1.0",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s1.9",
+      "floorId": "clinic.floor0",
+      "startVertexId": "clinic.s1.6",
+      "endVertexId": "clinic.s0.3",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s4.2",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s4.0",
+      "endVertexId": "clinic.s5.25",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s4.4",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s4.1",
+      "endVertexId": "clinic.s5.1",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s4.6",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s4.3",
+      "endVertexId": "clinic.s5.21",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s4.7",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s4.5",
+      "endVertexId": "clinic.s5.5",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.12",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.10",
+      "endVertexId": "clinic.s5.11",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.13",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.11",
+      "endVertexId": "clinic.s4.5",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.14",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.10",
+      "endVertexId": "clinic.s5.15",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.17",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.15",
+      "endVertexId": "clinic.s5.16",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.18",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.16",
+      "endVertexId": "clinic.s5.11",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.19",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.15",
+      "endVertexId": "clinic.s5.20",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.2",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.0",
+      "endVertexId": "clinic.s5.26",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.22",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.20",
+      "endVertexId": "clinic.s5.21",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.23",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.21",
+      "endVertexId": "clinic.s5.16",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.24",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.20",
+      "endVertexId": "clinic.s5.6",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.27",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.25",
+      "endVertexId": "clinic.s5.26",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.28",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.25",
+      "endVertexId": "clinic.s5.30",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.29",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.26",
+      "endVertexId": "clinic.s5.31",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.3",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.1",
+      "endVertexId": "clinic.s5.6",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.32",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.30",
+      "endVertexId": "clinic.s5.31",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.33",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.30",
+      "endVertexId": "clinic.s4.1",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.34",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.31",
+      "endVertexId": "clinic.s5.1",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.4",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.0",
+      "endVertexId": "clinic.s4.0",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.7",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.5",
+      "endVertexId": "clinic.s5.10",
+      "thicknessM": 0.2,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.8",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.5",
+      "endVertexId": "clinic.s5.0",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    },
+    {
+      "kind": "wall",
+      "id": "clinic.s5.9",
+      "floorId": "clinic.s3.0",
+      "startVertexId": "clinic.s5.6",
+      "endVertexId": "clinic.s4.3",
+      "thicknessM": 0.25,
+      "heightM": 2.8,
+      "material": "normal"
+    }
+  ],
+  "openings": [
+    {
+      "kind": "opening",
+      "id": "clinic.s2.0",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.7",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.1",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.14",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.10",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.13",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.11",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.18",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.12",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.23",
+      "openingKind": "window",
+      "offsetM": 2,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.13",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.28",
+      "openingKind": "window",
+      "offsetM": 4,
+      "widthM": 2,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.2",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.19",
+      "openingKind": "door",
+      "offsetM": 2,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.3",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.24",
+      "openingKind": "door",
+      "offsetM": 3,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.4",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.2",
+      "openingKind": "door",
+      "offsetM": 6,
+      "widthM": 2.4,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.5",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.29",
+      "openingKind": "door",
+      "offsetM": 4,
+      "widthM": 1,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.6",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.27",
+      "openingKind": "door",
+      "offsetM": 4,
+      "widthM": 1,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.7",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s0.2",
+      "openingKind": "exit",
+      "offsetM": 6,
+      "widthM": 2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.8",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s1.8",
+      "openingKind": "exit",
+      "offsetM": 1,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s2.9",
+      "floorId": "clinic.floor0",
+      "wallId": "clinic.s0.4",
+      "openingKind": "exit",
+      "offsetM": 4,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.0",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.7",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.1",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.14",
+      "openingKind": "door",
+      "offsetM": 2.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.10",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.13",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.11",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.18",
+      "openingKind": "window",
+      "offsetM": 2.5,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.12",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.23",
+      "openingKind": "window",
+      "offsetM": 2,
+      "widthM": 1.5,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.2",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.19",
+      "openingKind": "door",
+      "offsetM": 2,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.3",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.24",
+      "openingKind": "door",
+      "offsetM": 3,
+      "widthM": 1.2,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.4",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.2",
+      "openingKind": "door",
+      "offsetM": 3.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.5",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.29",
+      "openingKind": "door",
+      "offsetM": 3.5,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.6",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.34",
+      "openingKind": "door",
+      "offsetM": 3,
+      "widthM": 0.9,
+      "sillHeightM": 0,
+      "openingHeightM": 2.1,
+      "state": "open"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.7",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s4.2",
+      "openingKind": "window",
+      "offsetM": 3.5,
+      "widthM": 2,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.8",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.28",
+      "openingKind": "window",
+      "offsetM": 3.5,
+      "widthM": 2,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    },
+    {
+      "kind": "opening",
+      "id": "clinic.s6.9",
+      "floorId": "clinic.s3.0",
+      "wallId": "clinic.s5.33",
+      "openingKind": "window",
+      "offsetM": 3,
+      "widthM": 2,
+      "sillHeightM": 0.9,
+      "openingHeightM": 1.2,
+      "state": "closed"
+    }
+  ],
+  "slabs": [
+    {
+      "kind": "slab",
+      "id": "clinic.s7.0",
+      "floorId": "clinic.floor0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 12,
+          "y": 0
+        },
+        {
+          "x": 12,
+          "y": 8
+        },
+        {
+          "x": 0,
+          "y": 8
+        }
+      ],
+      "material": "tile"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.1",
+      "floorId": "clinic.floor0",
+      "polygon": [
+        {
+          "x": 12,
+          "y": 0
+        },
+        {
+          "x": 20,
+          "y": 0
+        },
+        {
+          "x": 20,
+          "y": 8
+        },
+        {
+          "x": 12,
+          "y": 8
+        }
+      ],
+      "material": "basic"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.10",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 10
+        },
+        {
+          "x": 5,
+          "y": 10
+        },
+        {
+          "x": 5,
+          "y": 15
+        },
+        {
+          "x": 0,
+          "y": 15
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.11",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 5,
+          "y": 10
+        },
+        {
+          "x": 10,
+          "y": 10
+        },
+        {
+          "x": 10,
+          "y": 15
+        },
+        {
+          "x": 5,
+          "y": 15
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.12",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 10,
+          "y": 10
+        },
+        {
+          "x": 14,
+          "y": 10
+        },
+        {
+          "x": 14,
+          "y": 15
+        },
+        {
+          "x": 10,
+          "y": 15
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.13",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 14,
+          "y": 10
+        },
+        {
+          "x": 20,
+          "y": 10
+        },
+        {
+          "x": 20,
+          "y": 15
+        },
+        {
+          "x": 14,
+          "y": 15
+        }
+      ],
+      "material": "tile"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.2",
+      "floorId": "clinic.floor0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 8
+        },
+        {
+          "x": 20,
+          "y": 8
+        },
+        {
+          "x": 20,
+          "y": 10
+        },
+        {
+          "x": 0,
+          "y": 10
+        }
+      ],
+      "material": "tile"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.3",
+      "floorId": "clinic.floor0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 10
+        },
+        {
+          "x": 5,
+          "y": 10
+        },
+        {
+          "x": 5,
+          "y": 15
+        },
+        {
+          "x": 0,
+          "y": 15
+        }
+      ],
+      "material": "basic"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.4",
+      "floorId": "clinic.floor0",
+      "polygon": [
+        {
+          "x": 5,
+          "y": 10
+        },
+        {
+          "x": 10,
+          "y": 10
+        },
+        {
+          "x": 10,
+          "y": 15
+        },
+        {
+          "x": 5,
+          "y": 15
+        }
+      ],
+      "material": "basic"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.5",
+      "floorId": "clinic.floor0",
+      "polygon": [
+        {
+          "x": 10,
+          "y": 10
+        },
+        {
+          "x": 14,
+          "y": 10
+        },
+        {
+          "x": 14,
+          "y": 15
+        },
+        {
+          "x": 10,
+          "y": 15
+        }
+      ],
+      "material": "basic"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.6",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 7,
+          "y": 0
+        },
+        {
+          "x": 7,
+          "y": 8
+        },
+        {
+          "x": 0,
+          "y": 8
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.7",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 7,
+          "y": 0
+        },
+        {
+          "x": 14,
+          "y": 0
+        },
+        {
+          "x": 14,
+          "y": 8
+        },
+        {
+          "x": 7,
+          "y": 8
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.8",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 14,
+          "y": 0
+        },
+        {
+          "x": 20,
+          "y": 0
+        },
+        {
+          "x": 20,
+          "y": 8
+        },
+        {
+          "x": 14,
+          "y": 8
+        }
+      ],
+      "material": "wood"
+    },
+    {
+      "kind": "slab",
+      "id": "clinic.s7.9",
+      "floorId": "clinic.s3.0",
+      "polygon": [
+        {
+          "x": 0,
+          "y": 8
+        },
+        {
+          "x": 20,
+          "y": 8
+        },
+        {
+          "x": 20,
+          "y": 10
+        },
+        {
+          "x": 0,
+          "y": 10
+        }
+      ],
+      "material": "tile"
+    }
+  ],
+  "stairs": [
+    {
+      "kind": "stair",
+      "id": "clinic.s4.8",
+      "floorId": "clinic.floor0",
+      "toFloorId": "clinic.s3.0",
+      "min": {
+        "x": 15.5,
+        "y": 10.3
+      },
+      "max": {
+        "x": 17,
+        "y": 14.7
+      },
+      "upEdge": "n"
+    }
+  ],
+  "furniture": []
+}
