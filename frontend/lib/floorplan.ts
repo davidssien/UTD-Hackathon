@@ -3,7 +3,7 @@ import type { Opening, Point } from './building-editor';
 export type Wall = { openings?: Opening[]; id: string; x1: number; z1: number; x2: number; z2: number; thickness: number };
 export type FloorBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
 export type Floor = { id: string; points: Point[]; kind: 'drawn' | 'room' };
-export type Building = { floors?: Floor[]; floorBounds?: FloorBounds | null; walls: Wall[]; width: number; depth: number; sourceWidth: number; sourceHeight: number };
+export type Building = { references?: { image: string; width: number; depth: number; x: number; z: number; rotation: number }[]; importInfo?: { calibrated: boolean; method: string; warnings: string[] }; referenceImage?: string; floors?: Floor[]; floorBounds?: FloorBounds | null; walls: Wall[]; width: number; depth: number; sourceWidth: number; sourceHeight: number };
 
 // Extract long, dark horizontal and vertical runs, then consolidate adjacent
 // scanlines into wall centerlines. Doorway gaps remain gaps in the geometry.

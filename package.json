@@ -2,36 +2,23 @@
   "name": "utd-hackathon",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "node --test tests/*.test.ts",
-    "test:backend": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\"",
-    "typecheck:backend": "tsc -p packages/core && tsc -p packages/sim && tsc -p packages/agent && tsc -p packages/client && tsc -p services/runner"
-  },
-  "dependencies": {
-    "lucide-react": "^1.70.0",
-    "next": "16.4.5",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "three": "^0.187.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@types/three": "^0.187.0",
-    "eslint": "^9",
-    "eslint-config-next": "16.4.5",
-    "tailwindcss": "^4",
-    "typescript": "^5"
-  },
   "workspaces": [
+    "frontend",
     "packages/*",
     "services/*",
     "spacetimedb"
-  ]
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=exitcraft-frontend",
+    "build": "npm run build --workspace=exitcraft-frontend",
+    "start": "npm run start --workspace=exitcraft-frontend",
+    "lint": "npm run lint --workspace=exitcraft-frontend",
+    "test": "npm run test --workspace=exitcraft-frontend",
+    "test:backend": "node --test \"packages/*/test/**/*.test.ts\" \"services/*/test/**/*.test.ts\"",
+    "typecheck:backend": "tsc -p packages/core && tsc -p packages/sim && tsc -p packages/agent && tsc -p packages/client && tsc -p services/runner"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
 }

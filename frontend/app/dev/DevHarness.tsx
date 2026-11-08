@@ -14,9 +14,9 @@ import {
 import { createMockClient, createSpacetimeClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import { compileFloor, paintWeights, structuralField, type StructuralFieldId } from '@egress/sim';
-import oneRoom from '../../content/scenes/one-room.json';
-import twoRooms from '../../content/scenes/two-rooms-corridor.json';
-import hall from '../../content/scenes/hall.json';
+import oneRoom from '../../../content/scenes/one-room.json';
+import twoRooms from '../../../content/scenes/two-rooms-corridor.json';
+import hall from '../../../content/scenes/hall.json';
 
 type Mode = 'edit' | 'live' | 'analysis';
 type Tool = 'pen' | 'box' | 'erase' | 'door' | 'exit' | 'window';

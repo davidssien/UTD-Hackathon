@@ -1,3 +1,4 @@
+import { mergeImport } from './sketch-import.ts';
 import { polygonArea, roomAt } from './rooms.ts';
 import { getFloorBounds } from './floorplan.ts';
 import type { Building, Wall } from './floorplan';
@@ -6,6 +7,7 @@ export type Point = { x: number; z: number };
 export type Tool = 'select' | 'wall' | 'floor' | 'fill-floor' | 'door' | 'window' | 'delete';
 export type Opening = { id: string; type: 'door' | 'window'; offset: number; width: number; height: number; sill: number };
 export type EditCommand =
+  | { type: 'import'; building: Building; append: boolean }
   | { type: 'invalid'; reason: string }
   | { type: 'floor'; start: Point; end: Point }
   | { type: 'fill-floor'; point: Point }
@@ -90,6 +92,7 @@ export function openingAt(wall: Wall, kind: 'door' | 'window', point: Point): { 
 }
 
 export function editBuilding(building: Building, command: EditCommand): { building: Building; error?: string } {
+  if (command.type === 'import') return command.append ? mergeImport(building, command.building) : { building: command.building };
   if (command.type === 'invalid') return { building, error: command.reason };
   const floorBounds = getFloorBounds(building);
   if (command.type === 'delete-base-floor') return { building: floorBounds ? { ...building, floorBounds: null } : building };
@@ -200,6 +203,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     if (!state.future.length || !state.present) return state;
     return { present: state.future[0], past: [...state.past, state.present], future: state.future.slice(1), error: '' };
   }
+  if (!state.present && action.command.type === 'import' && !action.command.append) return { ...initialEditor, present: action.command.building };
   if (!state.present) return state;
   const result = editBuilding(state.present, action.command);
   if (result.error || result.building === state.present) return { ...state, error: result.error ?? '' };

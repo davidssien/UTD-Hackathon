@@ -1,7 +1,7 @@
 import type { Tool } from './building-editor';
 
-export type ToolMode = { tool: Tool; panel: 'build' | 'furniture' | null; revision: number };
-export type ModeAction = { type: 'tool'; tool: Tool } | { type: 'panel'; panel: 'build' | 'furniture' } | { type: 'cancel' };
+export type ToolMode = { tool: Tool; panel: 'build' | 'furniture' | 'import' | null; revision: number };
+export type ModeAction = { type: 'tool'; tool: Tool } | { type: 'panel'; panel: 'build' | 'furniture' | 'import' } | { type: 'cancel' };
 export const initialMode: ToolMode = { tool: 'select', panel: null, revision: 0 };
 export function toolModeReducer(state: ToolMode, action: ModeAction): ToolMode {
   if (action.type === 'cancel') return { ...initialMode, revision: state.revision + 1 };
