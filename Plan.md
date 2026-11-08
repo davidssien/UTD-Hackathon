@@ -13,6 +13,8 @@
 
 ## Status — Sat 2026-11-07, backend handoff verified
 
+**Latest branch demo:** current `main` was merged into `implement-backend` (`1c1cd88`), including the move into `frontend/` and sketch/QR import modules. The root page now uses one 3D scene with locked top-down Design, isometric/freecam in other modes, a viewcube, wall-only dithering, a switching bottom taskbar and a collapsible left menu. Save slots and **+ Create new** work without modal popups. `/` persists layout slots locally; `/?backend=maincloud` connects the same interface to the real backend. A real browser edit/undo and 50-person run were verified through that connection. See [docs/DEMO_UI.md](docs/DEMO_UI.md). These demo changes stay on our branch and are not pushed or published.
+
 **Working now, on `main`:** open `/dev` (`npm run dev`, then http://localhost:3000/dev). Everything below runs in the browser through the mock client.
 - **Edit:** pen, box, erase and door/exit/window tools on a planar wall graph, with T-junction splitting and boxes that share sides.
   - Walls draw as polygons with computed corners.
@@ -121,9 +123,10 @@
 ### Repo layout
 
 ```text
-/                       Next.js app (frontend lane). Stays at the root and uses npm.
+/                       npm workspace and backend build plan.
+frontend/               Next.js app (frontend lane), moved here on main and merged back.
   app/ components/ lib/ public/ tests/
-  app/dev/              Plain backend test page at /dev (backend lane). The partner's UI replaces it at merge.
+  app/dev/              Plain backend test page at /dev, retained alongside the demo.
 packages/
   core/                 @egress/core: domain types, Zod, applyEdit, wall graph, corner polygons,
                         rooms, diagnostics, canonical JSON + layoutHash, frame codec
@@ -137,7 +140,7 @@ content/prefabs.json    Furniture registry (later)
 docs/                   Reference spec, partner sync notes
 ```
 
-- npm workspaces: `packages/*`, `services/*`, `spacetimedb`.
+- npm workspaces: `frontend`, `packages/*`, `services/*`, `spacetimedb`. Root dev/build/start commands delegate to the frontend workspace.
 - Tests use `node --test`, which strips types on Node ≥ 22.18. That only works with erasable TS syntax: no `enum`, no `namespace`, no parameter properties. Relative imports end in `.ts`, the same convention the partner's `lib/` already uses.
 
 ### Data flow
@@ -507,7 +510,7 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
 - **One 3D scene; Edit is always top-down.** Every asset is 3D. Editing locks the same scene to an orthographic overhead camera, with no orbit or tilt. Exiting Edit transitions naturally to isometric and enables freecam; there is no secondary 2D visual model. The canonical plan graph and simulation grid remain data beneath the scene.
 - **Viewcube and floor visibility:** a top-left viewcube reflects orientation and offers presets outside Edit, kept clear of File. Bound freecam above the active floor (initial tuning proposal: no roll, roughly 10–90° elevation). Only walls that obscure the interior floor, including their attached trim/frames, receive dithering. Furniture/placeables remain opaque. These are frontend decisions, not saved domain fields.
-- **Preserved GUI references:** use the supplied Design / Simulate / Analysis navigation, persistent File menu, bottom dock, pan button, startup popup, and Analysis Report / Suggestions panel with right-side chat. The full reference archive, label mapping, and conflicts with older styling notes are recorded in [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md). Layout work is deferred, and the reference's fire/QR/demo simulation are not new backend requirements.
+- **Preserved GUI references:** prioritize the top Design / Simulate / Analysis selector, switching bottom taskbar and side menu from the current frontend and supplied sketches. The latest user direction forbids modal popups: save switching is inline, and the left menu has a pull handle and collapses after bottom-toolbar use. Other styling is open to discussion. The archive and superseded details are recorded in [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md); current implementation is in [docs/DEMO_UI.md](docs/DEMO_UI.md). Fire and the legacy import adapter remain outside this demo's backend scope.
 - **Blueprint look:** the floor is blueprint blue. Walls, and anything added from now on (openings, furniture, guides), are drawn in white lines.
 - **Layers button (heatmaps).** One button picks the active layer:
   - **People flow** (now): field `people.congestion`, `people.density` or `people.speed`, with aggregation Current / Average / Peak.
@@ -871,3 +874,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D49 | 11-07 | **Before/after comparison:** `open_compare` + `active_compare_results` + `EgressClient.compareRuns(baseline, candidate)` return both runs' metrics, `metricsDelta`, and a congestion difference map. The delta math now lives in core and is shared with the agent. |
 | D50 | 11-07 | **Three-seed robustness:** the agent re-tests the winning change on two more crowds (`confirm_candidate`) and only proposes it if the mean improves. The spread is part of the evidence. |
 | D45 | 11-07 | **Runner token isolation:** Maincloud rejected the legacy local token with 401. Persist tokens by URI/database in separate gitignored files and leave the legacy file untouched. Maincloud startup and reconnection with the saved cloud token both passed, retaining the same service identity. No shared contract changed. |
+| D46 | 11-07 | **Frontend merge:** current main moved the web app into `frontend/` and added sketch/QR import. Merged into `implement-backend` at `1c1cd88`; this supersedes D3's root app location. Root scripts delegate to the frontend workspace. |
+| D47 | 11-07 | **Simple branch demo:** prioritize top-down editing in the same 3D scene, the transition to freecam and a good viewcube. Keep the top mode selector, switching bottom taskbar and side menu. No modal popups. The left menu collapses through a handle and after every bottom-toolbar action. Styling beyond those patterns remains open. |
+| D48 | 11-07 | **Save slots:** `/` uses a frontend persistence wrapper around the existing mock client to retain multiple canonical layout documents and the active slot in localStorage. Save opens an inline switcher with named Create new. `/?backend=maincloud` uses existing server projects through the same client interface. No shared schema expansion. |
+| D49 | 11-07 | **Branch boundary:** demo changes and logical commits remain on `implement-backend`; do not push to main or publish yet. Backend gaps for future furniture/GLB work are recorded in `docs/DEMO_UI.md`. |

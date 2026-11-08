@@ -78,6 +78,8 @@ Use the same command with `ws://127.0.0.1:3010` / `egress-local` for local opera
 
 ## Deferred frontend and demo work
 
+The later branch demo is now implemented in `frontend/`: see [DEMO_UI.md](DEMO_UI.md). It supports local layout slots and the same UI against Maincloud, where a browser edit/undo and 50-person run passed. The historical handoff details above describe the earlier backend verification; web publication, richer replay controls, furniture and Blender asset integration remain deferred.
+
 [UI_REFERENCE.md](UI_REFERENCE.md) preserves the supplied working reference and reconciles its layout with current decisions. [3D_ASSET_PLAN.md](3D_ASSET_PLAN.md) covers the single 3D scene, locked overhead editing, isometric/freecam transition, viewcube, wall-only dithering, Blender assets and future furniture placement.
 
-Next integration work remains the production UI client connection, multi-browser checks, venue scene, web hosting, error polish and submission. `egress-dev` is the development database; no production `egress` database or website was deployed in this pass.
+Next integration work remains multi-browser checks, venue scene, web hosting, error polish and submission. `egress-dev` is the development database; no production `egress` database or website was deployed in these passes. The demo commits stay on `implement-backend` without a push.

@@ -1,6 +1,6 @@
 # Egress UI references and agreed direction
 
-Recorded 2026-11-07. Frontend implementation is deferred while the backend lane verifies Nemotron and Maincloud. This document complements [Plan.md](../Plan.md) and [PARTNER_SYNC.md](PARTNER_SYNC.md).
+Recorded 2026-11-07. The user subsequently authorized a simple UI demo on our branch, using the current frontend and these references. See [DEMO_UI.md](DEMO_UI.md) for implementation and verification. This document complements [Plan.md](../Plan.md) and [PARTNER_SYNC.md](PARTNER_SYNC.md).
 
 ## Reference archive
 
@@ -13,6 +13,8 @@ The supplied references are preserved unchanged in [reference/gui](reference/gui
 These files are design references, not instructions to execute or a replacement for the application. The notes contain historical implementation prompts. The prototype's random moving dots, sample chat, QR placeholder, and report placeholders do not demonstrate backend capabilities. Preserve the references; implement their layout through the existing React application and `@egress/client` later.
 
 ## Current product decisions
+
+- **Latest reference priorities:** keep the top mode selection, switching bottom taskbar and side menu. Everything else is open for discussion. **No modal popups at all.** The left menu uses a pull handle and collapses after bottom-toolbar use. Save opens an inline slot switcher with **+ Create new**; the demo supplies an example and persists layouts locally. The old sketches' startup popup is superseded.
 
 - **One 3D scene is the baseline in every mode.** All walls, furniture, and placeables are 3D. There is no separate 2D visual model, SVG asset set, or canvas editor to synchronize for top-down editing.
 - **All editing happens top-down in that same scene.** Lock the camera to an orthographic plan view while editing, including future furniture placement. Leaving Edit transitions naturally to isometric, then enables freecam. Returning to Edit restores the top-down lock before enabling edits.
@@ -28,7 +30,7 @@ These files are design references, not instructions to execute or a replacement 
 |---|---|---|
 | Navigation | Persistent sliding three-mode control at the top: Design / Simulate / Analysis. | Design maps to existing Edit; Simulate maps to Live. Display labels do not require a type rename. |
 | File menu | Top-left, accessible in every mode; Upload/New and Save floor plan. | Upload/New returns to Design and opens the startup popup. Image recognition and QR upload remain deferred. PNG export is a visual export, not project persistence. |
-| Startup | Design opens behind a dismissible optional-upload popup; drawing remains possible without upload. | Keep QR/upload affordances honest until a real upload workflow exists. |
+| Startup | Open directly into the example or last save in Design. No blocking popup. | The historical optional-upload modal is superseded. Keep future import controls inline. |
 | Workspace | Large unobstructed plan area behind stable controls. | Render the same 3D scene top-down for editing. Existing blueprint-blue floor, white lines, and dot-grid decisions remain recorded in Plan.md; the sketches' white/light-grey line grid is a reference variant to reconcile in frontend polish. |
 | Design dock | Curved bottom dock with draw-line, draw-room/box, erase, and Clear Canvas; drag gestures for drawing/erasing/box sizing. | Use atomic `@egress/client.edit` commands and undo. The prototype's axis-aligned drawing restriction can guide the default gesture; do not remove diagonal geometry support from core. |
 | Navigation hand | Persistent pan button at bottom-right; pan mode separate from editing. | Top-down pan/zoom during Edit; freecam only outside Edit. |
@@ -45,7 +47,7 @@ The reference's trails and dots are a rendering idea for actual replay frames, n
 - Entering Edit prevents tilt/orbit and any angled editing; leaving Edit animates to isometric and enables bounded freecam.
 - The viewcube reflects the camera, stays clear of File, and cannot navigate under the floor.
 - Occluding walls reveal the floor with dithering from all allowed viewing directions; furniture stays opaque.
-- Persistent navigation, File, bottom dock and hand match the reference layout. Analysis has both tabs and a working chat input with no close X.
+- Persistent navigation, switching bottom dock, side menu and hand follow the selected reference patterns. The menu has a pull handle and collapses after toolbar use; saves switch inline. Analysis has both tabs and a working chat input. No modal popups.
 - Export, fire placeholders, startup upload, and UI drawing restrictions follow the boundaries above without changing the backend contract.
 
 For the Blender production and placement plan, see [3D_ASSET_PLAN.md](3D_ASSET_PLAN.md).
