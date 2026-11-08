@@ -32,7 +32,7 @@ const tools = new ToolBox(env, jobId);
 const started = Date.now();
 const outcome = hasNemotronKey()
   ? await runLlmAgent(tools, nemotronChatFn(line => console.log(line)), prompt)
-  : (console.log(`[agent] NVIDIA_API_KEY not set; using the heuristic planner (model would be ${config.nemotronModel}).`), await runHeuristicAgent(tools));
+  : (console.log(`[agent] NVIDIA_API_KEY not set; using the heuristic planner (model would be ${config.nemotronModel}).`), await runHeuristicAgent(tools, {}, prompt));
 
 console.log(`\n[agent] mode=${outcome.mode} toolCalls=${outcome.toolCalls} proposals=${outcome.proposalIds.length} ${Date.now() - started} ms`);
 console.log(outcome.message);

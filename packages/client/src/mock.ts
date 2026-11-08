@@ -345,7 +345,7 @@ class MockEgressClient implements EgressClient {
     });
     void (async () => {
       try {
-        const outcome = await runHeuristicAgent(new ToolBox(env, jobId), context);
+        const outcome = await runHeuristicAgent(new ToolBox(env, jobId), context, prompt);
         const current = this.current()?.doc ?? document;
         this.proposals.update(list => [...list, ...env.proposals.map(p => ({
           id: p.id, jobId, status: 'proposed' as const, baseRevision: document.revision, commands: p.commands, notes: p.notes,

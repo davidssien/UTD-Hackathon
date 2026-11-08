@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { applyEdit, parseDocument, type SimulationScenario } from '@egress/core';
-import { LocalEnvironment, runHeuristicAgent, runLlmAgent, ToolBox, type ChatFn, type ChatMessage } from '@egress/agent';
+import { applyEdit, openingCenter, parseDocument, type EditCommand, type SimulationScenario } from '@egress/core';
+import { classifyIntent, complianceChecks, describeLayout, LocalEnvironment, runHeuristicAgent, runLlmAgent, ToolBox, type ChatFn, type ChatMessage } from '@egress/agent';
 
 const fixture = (name: string) => parseDocument(JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '..', 'content', 'scenes', name), 'utf8')));
 const scenario = (projectId: string, count: number): SimulationScenario => ({
@@ -21,7 +21,7 @@ test('heuristic agent measures a baseline, tests real candidates on the same peo
   const { document, env, tools } = setup();
   const outcome = await runHeuristicAgent(tools);
   const kinds = env.steps.filter(s => s.kind === 'tool_call').map(s => s.toolName);
-  assert.deepEqual(kinds.slice(0, 3), ['inspect_layout', 'run_scenario', 'get_hotspots']);
+  assert.deepEqual(kinds.slice(0, 4), ['inspect_layout', 'check_compliance', 'run_scenario', 'get_hotspots']);
   assert.ok(kinds.includes('test_edit_batch') && kinds.includes('submit_proposal'), kinds.join(','));
   assert.equal(outcome.proposalIds.length, 1);
   const proposal = env.proposals[0];
@@ -30,7 +30,7 @@ test('heuristic agent measures a baseline, tests real candidates on the same peo
   assert.equal(candidate.respawned, 0, 'same people as the baseline');
   assert.deepEqual(candidate.initialActors.x.slice(0, 5), env.runs.get(proposal.baselineRunId)!.initialActors.x.slice(0, 5));
   assert.ok(applyEdit(document, { requestId: 'accept', commands: proposal.commands }).ok, 'proposal is valid geometry');
-  assert.ok(outcome.toolCalls <= 12);
+  assert.ok(outcome.toolCalls <= 14);
   assert.match(outcome.message, /modeled/);
 });
 
@@ -101,6 +101,49 @@ test('heuristic agent confirms the winner on three different crowds before propo
   assert.match(proposal.notes.byCommand['0'], /different crowds/);
   const seeds = new Set([...env.runs.values()].map(r => r.scenario.population.seed));
   assert.equal(seeds.size, 3, 'baselines and candidates ran on three seeds');
+});
+
+test('intent: named changes, open-ended requests and questions are told apart (D72)', () => {
+  assert.deepEqual(classifyIntent('Put a door at the opposite end of the hallway from the existing door'), { kind: 'targeted', opening: 'door', farEnd: true, hallway: true });
+  assert.equal(classifyIntent('How could we better place a door?').kind, 'targeted');
+  assert.equal(classifyIntent('Where should a second exit go?').opening, 'exit');
+  assert.equal(classifyIntent('Find the worst bottleneck and fix it').kind, 'improve');
+  assert.equal(classifyIntent('Why is the corridor so slow?').kind, 'question');
+  assert.equal(classifyIntent('Why is it slow, and can you fix it?').kind, 'improve');
+});
+
+test('a requested placement is measured and proposed where asked, not swapped for the bottleneck fix (Courtyard)', async () => {
+  const { document, env, tools } = setup('two-rooms-corridor.json', 120);
+  const outcome = await runHeuristicAgent(tools, {}, 'Put a door at the opposite end of the hallway from the existing door');
+  const { rooms, walls } = describeLayout(document);
+  const hallway = rooms.find(r => r.kind === 'hallway')!;
+  assert.ok(hallway, 'the corridor is recognized as a hallway');
+  const requested = env.proposals[0];
+  assert.ok(requested, outcome.message);
+  assert.equal(requested.delta.requested, 1, 'the first proposal is the requested change');
+  const created = requested.commands[0] as Extract<EditCommand, { kind: 'createOpening' }>;
+  assert.equal(created.kind, 'createOpening');
+  assert.ok(hallway.wallIds.includes(created.wallId), 'placed on a hallway wall, not a room');
+  const existing = document.openings.find(o => o.openingKind === 'exit')!;
+  const wall = walls.find(w => w.id === created.wallId)!;
+  const t = created.offsetM / wall.lengthM;
+  const at = { x: wall.from.x + (wall.to.x - wall.from.x) * t, y: wall.from.y + (wall.to.y - wall.from.y) * t };
+  const from = openingCenter(document, existing)!;
+  assert.ok(Math.hypot(at.x - from.x, at.y - from.y) > hallway.lengthM * 0.8, `far from the existing exit (${JSON.stringify(at)} vs ${JSON.stringify(from)})`);
+  assert.match(outcome.message, /You asked for a door/);
+});
+
+test('modeled compliance flags a narrow door and offers a tested fix', async () => {
+  const doc = fixture('two-rooms-corridor.json');
+  const door = doc.openings.find(o => o.openingKind === 'door')!;
+  const narrowed = applyEdit(doc, { requestId: 'n', commands: [{ kind: 'updateOpening', openingId: door.id, patch: { widthM: 0.7 } }] });
+  assert.ok(narrowed.ok);
+  const checks = complianceChecks(narrowed.doc, 120);
+  assert.equal(checks.find(c => c.id === 'door-width')!.status, 'fail');
+  assert.equal(checks.find(c => c.id === 'exit-count')!.status, 'fail', '120 people need 2 exits');
+  const env = new LocalEnvironment({ document: narrowed.doc, scenario: scenario(narrowed.doc.projectId, 120), jobId: 'c' });
+  const result = await new ToolBox(env, 'c').call('check_compliance', {}) as { suggestions: { suggestionId: string; title: string }[] };
+  assert.match(result.suggestions[0].title, /Widen the 0.7 m door to 0.91 m/);
 });
 
 let callCounter = 0;

@@ -210,7 +210,7 @@ export async function processAgentJob(
     }));
     const env = new BackendAgentEnvironment(backend, job, doc, scenario);
     const tools = new ToolBox(env, job.jobId);
-    const outcome = options.chat ? await runLlmAgent(tools, options.chat, job.prompt, context) : await runHeuristicAgent(tools, context);
+    const outcome = options.chat ? await runLlmAgent(tools, options.chat, job.prompt, context) : await runHeuristicAgent(tools, context, job.prompt);
     log(`[agent ${job.jobId}] ${outcome.mode}, ${outcome.toolCalls} tool calls, ${outcome.proposalIds.length} proposal(s)`);
     await backend.finishAgentJob(job.jobId, 'complete', outcome.message);
   } catch (e) {
