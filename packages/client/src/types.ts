@@ -152,6 +152,8 @@ export interface ProposalView {
 
 export interface EgressClient {
   readonly status: Store<ConnectionStatus>;
+  /** Why the connection failed, in plain words, while `status` is 'error'; otherwise null. */
+  readonly connectionError: Store<string | null>;
   readonly runner: Store<RunnerStatus>;
   readonly me: Store<Me | null>;
   readonly projects: Store<ProjectSummary[]>;

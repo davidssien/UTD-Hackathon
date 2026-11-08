@@ -86,7 +86,7 @@ export default function EgressStudio() {
 // ── Studio ──────────────────────────────────────────────────────────────────
 
 function Studio({ client, backend, bootError }: { client: EgressClient; backend: string; bootError: string }) {
-  const view = useEgress(client.document), projects = useEgress(client.projects), status = useEgress(client.status);
+  const view = useEgress(client.document), projects = useEgress(client.projects), status = useEgress(client.status), connectionError = useEgress(client.connectionError);
   const runs = useEgress(client.runs), runner = useEgress(client.runner), proposals = useEgress(client.proposals), jobs = useEgress(client.agentJobs);
   const [mode, setMode] = useState<Mode>('edit');
   const [tool, setTool] = useState<SceneTool>('select');
@@ -212,7 +212,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     {/* Top left: project + sync state */}
     <button className="project-chip" onClick={() => setModal('projects')} data-tip="Projects">
       <i className={`sync ${status !== 'connected' ? 'off' : saving ? 'busy' : 'ok'}`} />
-      <span>{project?.name ?? (status === 'connected' ? 'Untitled plan' : 'Connecting…')}</span>
+      <span>{project?.name ?? (status === 'connected' ? 'Untitled plan' : status === 'error' ? 'Not connected' : 'Connecting…')}</span>
       {role !== 'owner' && project && <em>{role}</em>}
       <ChevronDownIcon />
     </button>
@@ -287,7 +287,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <button className="danger" onClick={() => { edit([{ kind: 'deleteEntities', ids: [menu.openingId ?? menu.wallId!] }]); setSelected(null); setMenu(null); }}><TrashIcon />Delete</button>
     </div>}
 
-    {(error || view.lastError) && <div className="toast" role="alert"><span>{error || view.lastError?.message}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
+    {(error || view.lastError || (status === 'error' && connectionError)) && <div className="toast" role="alert"><span>{error || view.lastError?.message || connectionError}</span><button aria-label="Dismiss" onClick={() => setError('')}><XMarkIcon /></button></div>}
 
     {modal === 'projects' && <ProjectsModal client={client} onClose={() => setModal(null)} onOpened={() => { setSelected(null); setRunId(null); setPreviewId(null); setModal(null); switchMode('edit'); }} onError={fail} />}
     {modal === 'share' && <ShareModal client={client} role={role} backend={backend} onClose={() => setModal(null)} />}

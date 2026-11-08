@@ -48,6 +48,7 @@ function browserTokenStore(db: string) {
 
 class SpacetimeEgressClient implements EgressClient {
   readonly status = writable<ConnectionStatus>('connecting');
+  readonly connectionError = writable<string | null>(null);
   readonly me = writable<Me | null>(null);
   readonly projects = writable<ProjectSummary[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
@@ -81,18 +82,28 @@ class SpacetimeEgressClient implements EgressClient {
           this.conn = conn;
           this.listen(conn);
           conn.subscriptionBuilder()
-            .onApplied(() => { this.status.set('connected'); this.refresh(); resolve(conn); })
-            .onError(() => { this.status.set('error'); reject(new Error('Subscription failed.')); })
+            .onApplied(() => { this.connectionError.set(null); this.status.set('connected'); this.refresh(); resolve(conn); })
+            .onError(ctx => {
+              // Usually the database runs an older module that lacks a view this client subscribes to.
+              const detail = ctx.event?.message ? ` (${ctx.event.message})` : '';
+              const message = `Database "${options.db}" rejected the subscription${detail}. It is probably running an older module than this app; publish the current one with npm run db:publish.`;
+              this.connectionError.set(message); this.status.set('error'); reject(new Error(message));
+            })
             .subscribe([
               tables.myProfile, tables.mySession, tables.myProjects, tables.myMemberships, tables.activeMembers, tables.activeEntities,
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
               tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus, tables.activeCompareResults,
             ]);
         })
-        .onConnectError((_ctx, error) => { this.status.set('error'); reject(error); })
+        .onConnectError((_ctx, error) => {
+          this.connectionError.set(`Could not connect to ${options.uri} (database "${options.db}"): ${error?.message ?? 'unknown error'}.`);
+          this.status.set('error'); reject(error);
+        })
         .onDisconnect(() => this.status.set('disconnected'))
         .build();
     });
+    // Calls that await `ready` still see the failure; this only stops an unhandled-rejection report.
+    this.ready.catch(() => {});
     // Liveness decays with time even when no rows change.
     this.runnerTimer = setInterval(() => this.refreshRunner(), 5000);
   }

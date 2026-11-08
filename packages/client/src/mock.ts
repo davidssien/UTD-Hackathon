@@ -41,6 +41,7 @@ export function createMockClient(options: MockClientOptions = {}): EgressClient 
 
 class MockEgressClient implements EgressClient {
   readonly status = writable<ConnectionStatus>('connected');
+  readonly connectionError = writable<string | null>(null);
   /** The mock simulates in the browser, so its "runner" is always available. */
   readonly runner = writable<RunnerStatus>({ online: true, lastSeenMs: null, agentModel: 'in-browser heuristic', activeRuns: 0, activeJobs: 0 });
   readonly me = writable<Me | null>({ identity: 'mock-identity', displayName: 'Mock user' });
