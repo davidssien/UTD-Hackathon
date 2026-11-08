@@ -11,6 +11,7 @@
 import {
   assertDocumentIntegrity, DEFAULT_DOOR, DEFAULT_EXIT, DEFAULT_WINDOW, diffDocuments, documentToEntities, entitiesToDocument,
 } from '../document.ts';
+import { layoutHash } from '../canonical.ts';
 import { DomainError, type DomainErrorData } from '../errors.ts';
 import {
   cross, distance, dot, MIN_WALL_LENGTH_M, normalize, OPENING_END_CLEARANCE_M, projectOnSegment, segmentIntersection, sub, VERTEX_MERGE_M,
@@ -43,6 +44,9 @@ export function applyEdit(doc: EgressDocument, request: ApplyEditInput): ApplyEd
     const ws = new Working(doc, request.requestId);
     const created: ID[][] = [];
     for (const command of request.commands) {
+      if (command.kind === 'applyPatch' && command.expectedLayoutHash && layoutHash(doc) !== command.expectedLayoutHash) {
+        throw new DomainError('STALE_EDIT', 'The building changed since this room was tested. Request a new plan.');
+      }
       ws.created = [];
       apply(ws, command);
       created.push(ws.created);

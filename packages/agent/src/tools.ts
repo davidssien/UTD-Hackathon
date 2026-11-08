@@ -5,10 +5,12 @@
  */
 import { z } from 'zod';
 import {
-  applyEdit, deriveLayout, DomainError, EditCommandSchema, effectiveTime, metricsDelta, openingCenter,
+  applyEdit, deriveLayout, DomainError, EditCommandSchema, effectiveTime, layoutHash, metricsDelta, openingCenter,
   type EditCommand, type ID, type SimulationMetrics,
 } from '@egress/core';
 import type { AgentEnvironment, RunRecord } from './environment.ts';
+import { populationCapacity } from '@egress/sim';
+import { cornerRooms } from './corner-rooms.ts';
 import { suggestionsFor, type Suggestion } from './candidates.ts';
 import { complianceChecks, describeLayout, resolvePlacement } from './layout.ts';
 
@@ -40,6 +42,7 @@ const ARGS = {
   compare_runs: z.object({ baselineRunId: id, candidateRunId: id }).strict(),
   confirm_candidate: z.object({ candidateRunId: id }).strict(),
   submit_proposal: z.object({ baselineRunId: id, candidateRunId: id, summary: z.string().min(1).max(1500), requested: z.boolean().optional() }).strict(),
+  plan_corner_room: z.object({ roomId: id.optional(), widthM: z.number().min(2).max(10).optional(), depthM: z.number().min(2).max(10).optional() }).strict(),
   place_opening: z.object({
     kind: z.enum(['door', 'window', 'exit']), widthM: z.number().min(0.5).max(6).optional(), wallId: id.optional(), offsetM: z.number().min(0).max(500).optional(),
     at: z.enum(['start', 'center', 'end']).optional(), roomId: id.optional(), farthestFromOpeningId: id.optional(),
@@ -51,6 +54,9 @@ export const TOOL_NAMES = Object.keys(ARGS) as ToolName[];
 
 export const TOOL_SPECS: ToolSpec[] = [
   spec('inspect_layout', 'Describe the building: rooms (id, kind room/hallway/closet, size, centre, neighbouring rooms, opening ids), walls (id, length, ends, whether outside, rooms on each side, openings with offsets), and geometry warnings. Use it to ground any place the user names.', {}),
+  spec('plan_corner_room', 'Find clear corners for a small enclosed office or room. Registers alternatives with two partitions and an interior door. Test the returned suggestionIds with the same baseline and submit the best requested room.', {
+    roomId: { type: 'string' }, widthM: { type: 'number', minimum: 2, maximum: 10 }, depthM: { type: 'number', minimum: 2, maximum: 10 },
+  }),
   spec('place_opening', 'Turn a requested placement into a valid new door, window or exit and register it as a suggestionId for test_edit_batch. Give a wallId (and offsetM or at), or a roomId to search that room\'s walls; farthestFromOpeningId puts it as far as possible from an existing opening (e.g. "the other end of the hallway from the door"). Exits need an outside wall.', {
     kind: { type: 'string', enum: ['door', 'window', 'exit'] }, widthM: { type: 'number' }, wallId: { type: 'string' }, offsetM: { type: 'number' },
     at: { type: 'string', enum: ['start', 'center', 'end'] }, roomId: { type: 'string' }, farthestFromOpeningId: { type: 'string' },
@@ -63,8 +69,11 @@ export const TOOL_SPECS: ToolSpec[] = [
   spec('get_hotspots', 'Ranked congestion hotspots of a run, each with the nearest door or exit, plus validated design suggestions (suggestionId) you can test.', {
     runId: { type: 'string' }, topK: { type: 'integer', minimum: 1, maximum: 5 },
   }, ['runId']),
-  spec('test_edit_batch', 'Apply a suggested design change to a copy of the layout and rerun the baseline scenario with the exact same people. Pass a suggestionId from get_hotspots. Budget: 3 candidates.', {
+  spec('test_edit_batch', 'Apply a suggested design change to a copy of the layout and rerun the baseline scenario with the exact same starting crowd where the geometry permits. Pass a suggestionId from a planning tool. Budget: 4 candidates.', {
     baselineRunId: { type: 'string' }, suggestionId: { type: 'string' },
+    commands: { type: 'array', minItems: 1, maxItems: 5, description: 'For a requested wall or partition edit, use measured plan coordinates from inspect_layout.',
+      items: { anyOf: EditCommandSchema.options.filter(s => ['createWallChain', 'createBox', 'moveVertex', 'updateWall', 'createOpening', 'updateOpening'].includes(s.shape.kind.value))
+        .map(schema => z.toJSONSchema(schema, { target: 'openapi-3.0' })) } },
   }, ['baselineRunId']),
   spec('compare_runs', 'Metric differences (candidate minus baseline) between two runs.', { baselineRunId: { type: 'string' }, candidateRunId: { type: 'string' } }, ['baselineRunId', 'candidateRunId']),
   spec('confirm_candidate', 'Re-test a tested candidate on 2 more random seeds (fresh crowds, same layouts) to check the improvement is not a fluke of one population. Budget: 1. Do this before submit_proposal.', {
@@ -143,7 +152,10 @@ export class ToolBox {
   private async execute(name: ToolName, args: Record<string, unknown>): Promise<unknown> {
     switch (name) {
       case 'inspect_layout': return this.inspectLayout();
-      case 'inspect_run': return summarizeRun(await this.run(args.runId as string));
+      case 'inspect_run': {
+        const run = await this.run(args.runId as string);
+        return { ...summarizeRun(run), matchesLayout: run.layoutHash === layoutHash(this.env.document()) };
+      }
       case 'run_scenario': {
         if (this.scenarios >= this.budget.maxScenarios) throw new DomainError('RUN_LIMIT_EXCEEDED', `Scenario budget of ${this.budget.maxScenarios} is used up.`);
         this.scenarios++;
@@ -154,6 +166,10 @@ export class ToolBox {
           population: { ...base.population, count: (args.people as number | undefined) ?? base.population.count },
           goal: { kind: 'evacuate' as const, blockedExitIds: (args.blockedExitIds as string[] | undefined) ?? base.goal.blockedExitIds },
         };
+        if (args.people === undefined) {
+          const capacity = populationCapacity(this.env.document(), scenario.population);
+          if (capacity) scenario.population.count = capacity;
+        }
         const run = await this.env.runScenario({ document: this.env.document(), scenario, label: 'baseline' });
         return summarizeRun(run);
       }
@@ -171,6 +187,7 @@ export class ToolBox {
       case 'test_edit_batch': {
         if (this.tested >= this.budget.maxCandidates) throw new DomainError('RUN_LIMIT_EXCEEDED', `Candidate budget of ${this.budget.maxCandidates} is used up.`);
         const baseline = await this.run(args.baselineRunId as string);
+        if (baseline.layoutHash !== layoutHash(this.env.document())) throw new DomainError('STALE_EDIT', 'Run a new baseline on the current layout before testing edits.');
         const suggestion = args.suggestionId ? this.suggestions.get(args.suggestionId as string) : undefined;
         if (args.suggestionId && !suggestion) throw new DomainError('NOT_FOUND', `No suggestion ${String(args.suggestionId)}; call get_hotspots first.`);
         const commands = (suggestion?.commands ?? args.commands) as EditCommand[] | undefined;
@@ -180,7 +197,7 @@ export class ToolBox {
         this.tested++;
         const run = await this.env.runScenario({ document: applied.doc, scenario: baseline.scenario, label: suggestion?.title ?? 'candidate', initialActors: baseline.initialActors });
         this.candidates.set(run.runId, { run, baselineRunId: baseline.runId, commands, suggestion });
-        return { ...summarizeRun(run), change: suggestion?.title ?? 'custom edit', delta: delta(baseline.metrics, run.metrics), controlled: run.respawned === 0 };
+        return { ...summarizeRun(run), change: suggestion?.title ?? 'custom edit', delta: delta(baseline.metrics, run.metrics), controlled: run.respawned === 0, respawned: run.respawned };
       }
       case 'compare_runs': {
         const [a, b] = [await this.run(args.baselineRunId as string), await this.run(args.candidateRunId as string)];
@@ -212,6 +229,15 @@ export class ToolBox {
         };
         this.robustness.set(candidate.run.runId, result);
         return result;
+      }
+      case 'plan_corner_room': {
+        const options = cornerRooms(this.env.document(), this.jobId, args.widthM as number | undefined, args.depthM as number | undefined, args.roomId as string | undefined);
+        const suggestions = options.map(option => {
+          const suggestionId = `r${this.suggestions.size + 1}`;
+          this.suggestions.set(suggestionId, { ...option, suggestionId });
+          return { suggestionId, title: option.title, rationale: option.rationale };
+        });
+        return { suggestions };
       }
       case 'place_opening': {
         const placement = resolvePlacement(this.env.document(), args as unknown as Parameters<typeof resolvePlacement>[1]);
@@ -254,9 +280,10 @@ export class ToolBox {
           : '';
         if (robust) Object.assign(d, { seedsTested: robust.seeds.length, robustMeanSeconds: robust.meanSeconds, robustWorstSeconds: robust.worstSeconds });
         const verdict = requested && !improves ? ' As requested; it does not improve the modeled evacuation.' : '';
+        const placement = candidate.run.respawned ? ` ${candidate.run.respawned} starting positions moved to clear the new geometry.` : '';
         const why = candidate.suggestion
-          ? `${candidate.suggestion.rationale} Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.${verdict}${across}`
-          : `Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.${verdict}${across}`;
+          ? `${candidate.suggestion.rationale} Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.${placement}${verdict}${across}`
+          : `Modeled with the same ${baseline.metrics.initialPeople} people: ${describeDelta(d)}.${placement}${verdict}${across}`;
         const proposalId = await this.env.submitProposal({
           commands: candidate.commands,
           notes: { summary: String(args.summary), byCommand: Object.fromEntries(candidate.commands.map((_, i) => [String(i), why])) },
@@ -280,15 +307,17 @@ export class ToolBox {
     const doc = this.env.document();
     const { diagnostics } = deriveLayout(doc);
     const { rooms, walls } = describeLayout(doc);
+    const wallEntities = new Map(doc.walls.map(w => [w.id, w]));
     const openings = doc.openings.filter(o => o.openingKind !== 'window').map(o => {
       const c = openingCenter(doc, o);
       return { id: o.id, kind: o.openingKind, wallId: o.wallId, widthM: o.widthM, state: o.state, center: c ? { x: round(c.x), y: round(c.y) } : null };
     });
     return {
+      floors: doc.floors.map(f => ({ id: f.id, name: f.name, level: f.level })),
       rooms: rooms.map(r => ({ id: r.id, kind: r.kind, areaM2: r.areaM2, widthM: r.widthM, lengthM: r.lengthM, center: r.center, neighbours: r.neighbours, openingIds: r.openingIds })),
       exits: openings.filter(o => o.kind === 'exit'),
       doors: openings.filter(o => o.kind === 'door'),
-      walls: walls.map(w => ({ id: w.id, lengthM: w.lengthM, from: { x: round(w.from.x), y: round(w.from.y) }, to: { x: round(w.to.x), y: round(w.to.y) }, outside: w.exterior, roomIds: w.roomIds, openings: w.openings })),
+      walls: walls.map(w => ({ id: w.id, floorId: wallEntities.get(w.id)?.floorId, startVertexId: wallEntities.get(w.id)?.startVertexId, endVertexId: wallEntities.get(w.id)?.endVertexId, lengthM: w.lengthM, from: { x: round(w.from.x), y: round(w.from.y) }, to: { x: round(w.to.x), y: round(w.to.y) }, outside: w.exterior, roomIds: w.roomIds, openings: w.openings })),
       warnings: diagnostics.map(d => `${d.code}: ${d.message}`),
     };
   }

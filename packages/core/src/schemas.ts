@@ -164,7 +164,7 @@ export const EditCommandSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('createStair'), floorId: IdSchema, min: Vec2Schema, max: Vec2Schema, upEdge: StairEdgeSchema }),
   z.object({ kind: z.literal('updateStair'), stairId: IdSchema, patch: z.object({ upEdge: StairEdgeSchema.optional(), min: Vec2Schema.optional(), max: Vec2Schema.optional() }) }),
   /** Generic put/remove. Used for undo/redo, imports and agent proposals. */
-  z.object({ kind: z.literal('applyPatch'), put: z.array(EntitySchema).max(5000), remove: z.array(IdSchema).max(5000) }),
+  z.object({ kind: z.literal('applyPatch'), expectedLayoutHash: z.string().length(64).optional(), put: z.array(EntitySchema).max(5000), remove: z.array(IdSchema).max(5000) }),
 ]);
 
 export const EditRequestSchema = z.object({

@@ -40,7 +40,7 @@ const MODE_LABEL: Record<PresenceMode, string> = { edit: 'Editing', simulate: 'S
 const MODES: { id: Mode; name: string; key: string }[] = [{ id: 'edit', name: 'Edit', key: '1' }, { id: 'simulate', name: 'Simulate', key: '2' }, { id: 'analysis', name: 'Analysis', key: '3' }];
 const STEP_LABEL: Record<string, string> = {
   inspect_layout: 'Read layout', inspect_run: 'Read run', run_scenario: 'Baseline simulation', get_hotspots: 'Find bottlenecks',
-  test_edit_batch: 'Test change', confirm_candidate: 'Re-test on new crowds', compare_runs: 'Compare runs', submit_proposal: 'Propose change',
+  plan_corner_room: 'Plan room placements', test_edit_batch: 'Test change', confirm_candidate: 'Re-test on new crowds', compare_runs: 'Compare runs', submit_proposal: 'Propose change',
 };
 
 function example(): EgressDocument {
@@ -235,8 +235,11 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   };
 
   // Analysis: preview the newest open proposal on the model.
-  const openProposals = proposals.filter(p => p.status === 'proposed');
-  const preview = mode === 'analysis' ? proposals.find(p => p.id === previewId) ?? openProposals[0] ?? null : null;
+  const latestJob = jobs.reduce<(typeof jobs)[number] | null>((last, job) => !last || job.createdAt > last.createdAt ? job : last, null);
+  const latestPlans = proposals.filter(p => p.jobId === latestJob?.id);
+  const pendingPlans = latestPlans.filter(p => p.status === 'proposed');
+  const preview = mode === 'analysis' ? proposals.find(p => p.id === previewId)
+    ?? pendingPlans.find(p => p.delta.requested === 1) ?? pendingPlans[0] ?? latestPlans[0] ?? null : null;
   const ghost = preview?.status === 'proposed' ? preview.ghost : null;
   const highlight = useMemo(() => new Set(ghost ? [...ghost.createdIds.flat(), ...ghost.changedIds] : []), [ghost]);
   const notes = useMemo<SceneNote[]>(() => {
@@ -433,7 +436,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         <Tool tip="Redo (Ctrl+Shift+Z)" disabled={!view.canRedo || !editable} onClick={() => void client.redo().catch(fail)}><ArrowUturnRightIcon /></Tool>
       </>}
       {mode === 'simulate' && <Transport playback={playback} running={running} onSpeed={s => { speedRef.current = s; }} />}
-      {mode === 'analysis' && <ChatBar client={client} playback={playback} onError={fail} disabled={!doc} />}
+      {mode === 'analysis' && <ChatBar client={client} playback={playback} onSent={() => setPreviewId(null)} onError={fail} disabled={!doc} />}
     </footer>
 
     {/* Bottom left: floor switcher (D75) */}
@@ -685,7 +688,7 @@ function LiveTransport({ playback, onSpeed }: { playback: PlaybackController; ru
 
 // ── Analysis ────────────────────────────────────────────────────────────────
 
-function ChatBar({ client, playback, disabled, onError }: { client: EgressClient; playback: PlaybackController | null; disabled: boolean; onError(e: unknown): void }) {
+function ChatBar({ client, playback, disabled, onSent, onError }: { onSent(): void; client: EgressClient; playback: PlaybackController | null; disabled: boolean; onError(e: unknown): void }) {
   const jobs = useEgress(client.agentJobs);
   const [prompt, setPrompt] = useState('');
   const working = jobs.some(j => j.status === 'queued' || j.status === 'running');
@@ -693,7 +696,7 @@ function ChatBar({ client, playback, disabled, onError }: { client: EgressClient
     const text = prompt.trim() || 'Find the worst bottleneck and propose a measured improvement.';
     const state = playback?.state.get();
     const runId = state?.status === 'complete' ? state.runId : undefined; // the agent measures its own baseline otherwise
-    void client.askAgent(text, runId ? { runId } : undefined).then(() => setPrompt('')).catch(onError);
+    void client.askAgent(text, runId ? { runId } : undefined).then(() => { setPrompt(''); onSent(); }).catch(onError);
   };
   return <form className="chat" onSubmit={e => { e.preventDefault(); if (!working) send(); }}>
     <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ask about this layout" disabled={disabled} aria-label="Message the agent" />
@@ -742,8 +745,14 @@ function AnalysisPane({ client, preview, comparison, diffMap, canEdit, locked, o
           {comparison && <div><dt>Before → after</dt><dd>{comparison.baseline.evacuationTimeSeconds?.toFixed(1) ?? '—'} → {comparison.candidate.evacuationTimeSeconds?.toFixed(1) ?? '—'} s</dd></div>}
         </dl>
         {comparison?.congestionDiff && <label className="check"><input type="checkbox" checked={diffMap} onChange={e => onDiffMap(e.target.checked)} />Difference map</label>}
-        {proposals.length > 1 && <div className="field"><span>Proposal</span><select value={preview.id} onChange={e => onPreview(e.target.value)}>{proposals.map((p, i) => <option key={p.id} value={p.id}>#{proposals.length - i} · {p.status}</option>)}</select></div>}
       </section>}
+      {(proposals.length > 1 || (!preview && proposals.length > 0)) && <label className="field"><span>Proposal</span>
+        <select value={preview?.id ?? ''} onChange={e => onPreview(e.target.value)}>
+          {!preview && <option value="">Choose a previous proposal</option>}
+          {proposals.map((p, i) => <option key={p.id} value={p.id}>#{i + 1} · {p.status}</option>)}
+        </select>
+      </label>}
+      {preview?.status === 'proposed' && !preview.ghost && <p className="note">The layout changed. Request a new plan to review this edit.</p>}
       <p className="fine">Modeled results, not a safety certification.</p>
     </div>
     {preview?.status === 'proposed' && <div className="pane-actions two">

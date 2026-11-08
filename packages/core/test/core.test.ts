@@ -167,6 +167,13 @@ test('layoutHash ignores revision and changes with geometry', () => {
   assert.equal(layoutHash(a), layoutHash(b));
   const c = applyEditOrThrow(a, { requestId: 'x', commands: [{ kind: 'createBox', floorId: 'f0', min: { x: 0, y: 0 }, max: { x: 5, y: 5 }, ...style }] }).doc;
   assert.notEqual(layoutHash(a), layoutHash(c));
+  const slab = applyEditOrThrow(c, { requestId: 'slab', commands: [{ kind: 'createSlab', floorId: 'f0', material: 'wood',
+    polygon: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }, { x: 0, y: 5 }] }] }).doc;
+  assert.notEqual(layoutHash(slab), layoutHash(c));
+  const upper = applyEditOrThrow(slab, { requestId: 'upper', commands: [{ kind: 'createFloor', name: 'Upper' }] }).doc;
+  const stairs = applyEditOrThrow(upper, { requestId: 'stairs', commands: [{ kind: 'createStair', floorId: 'f0', upEdge: 'n',
+    min: { x: 1, y: 1 }, max: { x: 2, y: 4 } }] }).doc;
+  assert.notEqual(layoutHash(upper), layoutHash(stairs));
 });
 
 test('frame codec round-trips positions to the centimeter and keeps flags', () => {

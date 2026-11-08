@@ -102,6 +102,8 @@ export function layoutHash(doc: EgressDocument): string {
     vertices: byId(doc.vertices),
     walls: byId(doc.walls),
     openings: byId(doc.openings),
+    ...(doc.slabs?.length ? { slabs: byId(doc.slabs) } : {}),
+    ...(doc.stairs?.length ? { stairs: byId(doc.stairs) } : {}),
     furniture: doc.furniture,
   }));
 }

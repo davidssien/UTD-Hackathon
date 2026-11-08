@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { applyEdit, openingCenter, parseDocument, type EditCommand, type SimulationScenario } from '@egress/core';
+import { applyEdit, DEFAULT_WALL, deriveLayout, layoutHash, openingCenter, parseDocument, type EditCommand, type SimulationScenario } from '@egress/core';
 import { classifyIntent, complianceChecks, describeLayout, LocalEnvironment, runHeuristicAgent, runLlmAgent, ToolBox, type ChatFn, type ChatMessage } from '@egress/agent';
 
 const fixture = (name: string) => parseDocument(JSON.parse(readFileSync(join(import.meta.dirname, '..', '..', '..', 'content', 'scenes', name), 'utf8')));
@@ -144,6 +144,43 @@ test('modeled compliance flags a narrow door and offers a tested fix', async () 
   const env = new LocalEnvironment({ document: narrowed.doc, scenario: scenario(narrowed.doc.projectId, 120), jobId: 'c' });
   const result = await new ToolBox(env, 'c').call('check_compliance', {}) as { suggestions: { suggestionId: string; title: string }[] };
   assert.match(result.suggestions[0].title, /Widen the 0.7 m door to 0.91 m/);
+});
+
+test('mixed optimization and corner-office request produces an accept-ready enclosed room', async () => {
+  const base = fixture('one-room.json'), floorId = base.floors[0].id;
+  const box = applyEdit(base, { requestId: 'square', commands: [{ kind: 'createBox', floorId, ...DEFAULT_WALL, min: { x: 4, y: 3 }, max: { x: 6, y: 5 } }] });
+  assert.ok(box.ok);
+  const doc = box.doc;
+  const env = new LocalEnvironment({ document: doc, scenario: scenario(doc.projectId, 45), jobId: 'office' });
+  const prompt = 'ow can we optmize here? I need to build a small corner office too. Can you add a corner office optimized with our current layout and for afety?';
+  const outcome = await runLlmAgent(new ToolBox(env, 'office'), async () => ({ role: 'assistant', content: 'Add an exit instead.' }), prompt, { runId: 'missing' });
+  assert.equal(outcome.proposalIds.length, 1, outcome.message);
+  const proposal = env.proposals[0];
+  assert.ok(env.runs.size > 2, 'compared several placements against the baseline');
+  const accepted = applyEdit(doc, { requestId: 'accept', commands: proposal.commands });
+  assert.ok(accepted.ok);
+  assert.equal(deriveLayout(accepted.doc).topology.rooms.length, deriveLayout(doc).topology.rooms.length + 1);
+  const newDoor = accepted.doc.openings.find(o => !doc.openings.some(old => old.id === o.id));
+  assert.equal(newDoor?.openingKind, 'door');
+  assert.equal(newDoor?.state, 'open');
+  assert.equal(env.runs.get(proposal.candidateRunId)!.layoutHash, layoutHash(accepted.doc));
+  const stale = applyEdit(base, { requestId: 'accept', commands: proposal.commands });
+  assert.ok(!stale.ok && stale.error.code === 'STALE_EDIT');
+});
+
+test('a model that stops after measuring a winner still leaves the confirmed proposal', async () => {
+  const { env, tools } = setup('two-rooms-corridor.json', 90);
+  let baselineId = '';
+  const replies: ((m: ChatMessage[]) => ChatMessage)[] = [
+    () => call('run_scenario', {}),
+    m => { baselineId = JSON.parse(m.at(-1)!.content!).runId; return call('get_hotspots', { runId: baselineId }); },
+    m => call('test_edit_batch', { baselineRunId: baselineId, suggestionId: JSON.parse(m.at(-1)!.content!).suggestions[0].suggestionId }),
+    () => ({ role: 'assistant', content: 'I now need to confirm the improvement.' }),
+  ];
+  const outcome = await runLlmAgent(tools, async m => replies.shift()!(m), 'Improve this layout');
+  assert.equal(outcome.proposalIds.length, 1, outcome.message);
+  assert.equal(env.proposals[0].delta.seedsTested, 3);
+  assert.equal(tools.scenarios, 1);
 });
 
 let callCounter = 0;
