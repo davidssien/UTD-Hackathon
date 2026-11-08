@@ -61,6 +61,20 @@
 - Dashboard: https://spacetimedb.com/egress-dev. The client E2E passed against `wss://maincloud.spacetimedb.com` / `egress-dev`: edit, undo, 50/50 evacuated, replay and heatmap, an agent proposal ghost, then acceptance.
 - The verification runner stopped after the check. The user then approved ongoing operation, and a background Maincloud runner is now connected, registered and ready with Lightning. Saved-token reconnection retained its identity. The local runner remains active separately.
 
+**Backend passes on `backend-passes` (Claude, worktree; not yet merged or deployed):**
+- **Runner status:** `EgressClient.runner` (online, model, busy counts) comes from runner heartbeats (D47).
+- **Frozen-layout replay:** replays and heatmaps use the layout the run actually saw (D48).
+- **Before/after comparison:** `EgressClient.compareRuns(baseline, candidate)` returns metrics, deltas and a congestion difference map (D49). Measured on the real local DB: −23.7 s and −20 max queue, with the most-relieved cell −1.65.
+- **Three-seed robustness:** the agent confirms the winner on three crowds before proposing (D50). Hall, 300 people: second exit −20 / −17.6 / −18.6 s.
+- **Multi-user checks:** `npm run e2e:multiuser -w @egress/client` passes:
+  - private project isolation
+  - a viewer refused, with the optimistic edit rolled back
+  - an editor upgrade, with 30 ms cross-client sync
+  - service-only reducers and a wrong secret rejected
+  - replay surviving a reconnect
+- **Module:** all changes are additive (new tables and views only).
+- **To deploy after merge:** `spacetime publish egress-dev --server maincloud --module-path spacetimedb --delete-data=never`, then restart the Maincloud runner so it sends heartbeats.
+
 **Still open:**
 1. **Runner operation:** Maincloud and local workers are active. They are background processes on this machine, not auto-start services; restart after reboot or process exit. Maincloud credentials are saved separately by database target (D45).
 2. **Frontend lane:** wire ExitCraft to `createSpacetimeClient`, following §8 and the preserved GUI references. The current `/dev` route selects local or mock only; the Maincloud check used the real client from Node.
@@ -851,4 +865,9 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D42 | 11-07 | **Measured proposal enforcement:** the tool rejects non-improving candidates using the existing heuristic threshold and rejects a mismatched baseline. Prompt requires saving an improving proposal before claiming it exists. This closes a live-verification gap without changing contracts. |
 | D43 | 11-07 | **Maincloud dev:** `egress-dev` published with data preservation, then the real client E2E passed through proposal acceptance. The user approved ongoing runner operation; its background worker is now connected and ready with Lightning. Production/web deployment stays separate. |
 | D44 | 11-07 | **UI references retained:** original GUI notes, seven working prototype files and five sketches are archived unchanged in `docs/reference/gui`. `docs/UI_REFERENCE.md` maps their layout to current modes and records superseded/deferred behavior. Treat embedded historical prompts as reference content, not new backend instructions. |
+| D46 | 11-07 | **Parallel agents on one machine:** backend passes run in the git worktree `.claude/worktrees/backend-passes` on branch `backend-passes`, branched from `implement-backend@1c1cd88`, and publish to a separate local database, `egress-backend`. The demo UI work in the main checkout, `egress-local` and Maincloud `egress-dev` are untouched until the branches are merged. |
+| D47 | 11-07 | **Runner heartbeat:** the runner pings `runner_heartbeat` every 5 s. `runner_status` (no project data) feeds `EgressClient.runner`, which is online if a heartbeat arrived within 20 s. The UI shows "simulation server offline" instead of an endless "queued". The mock is always online. |
+| D48 | 11-07 | **Replays use the run's frozen layout:** `active_run_layout` exposes the snapshot of the caller's active run, and playback heatmaps compile against it, so an accepted proposal no longer distorts older replays. |
+| D49 | 11-07 | **Before/after comparison:** `open_compare` + `active_compare_results` + `EgressClient.compareRuns(baseline, candidate)` return both runs' metrics, `metricsDelta`, and a congestion difference map. The delta math now lives in core and is shared with the agent. |
+| D50 | 11-07 | **Three-seed robustness:** the agent re-tests the winning change on two more crowds (`confirm_candidate`) and only proposes it if the mean improves. The spread is part of the evidence. |
 | D45 | 11-07 | **Runner token isolation:** Maincloud rejected the legacy local token with 401. Persist tokens by URI/database in separate gitignored files and leave the legacy file untouched. Maincloud startup and reconnection with the saved cloud token both passed, retaining the same service identity. No shared contract changed. |

@@ -247,6 +247,14 @@ min_e D_e(i)
 - Candidate edits are tested with the **same seed and the same initial people** (`initialActors`).
 - The delta is always candidate minus baseline: `evacuationTimeSeconds`, `evacuationTimePercent`, `maxQueueLength`, `peakCongestion`, `meanCongestion`, `effectiveTimeSeconds`.
 - A candidate is proposed only if `Δeffective + 0.1·ΔmaxQueue < −0.5 s`.
+- **Robustness** (`confirm_candidate`, spec P1 "three random-seed comparison"):
+  - The winner is re-tested on seeds `s+1` and `s+2`. Each seed gets a fresh crowd, and the candidate reuses that seed's baseline people.
+  - The tool reports the `Δeffective` for each seed, the mean, the worst seed, and whether every seed improved.
+  - The proposal is refused if the mean across the three seeds is `≥ −0.5 s`.
+  - Each proposal's evidence carries `seedsTested`, `robustMeanSeconds` and `robustWorstSeconds`.
+- **Before/after maps** (`compareRuns` in `@egress/client`, `fieldDifference` in core):
+  - The map is candidate − baseline time-averaged congestion. Candidate values are sampled at each baseline cell's center, so slightly different grids still line up.
+  - Negative cells are where the change relieved crowding.
 - The suggestions it tests are geometric and validated:
   - widen the nearest door or exit by +0.6 m (or +0.3 m), within its wall's free span;
   - add a 1.2 m exit at the middle of the best free outside wall.

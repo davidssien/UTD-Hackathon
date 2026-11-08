@@ -37,6 +37,9 @@ Open **http://localhost:3000/dev** after `npm install && npm run dev`. It's a pl
 | Actor dots | `playback.actorsNow()` returns `{ actorXY, actorFlags }`, interpolated. Flag 1 means queued (draw red); flag 3 means exited (hide). |
 | Painting preview | `paintWeights(compileFloor(doc), strokes)`: per-cell weights in 0–4. Pass the strokes in `scenario.population.strokes`. |
 | Ghost previews | `proposal.ghost.doc`, plus `createdIds` / `changedIds` / `removedIds`. The bubble text is `proposal.notes.byCommand[i]`. |
+| "Simulation server offline" banner | `useEgress(client.runner)` returns `{ online, agentModel, activeRuns, activeJobs }`. Disable Evacuate or Ask, or show a banner, when `online` is false. *(branch `backend-passes`)* |
+| Before/after card and difference heatmap | `await client.compareRuns(proposal.baselineRunId, proposal.candidateRunId)` returns `{ baseline, candidate, delta, congestionDiff }`. Draw `congestionDiff` with a diverging palette: negative (relieved) one hue, positive the other. *(branch `backend-passes`)* |
+| Robustness line | `proposal.delta.seedsTested`, `robustMeanSeconds` and `robustWorstSeconds` give text like "held up on 3 different crowds: mean −18.7 s". *(branch `backend-passes`)* |
 
 Fixtures: `content/scenes/{one-room,two-rooms-corridor,hall}.json`. Don't hand-edit them; regenerate with `node content/scenes/generate.mts`.
 
