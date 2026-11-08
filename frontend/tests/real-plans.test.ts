@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
+import { fileURLToPath } from 'node:url';
 import {recognizeSketch} from '../lib/sketch-import.ts';
 import {polygonArea} from '../lib/rooms.ts';
 import {rectangularFootprint} from '../lib/scan-structure.ts';
 test('actual A1.2 construction plan produces a floor covering the house, not just the WC',async()=>{
- const {data,info}=await sharp(new URL('./fixtures/real-plans/farmhouse-first-floor.png',import.meta.url).pathname).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ const {data,info}=await sharp(fileURLToPath(new URL('./fixtures/real-plans/farmhouse-first-floor.png', import.meta.url))).ensureAlpha().raw().toBuffer({resolveWithObject:true});
  const result=recognizeSketch({data,width:info.width,height:info.height} as unknown as ImageData);
  const floor=result.building.floors?.find(f=>f.id==='detected-footprint');assert.ok(floor);
  // Manually inspected drawing: exterior occupies almost the full 870x443 crop.
