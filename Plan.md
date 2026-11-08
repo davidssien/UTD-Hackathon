@@ -451,7 +451,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 | Pass | Contents | Gate |
 |---|---|---|
-| 6 | **T: one central `.env`, `npm run db` wrapper, team token.** Small, and first. | T done-when list on a second machine |
+| 6 ✅ | **T: one central `.env`, `npm run db` wrapper, team token.** Small, and first. *Code done 2026-11-08; the second-machine check waits on the team token.* | T done-when list on a second machine |
 | 7 | A (display, including the steady LIVE badge) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists |
 | 8 | C: env-driven endpoints, the home server live with edge lockdown, sharing and presence | C done-when list from a phone on cellular data |
 | 9 | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated |
@@ -498,7 +498,7 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - [ ] Create the publisher token (SELF_HOSTING §4) and keep it in a password manager.
 - [ ] Set the desktop to never sleep, use wired ethernet, and set Windows Update active hours around demos.
 - [ ] Pick black or blueprint after the Pass 7 trial.
-- [ ] **Pass 6:** make the team SpacetimeDB identity, either a dedicated account or an organization for Maincloud (§3 T). Put its token, the NVIDIA key and the service secret into the central `.env`, and share that file through a password manager.
+- [ ] **Pass 6:** make the team SpacetimeDB identity, either a dedicated account or an organization for Maincloud (§3 T). Copy `.env.example` to `.env` at the repo root and fill in `NVIDIA_API_KEY`, `EGRESS_SERVICE_SECRET`, `SPACETIME_TOKEN` and `SPACETIME_DB_IDENTITY` (the database identity of `egress-dev`). Share the file through a password manager, then run the second-machine check (§3 T, Done when).
 
 ## 8. Open questions for Cody
 
@@ -601,3 +601,4 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D80 | 11-08 | **Agentic mode is a director, not a swarm.** One Nemotron call sets population behavior profiles; at most ~8 event-driven calls set group intents. There's a hard per-run budget, cached situations, deterministic fallback, and a recorded decision tape so replays need no calls. The engine still moves everyone. |
 | D81 | 11-08 | **Security review before the public tag.** An authorization matrix e2e (every reducer and view × every role × own and foreign ids) plus checks on auth, links, abuse limits, LLM injection, web headers and upload routes, the edge and secrets. Recorded in `docs/SECURITY.md`. |
 | D82 | 11-08 | **A steady LIVE badge.** Following live trails the edge by about one chunk so playback never stalls. The badge debounces: on within 1 s of the edge, off only when more than 4 s behind or after a scrub back. The thumb sits at the front of the timeline with a live-edge marker. |
+| D83 | 11-08 | **Pass 6 as built.**<br>• `.env.example` at the repo root replaces the per-component examples.<br>• The runner loads `services/runner/.env` first, then the root `.env`; `SPACETIME_URL` derives the WebSocket URI.<br>• `scripts/spacetime.mjs` (`npm run db`, `db:publish`, `db:logs`, `db:sql`, `db:generate`) rebuilds `.spacetime/cli.toml` on each call, logs in by token, targets `SPACETIME_DB_IDENTITY` when set, finds the Windows CLI shim, and never prints the token. It was verified end to end on a throwaway local database.<br>• `next.config.ts` parses the root `.env` without loading it into `process.env` and inlines only the public URI and database name.<br>• `npm run build` runs a bundle secret scan, verified to fail on a planted value. |

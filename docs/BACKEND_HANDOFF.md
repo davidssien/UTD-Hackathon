@@ -65,16 +65,13 @@ Startup initially failed with 401 because the legacy saved token had been issued
 
 The active Maincloud process ID is recorded in gitignored `services/runner/.env.maincloud-runner.pid`; output/error logs are in `.env.maincloud-runner.log` / `.env.maincloud-runner.err`. Current PID at verification: **564**. Verify the process identity before using a saved PID to stop it. No credentials appear in those notes.
 
-To restart Maincloud operation from the repo with the existing secret available:
+**Since Pass 6 (2026-11-08)** the runner reads the team `.env` at the repo root (copy `.env.example`), so restarting is just:
 
 ```powershell
-$env:SPACETIME_URI='wss://maincloud.spacetimedb.com'
-$env:SPACETIME_DB='egress-dev'
-$env:NEMOTRON_MODEL='nvidia/nemotron-3.5-lightning-30b-a3b'
 npm start -w @egress/runner
 ```
 
-Use the same command with `ws://127.0.0.1:3010` / `egress-local` for local operation. The runner must be active for new simulations/agent jobs; stored projects, results and replay remain in SpacetimeDB when it stops. See the [Maincloud deployment guide](https://spacetimedb.com/docs/how-to/deploy/maincloud/) for the hosted database lifecycle.
+Precedence is shell variables, then the optional `services/runner/.env` override, then the root `.env`. Setting `SPACETIME_URI`/`SPACETIME_DB` in the shell (for example `ws://127.0.0.1:3010` / `egress-local`) still points one runner at another database. Publish with `npm run db:publish`; nobody needs `spacetime login`. The runner must be active for new simulations/agent jobs; stored projects, results and replay remain in SpacetimeDB when it stops. See the [Maincloud deployment guide](https://spacetimedb.com/docs/how-to/deploy/maincloud/) for the hosted database lifecycle.
 
 ## Deferred frontend and demo work
 

@@ -50,12 +50,15 @@ export default function EgressStudio() {
   const [error, setError] = useState('');
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    const backend = params.get('backend') ?? 'maincloud';
+    // Default: the server named in the repo .env (inlined by next.config.ts), else Maincloud egress-dev.
+    const backend = params.get('backend') ?? 'server';
     const client = backend === 'local'
       ? createSpacetimeClient({ uri: params.get('uri') ?? 'ws://127.0.0.1:3010', db: params.get('db') ?? 'egress-local' })
       : backend === 'mock' // in-memory, development only; nothing is stored
         ? createMockClient({ seed: [{ name: 'Courtyard study', doc: example() }] })
-        : createSpacetimeClient({ uri: 'wss://maincloud.spacetimedb.com', db: 'egress-dev' });
+        : backend === 'maincloud'
+          ? createSpacetimeClient({ uri: 'wss://maincloud.spacetimedb.com', db: 'egress-dev' })
+          : createSpacetimeClient({ uri: process.env.EGRESS_SPACETIME_URI || 'wss://maincloud.spacetimedb.com', db: process.env.EGRESS_SPACETIME_DB || 'egress-dev' });
     let disposed = false, started = false;
     const start = () => {
       if (started || client.status.get() !== 'connected') return;
@@ -547,7 +550,7 @@ function ShareModal({ client, role, backend, onClose }: { client: EgressClient; 
     setError('');
     void client.createInvite('viewer', 24 * 14).then(code => {
       const url = new URL(location.origin + location.pathname);
-      if (backend !== 'maincloud') url.searchParams.set('backend', backend);
+      if (backend !== 'server') url.searchParams.set('backend', backend);
       const params = new URLSearchParams(location.search);
       for (const k of ['uri', 'db']) { const v = params.get(k); if (v) url.searchParams.set(k, v); }
       url.searchParams.set('join', code);

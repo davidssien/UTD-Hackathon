@@ -4,11 +4,12 @@ Branch `backend-passes`. Design source: Plan.md §8 "UI direction v2" and the sk
 
 ## Open it
 
-`npm install`, then `npm run dev` and open http://localhost:3000/.
+`npm install`, copy `.env.example` to `.env` at the repo root and fill it in, then `npm run dev` and open http://localhost:3000/.
 
 | URL | Backend |
 |---|---|
-| `/` | Maincloud `egress-dev` (default). Projects live on the server; the browser keeps only its SpacetimeDB token. |
+| `/` | The server in the repo `.env` (`SPACETIME_PUBLIC_URL` or `SPACETIME_URL`, plus `SPACETIME_DB`), inlined at build time. Without a `.env`: Maincloud `egress-dev`. Projects live on the server; the browser keeps only its SpacetimeDB token. |
+| `/?backend=maincloud` | Maincloud `egress-dev`, whatever the `.env` says. |
 | `/?backend=local` | A local SpacetimeDB at `ws://127.0.0.1:3010`, database `egress-local`. Add `&db=egress-backend` (or `&uri=`) to point elsewhere. Start a runner for the same database. |
 | `/?backend=mock` | In-memory development backend (real simulation and agent in the browser). Nothing is stored. |
 | `?project=<id>` | Opens that project if you are a member. The URL always tracks the open project. |

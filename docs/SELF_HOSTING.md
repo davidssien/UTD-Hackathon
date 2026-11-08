@@ -9,7 +9,7 @@ One Windows desktop runs everything: the database, the simulation runner, the we
 | Website (Next.js production build) | `127.0.0.1:3100` | `https://dontrepeatyourself.dev` |
 | Cloudflare Tunnel | outbound to Cloudflare | — |
 
-Steps marked **(Pass 6)** depend on code landing in Pass 6: the central `.env` and the `npm run db` wrapper. Until then, use the manual commands shown next to them.
+Everything reads one team `.env` at the repo root (copy `.env.example`), and `npm run db:*` drives the SpacetimeDB CLI with the token from it.
 
 ---
 
@@ -52,7 +52,7 @@ npm ci
    (Invoke-RestMethod -Method Post http://127.0.0.1:3010/v1/identity).token
    ```
    Save the token in a password manager. **The identity that first publishes `egress` owns it; without this token the module can't be updated.**
-3. Put the token in the central `.env` at the repo root. **(Pass 6)** Copy `.env.example` to `.env`; until then use `.env.deploy` from `.env.deploy.example`.
+3. `Copy-Item .env.example .env` and set the SpacetimeDB lines:
    ```ini
    SPACETIME_URL=http://127.0.0.1:3010
    SPACETIME_PUBLIC_URL=https://db.dontrepeatyourself.dev
@@ -60,32 +60,31 @@ npm ci
    SPACETIME_TOKEN=<the token>
    ```
 4. Publish the module. This uses a CLI config inside the repo (`.spacetime/`, gitignored), so nobody's personal `spacetime login` is touched.
-   - **(Pass 6)** `npm run db:publish`
-   - Until then:
+   - `npm run db:publish`
+   - Or by hand, with the same repo-local config:
      ```powershell
      $cfg = "C:\Egress\.spacetime\cli.toml"
      spacetime --config-path $cfg server add --url http://127.0.0.1:3010 --no-fingerprint --default home
-     spacetime --config-path $cfg login --token <SPACETIME_PUBLISH_TOKEN>
+     spacetime --config-path $cfg login --token <SPACETIME_TOKEN>
      spacetime --config-path $cfg publish egress --server home --module-path spacetimedb --delete-data=never --yes
      ```
    This flow was verified on 2026-11-08: a server-issued token published a test database to a local server.
 
 ## 5. Runner
 
-1. Add the runner's keys to the same central `.env`. **(Pass 6)** Until then the runner reads `services\runner\.env` (from its `.env.example`) with `SPACETIME_URI=ws://127.0.0.1:3010`.
+1. Add the runner's keys to the same `.env`. The runner derives `ws://127.0.0.1:3010` from `SPACETIME_URL`.
    ```ini
    EGRESS_SERVICE_SECRET=<the team's runner secret; its sha256 is built into the module>
    NVIDIA_API_KEY=<your key; it never leaves this machine>
    NEMOTRON_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
    ```
-2. Test it: `npm start -w @egress/runner`. It should log that it connected and registered. On first connect it saves its own token next to `.env`. Stop it with Ctrl+C.
+2. Test it: `npm start -w @egress/runner`. It should log that it connected and registered. On first connect it saves its own token in `services\runner\` (gitignored). Stop it with Ctrl+C.
 
 ## 6. Website
 
 1. Point the site at the public database:
-   - **(Pass 6)** Nothing to do: the site reads `SPACETIME_PUBLIC_URL` and `SPACETIME_DB` from the central `.env`, and only those two values reach the browser.
+   - Nothing to do: the site reads `SPACETIME_PUBLIC_URL` and `SPACETIME_DB` from the `.env` at build time, and only those two values reach the browser. `npm run build` fails if a secret value shows up in the bundle.
 
-   - Until then, use `https://dontrepeatyourself.dev/?backend=local&uri=wss://db.dontrepeatyourself.dev&db=egress`.
 2. Build and test:
    ```powershell
    npm run build
@@ -173,7 +172,7 @@ Reboot the desktop and confirm the site comes back without logging in.
 cd C:\Egress
 git fetch --tags; git checkout STABLE-V2      # or the new tag
 npm ci
-npm run db:publish                             # (Pass 6); or the step 4 commands. Additive changes only.
+npm run db:publish                             # additive changes only
 npm run build
 nssm restart EgressRunner; nssm restart EgressWeb
 ```
