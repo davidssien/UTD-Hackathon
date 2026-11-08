@@ -1,4 +1,10 @@
-# ExitCraft Studio
+# Egress
+
+Current build status and decisions: [Plan.md](Plan.md). Backend handoff and verified NVIDIA/Maincloud results: [docs/BACKEND_HANDOFF.md](docs/BACKEND_HANDOFF.md). Preserved frontend references: [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md). Blender and 3D workflow: [docs/3D_ASSET_PLAN.md](docs/3D_ASSET_PLAN.md).
+
+The product direction is one 3D scene with top-down-only editing, transitioning to isometric/freecam outside Edit. The ExitCraft frontend described below has not yet adopted all of those decisions; the backend reference page is `/dev?backend=local` with the local server and runner active. Plan.md supersedes older frontend descriptions below.
+
+## Existing ExitCraft frontend
 
 A local floorplan-to-3D workspace built with Next.js, React, TypeScript, and Three.js.
 

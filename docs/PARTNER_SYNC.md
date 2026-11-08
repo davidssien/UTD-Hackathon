@@ -4,6 +4,16 @@
 
 Context: [Plan.md](../Plan.md) is the build plan. We've renamed the product **Egress**.
 
+## Latest handoff — 2026-11-07
+
+- **One 3D scene throughout.** Design/Edit locks that scene overhead for all editing; leaving Edit transitions to isometric and enables freecam. Do not create a second 2D visual model. The top-left viewcube reflects orientation and respects above-floor limits. Only occluding walls/attached detail dither to reveal the floor; furniture stays opaque.
+- The supplied working prototype, GUI notes and sketches are preserved unchanged in `docs/reference/gui`. [UI_REFERENCE.md](UI_REFERENCE.md) records the persistent File/nav/dock/pan layout, Design/Simulate label mapping, Analysis Report/Suggestions plus right-side chat, and deferred fire/upload features. These references guide the frontend later; they do not expand the backend pass.
+- [3D_ASSET_PLAN.md](3D_ASSET_PLAN.md) records Blender GLB conventions, full-angle geometry, normal/reinforced/glass wall families, procedural joins/openings, and future furniture footprint validation. The current shared furniture contract remains unchanged.
+- Maincloud **`egress-dev` is deployed**. The real client E2E passed edit/undo, streamed evacuation, heatmap, proposal ghost and acceptance. Hosted Nemotron also delivered a measured proposal to `/dev?backend=local` without fixed-step fallback, using **`nvidia/nemotron-3.5-lightning-30b-a3b`**. Full evidence and runner lifecycle in [BACKEND_HANDOFF.md](BACKEND_HANDOFF.md).
+- The production frontend still needs to connect through `createSpacetimeClient({ uri: 'wss://maincloud.spacetimedb.com', db: 'egress-dev' })`. Its public connection settings contain no NVIDIA key. `/dev` currently supports local/mock selection only. The user approved ongoing Maincloud operation; a background runner is now connected and ready with Lightning. The local runner remains active separately. Saved credentials are isolated by database target.
+
+The sections below retain the earlier discussion context; use the latest handoff and Plan.md where they differ.
+
 The backend lives on `implement-backend`. Here's how the two branches stay in sync:
 - After each of your commits, we merge `main` into our branch, so we're always testing against your newest UI.
 - Our Pass 0 (contracts plus a mock client) lands on `main` at about **19:30**.

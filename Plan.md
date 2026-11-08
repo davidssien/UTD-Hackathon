@@ -7,10 +7,11 @@
 > - [docs/reference/CONTRA_CONTRACTS.ts](docs/reference/CONTRA_CONTRACTS.ts): reference only. Where they differ, this plan wins.
 >
 > Partner discussion items are in [docs/PARTNER_SYNC.md](docs/PARTNER_SYNC.md).
+> Current frontend references and camera decisions are in [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md); the Blender workflow is in [docs/3D_ASSET_PLAN.md](docs/3D_ASSET_PLAN.md). Backend verification and deployment evidence are in [docs/BACKEND_HANDOFF.md](docs/BACKEND_HANDOFF.md).
 
 **Deadline:** Sun 2026-11-08 12:00 CST · **Written:** Sat 2026-11-07 17:10 CST · **Branch:** `implement-backend`
 
-## Status — Sat 19:00 CST
+## Status — Sat 2026-11-07, backend handoff verified
 
 **Working now, on `main`:** open `/dev` (`npm run dev`, then http://localhost:3000/dev). Everything below runs in the browser through the mock client.
 - **Edit:** pen, box, erase and door/exit/window tools on a planar wall graph, with T-junction splitting and boxes that share sides.
@@ -49,10 +50,22 @@
   3. `$env:SPACETIME_URI='ws://127.0.0.1:3010'; $env:SPACETIME_DB='egress-local'; npm start -w @egress/runner`
   4. Open `http://localhost:3000/dev?backend=local`. Without `?backend=local`, `/dev` uses the in-browser mock.
 
+**NVIDIA hosted agent, verified in `/dev?backend=local`:**
+- `NVIDIA_API_KEY` is accessible to the runner through its environment. Keep it server-side; never put it in browser configuration or committed files.
+- The configured primary is `nvidia/nemotron-3-super-120b-a12b`; it was unavailable during the first live job. The model fallback, `nvidia/nemotron-3.5-lightning-30b-a3b`, returned real tool calls from `https://integrate.api.nvidia.com/v1/chat/completions`. Subsequent verification pinned Lightning with `NEMOTRON_MODEL` in the runner process environment.
+- Final local verification: **LLM mode, 9 tool calls, 1 proposal, no fixed-step fallback**. On the two-rooms fixture with the same 150 people and seed 1, widening the exit from 1.2 m to 1.8 m changed evacuation time **113.8 → 73.7 s (−40.1 s, −35.24%)**, max queue **17 → 6**. The client received the measured proposal and Accept/Reject controls; it remains awaiting review.
+- Verification exposed a missing enforcement check: `submit_proposal` now rejects candidates below the existing improvement threshold and evidence from a different baseline. The model prompt explicitly requires saving an improving proposal. No shared contract changed.
+
+**Maincloud `egress-dev`, deployed and verified:**
+- Login is complete. Published the existing module with `--delete-data=never`; no reset or breaking migration was requested.
+- Dashboard: https://spacetimedb.com/egress-dev. The client E2E passed against `wss://maincloud.spacetimedb.com` / `egress-dev`: edit, undo, 50/50 evacuated, replay and heatmap, an agent proposal ghost, then acceptance.
+- The verification runner stopped after the check. The user then approved ongoing operation, and a background Maincloud runner is now connected, registered and ready with Lightning. Saved-token reconnection retained its identity. The local runner remains active separately.
+
 **Still open:**
-1. **Cody:** run `spacetime login` (Maincloud), then `npm run publish:dev -w @egress/spacetimedb`. Point the runner at `wss://maincloud.spacetimedb.com` / `egress-dev`, which are the defaults in `services/runner/.env`.
-2. **Cody:** put `NVIDIA_API_KEY` in `services/runner/.env` to switch the agent from the heuristic planner to Nemotron.
-3. **Frontend lane:** wire ExitCraft to `createSpacetimeClient`, following the UI direction in §8.
+1. **Runner operation:** Maincloud and local workers are active. They are background processes on this machine, not auto-start services; restart after reboot or process exit. Maincloud credentials are saved separately by database target (D45).
+2. **Frontend lane:** wire ExitCraft to `createSpacetimeClient`, following §8 and the preserved GUI references. The current `/dev` route selects local or mock only; the Maincloud check used the real client from Node.
+3. **Frontend/assets later:** one 3D scene, top-down editing, isometric/freecam transition, viewcube, wall-only dithering and Blender assets. Furniture placement is planned; its backend model remains deferred.
+4. **Integration/demo:** multi-browser acceptance checks, venue scene, web host, error polish and submission work. This pass deploys `egress-dev`, not production `egress` or the website.
 
 **Pitch:** Egress is a collaborative building editor. You draw a floor plan, drop in a crowd, run a pedestrian-flow evacuation, watch congestion build up, and scrub the replay. A Nemotron agent then tests design changes against measured results.
 
@@ -182,7 +195,7 @@ interface EgressDocument {
   - **Degree ≥ 3:** each wall is mitered against its neighbours, plus a small hub polygon in the middle.
   - Opening intervals are subtracted from the wall.
 
-  The same polygons feed the 2D plan, the 3D extrusion, and simulation collision, so the picture always matches the physics.
+  The same polygons feed the 3D structure (also viewed top-down during Edit) and simulation collision, so the picture always matches the physics. The plain `/dev` harness may draw them in SVG for backend testing; that is not a second product visual model.
 - `rooms(doc)`: the bounded faces of the vertex graph, with openings treated as closed. This ports `lib/rooms.ts`.
 - `exteriorBoundary(doc)`: the outer face.
 - `diagnostics(doc)`: `NOT_ENCLOSED`, `NO_EXIT`, `EXIT_ON_INTERIOR_WALL`, `OPENING_OUTSIDE_WALL`, `OPENING_OVERLAP`, `UNREACHABLE_ROOM`. The editor saves invalid drafts; simulations report these diagnostics instead of crashing.
@@ -345,8 +358,8 @@ Aggregations are `instant` (labelled "Current" in the UI), `timeAverage`, and `p
 
 ### Runner allowlist and secrets
 
-- The runner's **identity** (public hex, safe to commit) is a constant in the module.
-- Its **token** lives only in `services/runner/.env`, which `.env*` already gitignores.
+- The runner registers its identity through `register_service(secret)`; the module stores the secret's SHA-256 and service identities (D21), not a hard-coded identity constant.
+- Tokens live in gitignored `services/runner/.env.runner-token-<target hash>` files, scoped to URI and database. The legacy `.env.runner-token` is no longer read because a token issued locally is not valid on Maincloud (D45). The service secret and NVIDIA key remain server-side.
 
 ### Migration policy
 
@@ -433,7 +446,7 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 ## 7. Runner and agent — `services/runner`
 
 **Run loop:**
-1. Connect with the stored token (`RUNNER_TOKEN`) and subscribe to `runner_queue`.
+1. Connect with the token saved for the selected URI/database, register the service identity, and subscribe to runner views.
 2. Claim a queued run with `claimSimulation` (the first writer wins).
 3. Read the frozen input from `runner_inputs`, then compile (LRU cache by `layoutHash`) and initialize.
 4. Step. Every 20 ticks, encode a chunk, then call `appendReplayChunk` and `reportProgress`.
@@ -449,7 +462,7 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
   - Endpoint: `https://integrate.api.nvidia.com/v1/chat/completions` (OpenAI-compatible).
   - Credentials and model come from `NVIDIA_API_KEY` and `NEMOTRON_MODEL`. The default model is `nvidia/nemotron-3-super-120b-a12b` and the fallback is `nvidia/nemotron-3.5-lightning-30b-a3b`.
   - Calls use plain `fetch` with OpenAI-style `tools`.
-  - Sending `chat_template_kwargs: { enable_thinking: false }` would cut latency, but the hosted API hasn't been tested with it yet. That's a Pass 0 spike.
+  - Hosted Lightning accepted tools and `chat_template_kwargs: { enable_thinking: false }` in live verification. The preferred Super model was unavailable; use `NEMOTRON_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b` for the verified dev setup.
 - **Tools.** Arguments are validated with Zod, and every call is logged to `agent_steps`.
 
 | Tool | Does |
@@ -470,6 +483,7 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
   Timeouts and errors show up as visible steps.
 - **No fabrication:** every number in the final message must come from a tool result. The agent never writes live geometry; only Accept does.
+- **Proposal gate:** `submit_proposal` checks the candidate's original baseline and requires `ΔeffectiveTime + 0.1 × ΔmaxQueue < −0.5`, matching the existing heuristic ranking rule. Unchanged or worse candidates are rejected before persistence.
 
 ---
 
@@ -477,7 +491,9 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
 
 ### UI direction (Cody, Sat 19:10) — for the frontend lane
 
-- **Edit is always top-down.** Every layout edit happens in an orthographic plan view, with no orbit or tilt while editing. Free-look 3D is for viewing the result after editing, and it is never an editing surface.
+- **One 3D scene; Edit is always top-down.** Every asset is 3D. Editing locks the same scene to an orthographic overhead camera, with no orbit or tilt. Exiting Edit transitions naturally to isometric and enables freecam; there is no secondary 2D visual model. The canonical plan graph and simulation grid remain data beneath the scene.
+- **Viewcube and floor visibility:** a top-left viewcube reflects orientation and offers presets outside Edit, kept clear of File. Bound freecam above the active floor (initial tuning proposal: no roll, roughly 10–90° elevation). Only walls that obscure the interior floor, including their attached trim/frames, receive dithering. Furniture/placeables remain opaque. These are frontend decisions, not saved domain fields.
+- **Preserved GUI references:** use the supplied Design / Simulate / Analysis navigation, persistent File menu, bottom dock, pan button, startup popup, and Analysis Report / Suggestions panel with right-side chat. The full reference archive, label mapping, and conflicts with older styling notes are recorded in [docs/UI_REFERENCE.md](docs/UI_REFERENCE.md). Layout work is deferred, and the reference's fire/QR/demo simulation are not new backend requirements.
 - **Blueprint look:** the floor is blueprint blue. Walls, and anything added from now on (openings, furniture, guides), are drawn in white lines.
 - **Layers button (heatmaps).** One button picks the active layer:
   - **People flow** (now): field `people.congestion`, `people.density` or `people.speed`, with aggregation Current / Average / Peak.
@@ -498,6 +514,7 @@ A run is **complete** when every reachable actor has exited, or when `durationSe
   - Walls carry an optional per-side `finish: { left?, right? }` holding texture IDs from a future finishes registry, where left and right are relative to start→end.
   - Physics never reads `finish`; it uses `material` and geometry only.
   - The 3D view should texture each side of the extruded `wallPolygons` piece from it, falling back to the material colour.
+- **Blender and furniture:** use the existing normal/reinforced/glass materials and authoritative wall geometry. Fit Blender GLB modules/materials to the wall structure, retaining procedural joins and opening dimensions. Furniture/placeables later validate footprints against walls/egress clearance; walls are not blocked by furniture, and conflicts are diagnosed. See [docs/3D_ASSET_PLAN.md](docs/3D_ASSET_PLAN.md); no furniture schema or asset API is added in this backend pass.
 
 Mode tabs sit at the top, and the toolbar switches with the mode.
 
@@ -571,7 +588,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - Root `npm test` runs every workspace's `node --test`.
   - Next `transpilePackages` for `@egress/*`; check `node_modules/next/dist/docs/` first.
   - Partner files untouched apart from `package.json` and `next.config.ts`.
-- [ ] **0.2 SpacetimeDB setup:**
+- [x] **0.2 SpacetimeDB setup:** (CLI and Maincloud login complete)
   - Install the `spacetime` CLI (`iwr https://windows.spacetimedb.com -useb | iex`).
   - *Human:* `spacetime login`.
   - Scaffold the TS module in `spacetimedb/`.
@@ -584,12 +601,12 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - `content/scenes/one-room.json`: a 10 × 8 m room with one 0.9 m exit.
   - `content/scenes/two-rooms-corridor.json`: two rooms feeding a 1.2 m corridor to one exit, a deliberate bottleneck.
   - A test checks both parse and pass diagnostics.
-- [ ] **0.5 Module:** (code written and typechecked; publish + codegen wait on the CLI)
+- [x] **0.5 Module:** (published locally and to `egress-dev`; bindings generated and used by the client)
   - All §5 tables, `sessions`, and the views.
   - Reducers stubbed, with their auth checks.
   - Publish `egress-dev` to Maincloud.
   - Generate bindings into `packages/client/src/bindings`.
-- [ ] **0.6 Spike** (≤ 30 min; record the outcome in §14):
+- [x] **0.6 Spike** (local findings in the status above/D22–D24; hosted tools verified with Lightning in D41):
   - (a) Does a view re-evaluate when the caller's `sessions` row changes?
   - (b) Does the module bundle workspace `@egress/core` and Zod?
   - (c) Does `t.array(t.u8())` arrive as `Uint8Array` or `number[]`?
@@ -598,7 +615,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   Fallbacks:
   - If (a) fails, use authorized procedures such as `getReplayChunks(runId, fromIndex)`.
   - If (b) fails, keep the module's validation self-contained.
-- [ ] **0.7 Runner skeleton:** (config, Nemotron client and spike script done; connection waits on bindings)
+- [x] **0.7 Runner skeleton:** (real local/Maincloud connections and service registration verified; D21 supersedes the original identity constant below)
   - Create and store a token, connect, and print the identity.
   - Add the identity constant to the module allowlist.
   - Subscribe to `runner_queue`.
@@ -633,12 +650,12 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - Corners and opening subtraction.
   - Tests: an L-corner has no notch; T and X junctions; 45°; a 15° bevel; a door cut.
 - [x] **1.3 Derived values and tests:** `rooms`, `exteriorBoundary`, `diagnostics`, with tests adapted from `tests/rooms.test.ts`.
-- [ ] **1.4 Module reducers:**
+- [x] **1.4 Module reducers:** (implemented; current client E2E verifies edit/open, with multi-browser integration checks still open)
   - `applyEdit`: load → apply → diff → write → revision++ → `edit_log`.
   - Projects, invites and roles.
   - `openProject`.
   - A viewer can't edit, and a non-member sees nothing.
-- [ ] **1.5 `SpacetimeEgressClient`:**
+- [x] **1.5 `SpacetimeEgressClient`:** (local and Maincloud client E2E passed)
   - The token is kept in `localStorage`.
   - View subscriptions build the `DocumentView`.
   - An optimistic queue of pending edits, reconciled by `requestId` against `edit_log`.
@@ -671,14 +688,14 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
   - Blocking an exit changes the metrics.
   - A run completes.
   - An infeasible N errors.
-- [ ] **2.7 Module:**
+- [x] **2.7 Module:** (implemented; current Maincloud E2E verifies run/replay/results)
   - `saveScenario`.
   - `requestSimulation`: freezes and dedupes the snapshot.
   - `cancelSimulation`.
   - The runner reducers.
   - Run, replay and result views.
   - `openRun`.
-- [ ] **2.8 Runner run loop:** per §7, with pacing and performance logs.
+- [x] **2.8 Runner run loop:** per §7, with pacing and performance logs.
 - [x] **2.9 Client:** — *(Playback, LIVE edge, heatmaps from frames; the mock runs the real sim in the browser)*
   - `startRun`.
   - `PlaybackController`: buffers chunks, interpolates, tracks the LIVE edge, handles ±10 s skips and seeking.
@@ -698,7 +715,7 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 - [x] **3.1 Agent loop:** the Nemotron client, the tool loop, the budget, step logging.
 - [x] **3.2 Tools:** per §7. Candidate runs execute unpaced in-process and are recorded with `recordAgentRun`, so they appear as ordinary runs.
-- [ ] **3.3 Module:**
+- [x] **3.3 Module:** (proposal delivery and acceptance verified on Maincloud)
   - Agent reducers and views.
   - `acceptProposal` through `core.applyEdit` with `requestId = proposalId`.
 - [x] **3.4 Client:** — *(the mock runs the real agent tools and heuristic planner in the browser)*
@@ -779,8 +796,8 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 
 ## 13. Human action items
 
-- [ ] **Cody:** `spacetime login` (Maincloud) once the CLI is installed.
-- [ ] **Cody:** create an NVIDIA API key at build.nvidia.com and put it in `services/runner/.env` as `NVIDIA_API_KEY`.
+- [x] **Cody:** `spacetime login` (Maincloud) once the CLI is installed.
+- [x] **Cody:** make `NVIDIA_API_KEY` available to the server-side runner. It is accessible in this session and has completed real hosted requests; `.env` is optional when inherited from the environment.
 - [ ] **Cody + partner:** walk through [docs/PARTNER_SYNC.md](docs/PARTNER_SYNC.md).
 - [ ] **Cody + partner:** choose the web host (Vercel?).
 
@@ -828,3 +845,10 @@ Each pass lists backend chunks, `/dev` work, what the partner can start on, and 
 | D37 | 11-07 | **Model math is recorded** in [docs/PEOPLE_FLOW_MODEL.md](docs/PEOPLE_FLOW_MODEL.md). Any change to a `PARAMS` value or formula must update that file in the same commit. |
 | D38 | 11-07 | **Run end:** a Live run ends when the flow has stabilized, not at a fixed time.<br>• `all-out`: every reachable person has left.<br>• `stabilized`: 10 s with no exits and the people still inside averaging under 0.05 m/s.<br>• `timeout`: safety cap only.<br>It's cheap (O(N) per tick) and reported as `metrics.endReason`. Circulate will reuse the window with occupancy/field-change signals. |
 | D31 | 11-07 | **Edit-mode estimate:** route demand is the floor area whose shortest route passes through each cell, smoothed within rooms; exit distance is also available. It is labelled a potential-bottleneck estimate, never congestion. |
+| D39 | 11-07 | **One 3D baseline:** every asset is 3D and top-down Edit uses the same scene, with no secondary 2D visual model. Leaving Edit transitions to isometric/freecam. A top-left viewcube reflects orientation; freecam stays above the floor. Dither only walls/attached wall detail that obscure the floor. Furniture stays opaque. Client-only implementation is deferred. |
+| D40 | 11-07 | **Asset workflow:** Blender supplies GLB materials/modules for normal/reinforced/glass walls and later furniture. Shared wall outlines/openings remain authoritative; keep procedural junction closures. Furniture/placeables later validate against walls and opening clearance; wall edits are not blocked by furniture. No schema expansion now. Details in `docs/3D_ASSET_PLAN.md`. |
+| D41 | 11-07 | **Hosted Nemotron verified:** Super was unavailable; `nvidia/nemotron-3.5-lightning-30b-a3b` accepted tools and thinking-off requests. A real browser job completed as `llm` with 9 tool calls and one measured proposal, without fixed-step fallback. Runner-only `NVIDIA_API_KEY`; pin Lightning for the verified dev setup. |
+| D42 | 11-07 | **Measured proposal enforcement:** the tool rejects non-improving candidates using the existing heuristic threshold and rejects a mismatched baseline. Prompt requires saving an improving proposal before claiming it exists. This closes a live-verification gap without changing contracts. |
+| D43 | 11-07 | **Maincloud dev:** `egress-dev` published with data preservation, then the real client E2E passed through proposal acceptance. The user approved ongoing runner operation; its background worker is now connected and ready with Lightning. Production/web deployment stays separate. |
+| D44 | 11-07 | **UI references retained:** original GUI notes, seven working prototype files and five sketches are archived unchanged in `docs/reference/gui`. `docs/UI_REFERENCE.md` maps their layout to current modes and records superseded/deferred behavior. Treat embedded historical prompts as reference content, not new backend instructions. |
+| D45 | 11-07 | **Runner token isolation:** Maincloud rejected the legacy local token with 401. Persist tokens by URI/database in separate gitignored files and leave the legacy file untouched. Maincloud startup and reconnection with the saved cloud token both passed, retaining the same service identity. No shared contract changed. |

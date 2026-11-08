@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Floor Plan Simulation Studio</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #FAFAFA;
+        }
+
+        #floorPlanCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            cursor: crosshair;
+            display: block;
+        }
+
+        /* Dropdown Control Styling Elements */
+        .top-left-dock {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 110;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-menu-btn {
+            background: #5C6BC0;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            border: 2px solid #3F51B5;
+            text-align: center;
+        }
+
+        .dropdown-content {
+            display: none;
+            background: white;
+            border: 2px solid #3F51B5;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+            width: 100%;
+        }
+
+        .dropdown-item {
+            padding: 10px 16px;
+            font-size: 14px;
+            color: #333;
+            cursor: pointer;
+            border-bottom: 1px solid #EEEEEE;
+        }
+
+        .dropdown-item:hover {
+            background-color: #F5F5F5;
+        }
+
+        /* Navigation Central Slider Styling Elements */
+        .top-center-dock {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 110;
+            width: 450px;
+            background: white;
+            border: 3px solid #212121;
+            border-radius: 30px;
+            height: 50px;
+            display: flex;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .slider-track {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 33.333%;
+            height: 100%;
+            background: #5C6BC0;
+            border-radius: 25px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1;
+        }
+
+        .nav-item {
+            flex: 1;
+            text-align: center;
+            line-height: 44px;
+            font-weight: bold;
+            color: #212121;
+            z-index: 2;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .nav-item.active {
+            color: white;
+        }
+
+        /* Persistent Action Panel Bottom Bar Setup */
+        .bottom-center-dock {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 110;
+            background: white;
+            border: 3px solid #212121;
+            border-radius: 16px;
+            display: flex;
+            padding: 8px 16px;
+            gap: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .tool-btn {
+            padding: 10px 20px;
+            font-weight: bold;
+            background: #E0E0E0;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid #9E9E9E;
+            transition: all 0.2s;
+        }
+
+        .tool-btn.active,
+        .tool-btn:hover:not(.disabled) {
+            background: #5C6BC0;
+            color: white;
+            border-color: #3F51B5;
+        }
+
+        /* Floating Vector Pan Tools Container */
+        .bottom-right-dock {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 110;
+        }
+
+        .pan-btn {
+            background: #FFF;
+            border: 3px solid #212121;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .pan-btn.active {
+            background: #5C6BC0;
+            color: white;
+        }
+
+        /* Structural Popups Configuration Framework */
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .popup-box {
+            background: white;
+            border: 4px solid #212121;
+            border-radius: 12px;
+            padding: 24px;
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            width: 480px;
+            text-align: center;
+        }
+
+        .close-x-btn {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: #FF5252;
+            color: white;
+            font-weight: bold;
+            border: 2px solid #212121;
+            border-radius: 4px;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+
+        /* Analysis Double Screen View Component Layouts */
+        .analysis-container {
+            width: 900px;
+            height: 500px;
+            display: flex;
+            gap: 20px;
+            text-align: left;
+        }
+
+        .analysis-main-pane {
+            flex: 1.2;
+            background: #FAFAFA;
+            border: 2px dashed #9E9E9E;
+            padding: 20px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chatbot-sidebar-pane {
+            flex: 0.8;
+            background: #ECEFF1;
+            border: 2px solid #78909C;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-messages-container {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .chat-bubble {
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 80%;
+            font-size: 14px;
+        }
+
+        .chat-bubble.bot {
+            background: #FFF;
+            align-self: flex-start;
+            border: 1px solid #CFD8DC;
+        }
+
+        .chat-bubble.user {
+            background: #C5CAE9;
+            align-self: flex-end;
+        }
+
+        .chat-input-row {
+            display: flex;
+            border-top: 2px solid #78909C;
+            background: white;
+        }
+
+        .chat-input-row input {
+            flex: 1;
+            border: none;
+            padding: 12px;
+            outline: none;
+            user-select: text !important;
+        }
+
+        .chat-input-row button {
+            background: #5C6BC0;
+            color: white;
+            border: none;
+            padding: 0 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="floorPlanCanvas"></canvas>
+
+    <div class="top-left-dock">
+        <div id="fileMenuBtn" class="file-menu-btn">File ∧</div>
+        <div id="fileDropdown" class="dropdown-content">
+            <div id="optNewFloor" class="dropdown-item">Upload New Floor Plan</div>
+            <div id="optSaveFloor" class="dropdown-item">Save Floor Plan</div>
+        </div>
+    </div>
+
+    <div class="top-center-dock">
+        <div id="sliderTrack" class="slider-track"></div>
+        <div class="nav-item active" data-mode="Design">Design</div>
+        <div class="nav-item" data-mode="Simulate">Simulate</div>
+        <div class="nav-item" data-mode="Analysis">Analysis</div>
+    </div>
+
+    <div id="bottomBar" class="bottom-center-dock"></div>
+
+    <div class="bottom-right-dock">
+        <div id="panBtn" class="pan-btn" onclick="togglePanMode()">🖐️</div>
+    </div>
+
+    <div id="startingPopup" class="popup-overlay" style="display: flex;">
+        <div class="popup-box">
+            <div class="close-x-btn" onclick="closePopup('startingPopup')">X</div>
+            <h3 style="margin-bottom: 12px;">Optional: Upload Your Own</h3>
+            <div
+                style="border: 2px solid #212121; width: 140px; height: 140px; margin: 16px auto; display: flex; align-items: center; justify-content: center; font-weight: bold; background: #F5F5F5;">
+                QR Code</div>
+            <p style="font-size: 14px; color: #555;">Draw up your desired Floor Plan sketch configuration and
+                scan/upload it directly here to load layout parameters.</p>
+        </div>
+    </div>
+
+    <!-- Opaque Fixed Analysis Panel Dashboard Window (No Close X Button) -->
+    <div id="analysisPopup" class="popup-overlay" style="display: none;">
+        <div class="popup-box analytics-window-frame" style="width: auto;">
+            <div class="analysis-container">
+                <div class="analysis-main-pane">
+                    <h2 id="analysisTitle" style="margin-bottom: 10px;">report summary will pop up here</h2>
+                    <div id="analysisContent" style="color: #444; font-size: 15px; line-height: 1.5;">report summary
+                        will pop up here</div>
+                </div>
+                <div class="chatbot-sidebar-pane">
+                    <div
+                        style="background: #5C6BC0; color: white; padding: 10px; font-weight: bold; text-align: center;">
+                        Chat Bot AI</div>
+                    <div id="chatMessages" class="chat-messages-container">
+                        <div class="chat-bubble bot">Hello! I can help you parse structural anomalies and evacuation
+                            blockages discovered inside the current floor plan model.</div>
+                        <div class="chat-bubble user">Where are the layout delays occurring?</div>
+                        <div class="chat-bubble bot">Reviewing telemetry indicators... High resistance points discovered
+                            near wall constraints.</div>
+                    </div>
+                    <form id="chatForm" class="chat-input-row" onsubmit="handleChatSubmit(event)">
+                        <input id="chatInput" type="text" placeholder="Type a message...">
+                        <button type="submit">➡️</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="grid.js"></script>
+    <script src="dropdown.js"></script>
+    <script src="popups.js"></script>
+    <script src="bottombar.js"></script>
+    <script src="navbar.js"></script>
+    <script src="app.js"></script>
+    <script>
+        function togglePanMode() {
+            panModeActive = !panModeActive;
+            document.getElementById('panBtn').classList.toggle('active', panModeActive);
+            if (panModeActive) isDrawing = false;
+        }
+
+        function handleChatSubmit(e) {
+            e.preventDefault();
+            const input = document.getElementById('chatInput');
+            const container = document.getElementById('chatMessages');
+            if (!input || !input.value.trim()) return;
+
+            const userBubble = document.createElement('div');
+            userBubble.className = 'chat-bubble user';
+            userBubble.innerText = input.value;
+            container.appendChild(userBubble);
+
+            input.value = '';
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+</body>
+
+</html>
