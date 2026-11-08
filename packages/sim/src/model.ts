@@ -12,6 +12,7 @@ import {
 } from '@egress/core';
 import { compileFloor, type CompiledFloor, type Portal } from './compile.ts';
 import { FieldAccumulator } from './fields.ts';
+import { isSpawnable, paintWeights } from './paint.ts';
 import { ActorHash, closestOnSegment, segmentsIntersect } from './spatial.ts';
 
 export const MODEL_ID = 'egress-pedestrian';
@@ -113,19 +114,27 @@ export function initialize(input: FrozenSimulationInput): SimState {
   const { scenario } = input;
   const n = scenario.population.count;
   const rng = createRng(scenario.population.seed);
-  const { grid, walkable, room, navigable } = compiled;
+  const { grid, walkable } = compiled;
 
-  // Spawn cells: walkable interior, weighted by free fraction (painting multiplies in later — Pass 4).
+  // Spawn cells: walkable interior, weighted by free fraction × painted relative density (spec §4.1).
+  const painted = scenario.population.distribution === 'painted' && scenario.population.strokes.length > 0;
+  const weights = painted ? paintWeights(compiled, scenario.population.strokes) : null;
   const cells: number[] = [];
   const cdf: number[] = [];
   let total = 0;
   for (let i = 0; i < walkable.length; i++) {
-    if (!navigable[i] || room[i] < 0 || walkable[i] < 0.5) continue;
-    total += walkable[i];
+    if (!isSpawnable(compiled, i)) continue;
+    const w = walkable[i] * (weights ? weights[i] : 1);
+    if (w <= 0) continue;
+    total += w;
     cells.push(i);
     cdf.push(total);
   }
-  if (!cells.length) throw new DomainError('POPULATION_INFEASIBLE', 'There is no walkable inside area to place people in. Close the building outline first.');
+  if (!cells.length) {
+    throw new DomainError('POPULATION_INFEASIBLE', painted
+      ? 'The painting leaves no space where people can start. Erase some of the zero-density paint.'
+      : 'There is no walkable inside area to place people in. Close the building outline first.');
+  }
 
   const x = new Float64Array(n), y = new Float64Array(n), r = new Float64Array(n), vPref = new Float64Array(n);
   const placed = new Map<number, number[]>();

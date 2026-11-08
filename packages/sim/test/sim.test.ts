@@ -104,3 +104,28 @@ test('structural route demand converges on doors and the exit; exit distance gro
   const far = dist.values[c.nav.cellAt(15, 11)], near = dist.values[c.nav.cellAt(1, 1)];
   assert.ok(far > 20 && near < 2, `far ${far}, near ${near}`);
 });
+
+test('painting shifts where people start without changing N; erase restores uniform; zero paint excludes cells', async () => {
+  const { paintWeights } = await import('@egress/sim');
+  const doc = fixture('two-rooms-corridor.json');
+  const floorId = doc.floors[0].id;
+  const c = compileFloor(doc);
+  // Paint the west room heavily (set 4) and blank out the east room (set 0).
+  const strokes = [
+    { id: 'a', floorId, points: [{ x: 4, y: 7 }], radiusM: 6, mode: 'set' as const, weight: 4, falloff: 'flat' as const },
+    { id: 'b', floorId, points: [{ x: 12, y: 7 }], radiusM: 6, mode: 'set' as const, weight: 0, falloff: 'flat' as const },
+  ];
+  const w = paintWeights(c, strokes);
+  assert.equal(w[c.nav.cellAt(4, 7)], 4);
+  assert.equal(w[c.nav.cellAt(12, 7)], 0);
+  assert.equal(w[c.nav.cellAt(8, 1)], 1, 'corridor untouched');
+  const erased = paintWeights(c, [...strokes, { id: 'c', floorId, points: [{ x: 12, y: 7 }], radiusM: 6, mode: 'erase', weight: 0, falloff: 'flat' }]);
+  assert.equal(erased[c.nav.cellAt(12, 7)], 1);
+
+  const s = initialize({ runId: 'r', document: doc, scenario: { ...scenario(doc, 100), population: { count: 100, distribution: 'painted', strokes, seed: 2 } } });
+  assert.equal(s.n, 100, 'N is fixed');
+  let west = 0, east = 0;
+  for (let a = 0; a < s.n; a++) { if (s.y[a] > 2.2 && s.x[a] < 8) west++; if (s.y[a] > 2.2 && s.x[a] > 8) east++; }
+  assert.equal(east, 0, 'nobody starts where density is painted to zero');
+  assert.ok(west > 70, `most people start in the heavily painted room (${west})`);
+});

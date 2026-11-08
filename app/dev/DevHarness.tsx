@@ -9,11 +9,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ACTOR_EXITED, ACTOR_QUEUED, CELL_SIZE_M, TICK_RATE_HZ, deriveLayout, parseDocument, projectOnSegment,
-  type Aggregation, type EditCommand, type EgressDocument, type OpeningKind, type Pace, type ScalarField, type Vec2,
+  type Aggregation, type EditCommand, type EgressDocument, type OpeningKind, type Pace, type PopulationBrushStroke, type ScalarField, type Vec2,
 } from '@egress/core';
 import { createMockClient, type EgressClient, type PlaybackController, type ProposalView } from '@egress/client';
 import { useEgress } from '@egress/client/react';
-import { compileFloor, structuralField, type StructuralFieldId } from '@egress/sim';
+import { compileFloor, paintWeights, structuralField, type StructuralFieldId } from '@egress/sim';
 import oneRoom from '../../content/scenes/one-room.json';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import hall from '../../content/scenes/hall.json';
@@ -178,11 +178,39 @@ function LiveMode({ client, playback, onRun }: { client: EgressClient; playback:
     const agg = heatAgg !== 'auto' ? heatAgg : playback.state.get().complete ? 'timeAverage' : 'instant';
     return playback.field(heatField, agg);
   }), [heatField, heatAgg, playback]);
+  // Population paint: relative starting density; never changes N (spec §4).
+  const [painting, setPainting] = useState(false);
+  const [brush, setBrush] = useState<{ mode: PopulationBrushStroke['mode']; radiusM: number; weight: number }>({ mode: 'increase', radiusM: 1.5, weight: 2 });
+  const [strokes, setStrokes] = useState<PopulationBrushStroke[]>([]);
+  const [drawing, setDrawing] = useState<Vec2[] | null>(null);
+  const floorId = view.doc?.floors[0]?.id;
+  const paint = useMemo(() => {
+    if (!view.doc || (!painting && !strokes.length)) return null;
+    const live = drawing && floorId ? [...strokes, { id: 'draft', floorId, points: drawing, falloff: 'linear' as const, ...brush }] : strokes;
+    try {
+      const compiled = compileFloor(view.doc);
+      return { weights: paintWeights(compiled, live), grid: compiled.grid };
+    } catch {
+      return null;
+    }
+  }, [view.doc, painting, strokes, drawing, brush, floorId]);
+  const onPaint = (kind: 'down' | 'move' | 'up', p: Vec2) => {
+    if (!floorId) return;
+    if (kind === 'down') setDrawing([p]);
+    else if (kind === 'move' && drawing) {
+      const last = drawing[drawing.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) > brush.radiusM / 4) setDrawing([...drawing, p]);
+    } else if (kind === 'up' && drawing) {
+      setStrokes(list => [...list, { id: `stroke-${list.length}`, floorId, points: drawing, falloff: 'linear', ...brush }]);
+      setDrawing(null);
+    }
+  };
   const start = async () => {
     if (!view.projectId) return;
+    setPainting(false);
     const id = await client.startRun({
       scenarioVersion: 1, id: `scn-${Date.now()}`, projectId: view.projectId, name: 'Evacuate', durationSeconds: 300,
-      population: { count, distribution: 'uniform', strokes: [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] },
+      population: { count, distribution: strokes.length ? 'painted' : 'uniform', strokes, seed }, goal: { kind: 'evacuate', blockedExitIds: [] },
     }, pace);
     onRun(id);
     client.playback(id).play();
@@ -193,6 +221,7 @@ function LiveMode({ client, playback, onRun }: { client: EgressClient; playback:
         <label>People <input type="number" min={1} max={2000} value={count} onChange={e => setCount(Number(e.target.value))} style={{ width: 70 }} /></label>
         <label>Seed <input type="number" value={seed} onChange={e => setSeed(Number(e.target.value))} style={{ width: 60 }} /></label>
         <label>Pace <select value={pace} onChange={e => setPace(e.target.value as Pace)}>{(['x1', 'x2', 'x4', 'unpaced'] as const).map(p => <option key={p}>{p}</option>)}</select></label>
+        <button onClick={() => setPainting(v => !v)} style={tab(painting)}>Paint{strokes.length ? ` (${strokes.length})` : ''}</button>
         <button onClick={start}>Evacuate</button>
         {playback && <Transport playback={playback} />}
         <label>Heatmap <select value={heatField} onChange={e => setHeatField(e.target.value as typeof heatField)}>
@@ -203,7 +232,24 @@ function LiveMode({ client, playback, onRun }: { client: EgressClient; playback:
         </select>
         {run?.error && <span style={{ color: '#b42318' }}>{run.error.code}: {run.error.message}</span>}
       </Toolbar>
-      <PlanCanvas doc={view.doc} playback={playback} heat={heat} />
+      {painting && <Toolbar>
+        <strong style={{ color: '#1570ef' }}>Paint starting density</strong>
+        <select value={brush.mode} onChange={e => setBrush({ ...brush, mode: e.target.value as typeof brush.mode })}>
+          {(['increase', 'decrease', 'set', 'erase'] as const).map(m => <option key={m}>{m}</option>)}
+        </select>
+        <label>Radius <input type="number" step={0.25} min={0.25} max={10} value={brush.radiusM} onChange={e => setBrush({ ...brush, radiusM: Number(e.target.value) })} style={{ width: 60 }} /> m</label>
+        <label>Weight <input type="number" step={0.5} min={0} max={4} value={brush.weight} onChange={e => setBrush({ ...brush, weight: Number(e.target.value) })} style={{ width: 50 }} /></label>
+        <button onClick={() => setStrokes([])}>Reset to uniform</button>
+        <span style={{ color: '#6b7385' }}>Blue = where the {count} people are likely to start (initial distribution, not congestion). N stays {count}.</span>
+      </Toolbar>}
+      <PlanCanvas
+        doc={view.doc}
+        playback={painting ? null : playback}
+        heat={painting ? undefined : heat}
+        paint={painting || !playback ? paint : null}
+        onPointer={painting ? onPaint : undefined}
+        overlay={painting ? (ctx, toScreen) => drawBrush(ctx, toScreen, drawing, brush.radiusM) : undefined}
+      />
       {playback && <Scrubber playback={playback} />}
     </>
   );
@@ -289,7 +335,7 @@ function AnalysisMode({ client, runId }: { client: EgressClient; runId: string |
 
 // ── Plan canvas ─────────────────────────────────────────────────────────────
 
-function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat, heatMax = 4 }: {
+function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat, heatMax = 4, paint }: {
   doc: EgressDocument | null;
   onPointer?: (kind: 'down' | 'move' | 'up', world: Vec2) => void;
   overlay?: (ctx: CanvasRenderingContext2D, toScreen: (p: Vec2) => Vec2) => void;
@@ -298,6 +344,8 @@ function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat, heatMax =
   heat?: () => ScalarField | null;
   /** Value that maps to full colour. */
   heatMax?: number;
+  /** Painted relative starting density (0–4 per cell). */
+  paint?: { weights: Float32Array; grid: ScalarField['grid'] } | null;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const transform = useRef({ scale: 30, ox: 40, oy: 40, h: 600 });
@@ -325,6 +373,17 @@ function PlanCanvas({ doc, onPointer, overlay, playback, ghosts, heat, heatMax =
     if (doc) drawDoc(ctx, doc, toScreen, scale, {});
     for (const g of ghosts ?? []) if (g.ghost) drawGhost(ctx, doc, g, toScreen, scale);
 
+    if (paint) {
+      const { origin, cellSizeM: cs, width } = paint.grid;
+      for (let i = 0; i < paint.weights.length; i++) {
+        const w = paint.weights[i];
+        if (!(w > 0)) continue;
+        const cx = i % width, cy = (i - cx) / width;
+        const s = toScreen({ x: origin.x + cx * cs, y: origin.y + (cy + 1) * cs });
+        ctx.fillStyle = `rgba(21, 112, 239, ${0.08 + 0.6 * (w / 4)})`;
+        ctx.fillRect(s.x, s.y, cs * scale + 0.5, cs * scale + 0.5);
+      }
+    }
     const field = heat?.();
     if (field) {
       // Sequential ramp: transparent → amber → red. Congestion and density both saturate around 4.
@@ -437,6 +496,15 @@ function drawGhost(ctx: CanvasRenderingContext2D, current: EgressDocument | null
 }
 
 // ── geometry helpers for the harness ──
+
+function drawBrush(ctx: CanvasRenderingContext2D, toScreen: (p: Vec2) => Vec2, points: Vec2[] | null, radiusM: number) {
+  if (!points?.length) return;
+  const r = Math.abs(toScreen({ x: radiusM, y: 0 }).x - toScreen({ x: 0, y: 0 }).x);
+  const p = toScreen(points[points.length - 1]);
+  ctx.strokeStyle = 'rgba(21, 112, 239, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
+}
 
 function targetId(c: EditCommand): string | null {
   return 'openingId' in c ? c.openingId : 'wallId' in c ? c.wallId : 'vertexId' in c ? c.vertexId : null;
