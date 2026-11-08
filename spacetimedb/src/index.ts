@@ -274,7 +274,13 @@ const session_compare = table({ name: 'session_compare' }, {
   candidateRunId: t.string(),
 });
 
+const import_sessions = table({ name: 'import_sessions' }, {
+  id: t.string().primaryKey(), reader: t.string(), uploader: t.string(),
+  expires: t.f64(), image: t.string(),
+});
+
 const spacetimedb = schema({
+  import_sessions,
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
   layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats, session_compare,
   project_stats, session_preview, project_links, online_connections, room_labels, label_requests, presence_modes,
@@ -1094,3 +1100,43 @@ export const runner_inputs = spacetimedb.view({ name: 'runner_inputs', public: t
   for (const j of ctx.db.agent_jobs.status.filter('running')) if (j.claimedBy === mine) hashes.add(j.snapshotHash);
   return [...hashes].map(h => ctx.db.layout_snapshots.hash.find(h)).filter(s => s != null);
 });
+
+
+// Capability-based pairing works across anonymous phone/desktop HTTP requests.
+// The table is private; only the reader capability can retrieve the photograph.
+export const import_session = spacetimedb.procedure(
+  { action: t.string(), id: t.string(), token: t.string(), value: t.string() },
+  t.string(),
+  (ctx, { action, id, token, value }) => ctx.withTx(tx => {
+    const error = (message: string) => JSON.stringify({ error: message });
+    if (!/^[a-f0-9]{32}$/.test(id) || !/^[a-f0-9]{64}$/.test(token)) return error('Invalid upload session.');
+    const now = Number(tx.timestamp.microsSinceUnixEpoch / 1000n);
+    if (action === 'create') {
+      if (!/^[a-f0-9]{64}$/.test(value) || value === token) return error('Invalid upload credentials.');
+      for (const row of tx.db.import_sessions.iter()) {
+        if (row.expires <= now) tx.db.import_sessions.id.delete(row.id);
+      }
+      if (tx.db.import_sessions.id.find(id)) return error('Upload session already exists.');
+      if (tx.db.import_sessions.count() >= 100n) return error('Too many active upload sessions. Try again later.');
+      const expires = now + 15 * 60 * 1000;
+      tx.db.import_sessions.insert({ id, reader: sha256Hex(token), uploader: sha256Hex(value), expires, image: '' });
+      return JSON.stringify({ expires });
+    }
+    const row = tx.db.import_sessions.id.find(id);
+    if (!row) return error('Upload session not found. Create a new QR code.');
+    if (row.expires <= now) {
+      tx.db.import_sessions.id.delete(id);
+      return error('Upload session expired. Create a new QR code.');
+    }
+    const expected = action === 'read' || action === 'remove' ? row.reader : row.uploader;
+    if (sha256Hex(token) !== expected) return error('Invalid upload session token.');
+    if (action === 'read') return JSON.stringify({ expires: row.expires, image: row.image || undefined });
+    if (action === 'check') return JSON.stringify({ expires: row.expires });
+    if (action === 'remove') tx.db.import_sessions.id.delete(id);
+    else if (action === 'upload') {
+      if (value.length > 3 * 1024 * 1024 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return error('Invalid or oversized upload image.');
+      tx.db.import_sessions.id.update({ ...row, image: value });
+    } else return error('Invalid upload operation.');
+    return JSON.stringify({ expires: row.expires });
+  }),
+);

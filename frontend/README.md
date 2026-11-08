@@ -105,5 +105,9 @@ After changing settings, redeploy without the previous build cache. If a build
 fails, capture the first error above the npm lifecycle summary, including the
 lines preceding any “collapsed duplicate lines” notice.
 
-Phone pairing currently uses local temporary files and is not reliable across
-multiple serverless instances. Desktop file upload does not require pairing.
+Phone pairing uses the private SpacetimeDB `import_sessions` table and
+`import_session` procedure. Publish the database module with `npm run db:publish`
+before deploying the frontend. The existing SPACETIME_URL and SPACETIME_DB
+settings select shared storage; no additional database or server secret is needed.
+Sessions expire after 15 minutes; closing pairing deletes them. Expired rows are
+removed on access or when another session is created.

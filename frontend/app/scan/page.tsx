@@ -17,8 +17,22 @@ export default function ScanPage() {
     if (!file) return;
     setBusy(true); setStatus('Sending your floor plan…');
     try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 1400 / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) { bitmap.close(); throw new Error('Unable to prepare this photo.'); }
+      context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
+      const photo = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+        blob => blob ? resolve(blob) : reject(new Error('Unable to prepare this photo.')),
+        'image/jpeg', 0.85,
+      ));
+      if (photo.size > 4 * 1024 * 1024) throw new Error('This photo is too large. Choose a smaller image.');
       const [id, token] = credentials.split('.');
-      const response = await fetch(`/api/import-sessions/${id}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type }, body: file });
+      const response = await fetch(`/api/import-sessions/${id}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': photo.type }, body: photo });
       const result = await response.json(); if (!response.ok) throw new Error(result.error);
       setStatus('Sent! Continue reviewing your floor plan on the desktop.');
     } catch(e) { setStatus(e instanceof Error ? e.message : 'Upload failed. Try again.'); }

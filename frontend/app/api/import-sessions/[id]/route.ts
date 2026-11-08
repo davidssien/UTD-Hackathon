@@ -19,13 +19,13 @@ export async function POST(request: Request, context: Context) {
     for (;;) {
       const { value, done } = await reader.read(); if (done) break;
       size += value.length;
-      if (size > MAX_UPLOAD) { await reader.cancel(); throw new Error('Choose an image smaller than 10 MB.'); }
+      if (size > MAX_UPLOAD) { await reader.cancel(); throw new Error('Choose an image smaller than 4 MB.'); }
       chunks.push(value);
     }
     let output: Buffer;
-    try { output = await sharp(Buffer.concat(chunks), { limitInputPixels: 40_000_000 }).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).flatten({ background: '#fff' }).png().toBuffer(); }
+    try { output = await sharp(Buffer.concat(chunks), { limitInputPixels: 40_000_000 }).rotate().resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true }).flatten({ background: '#fff' }).jpeg({ quality: 85 }).toBuffer(); }
     catch { throw new Error('This image could not be decoded. Try another PNG, JPEG, or WebP image.'); }
-    await saveImage(id, bearer(request), `data:image/png;base64,${output.toString('base64')}`);
+    await saveImage(id, bearer(request), `data:image/jpeg;base64,${output.toString('base64')}`);
     return Response.json({ uploaded: true }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) { return sessionError(e); }
 }
