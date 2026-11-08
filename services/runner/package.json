@@ -6,10 +6,12 @@
   "description": "Egress simulation worker and Nemotron agent. Connects outbound to SpacetimeDB with a service identity.",
   "scripts": {
     "start": "node src/main.ts",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "agent:local": "node src/agent-local.ts"
   },
   "dependencies": {
     "@egress/core": "0.1.0",
-    "@egress/sim": "0.1.0"
+    "@egress/sim": "0.1.0",
+    "@egress/agent": "0.1.0"
   }
 }

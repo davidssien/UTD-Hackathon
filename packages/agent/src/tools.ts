@@ -200,8 +200,11 @@ export class ToolBox {
 
 const KEYS = ['evacuationTimeSeconds', 'maxQueueLength', 'peakCongestion', 'meanCongestion', 'evacuatedPeople', 'unreachablePeople'] as const;
 
+/** Evacuation time, or for runs that timed out, the time elapsed plus 10 s per person still inside. */
+export const effectiveTime = (m: SimulationMetrics) => m.evacuationTimeSeconds ?? m.simulatedSeconds + 10 * m.remainingPeople;
+
 export function delta(base: SimulationMetrics, cand: SimulationMetrics): Record<string, number> {
-  const out: Record<string, number> = {};
+  const out: Record<string, number> = { effectiveTimeSeconds: round(effectiveTime(cand) - effectiveTime(base)) };
   for (const k of KEYS) {
     const a = base[k], b = cand[k];
     if (typeof a === 'number' && typeof b === 'number') out[k] = round(b - a);
@@ -227,6 +230,7 @@ export function summarizeRun(run: RunRecord) {
     seed: run.scenario.population.seed,
     blockedExitIds: run.scenario.goal.blockedExitIds,
     evacuationTimeSeconds: m.evacuationTimeSeconds,
+    effectiveTimeSeconds: round(effectiveTime(m)),
     evacuated: m.evacuatedPeople,
     unreachable: m.unreachablePeople,
     maxQueueLength: m.maxQueueLength,

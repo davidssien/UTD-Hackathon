@@ -54,6 +54,10 @@ export const PARAMS = {
   anisotropy: 0.35,
   /** Ticks of near-standstill before an actor starts yielding to lower-index neighbours. */
   stuckTicks: 10,
+  /** After this many stalled ticks next to an opening, a person turns sideways (smaller contact radius) for squeezeTicks. */
+  squeezeAfter: 20,
+  squeezeTicks: 60,
+  squeezeRadius: 0.13,
   speedCapFactor: 1.4,
   replanTicks: 20,
   hysteresis: 0.9,
@@ -81,6 +85,8 @@ export interface SimState {
   readonly flag: Uint8Array;
   /** Consecutive ticks spent nearly still; drives deterministic yielding to break symmetric jams. */
   readonly stuck: Uint16Array;
+  /** Ticks left of turning sideways to squeeze past a jam. */
+  readonly squeeze: Uint16Array;
   readonly reachable: Uint8Array;
   readonly tokens: Float64Array;
   readonly portalOpen: Uint8Array;
@@ -177,7 +183,7 @@ export function initialize(input: FrozenSimulationInput): SimState {
   const state: SimState = {
     runId: input.runId, compiled, scenario, tick: 0, n, x, y,
     vx: new Float64Array(n), vy: new Float64Array(n), r, vPref,
-    exit: new Int32Array(n).fill(-1), flag: new Uint8Array(n), stuck: new Uint16Array(n), reachable: new Uint8Array(n),
+    exit: new Int32Array(n).fill(-1), flag: new Uint8Array(n), stuck: new Uint16Array(n), squeeze: new Uint16Array(n), reachable: new Uint8Array(n),
     tokens: new Float64Array(compiled.portals.length).fill(1), portalOpen, allowedExit,
     throughput: new Int32Array(compiled.exits.length), queueAtExit: new Int32Array(compiled.exits.length),
     hash: new ActorHash(grid, n), fields: new FieldAccumulator(compiled),
@@ -235,6 +241,9 @@ export function step(state: SimState): void {
     if (flag[a] === ACTOR_EXITED) continue;
     const px = x[a], py = y[a];
     let ax = 0, ay = 0;
+    if (state.squeeze[a] > 0) state.squeeze[a]--;
+    else if (state.stuck[a] > PARAMS.squeezeAfter && nearPortal(portals, px, py)) state.squeeze[a] = PARAMS.squeezeTicks;
+    const ra = contactRadius(state, a);
 
     // 1–2. Desired velocity from the chosen exit's distance field.
     const e = state.exit[a];
@@ -267,7 +276,7 @@ export function step(state: SimState): void {
       let d = Math.hypot(dx, dy);
       if (d > PARAMS.socialRange) return;
       if (d < 1e-6) { dx = b < a ? 1 : -1; dy = 0; d = 1e-6; }
-      let f = PARAMS.socialA * Math.exp((r[a] + r[b] - d) / PARAMS.socialB);
+      let f = PARAMS.socialA * Math.exp((ra + contactRadius(state, b) - d) / PARAMS.socialB);
       // Anisotropy: people behind push less than people ahead.
       const speed = Math.hypot(vx[a], vy[a]);
       if (speed > 0.05) {
@@ -289,7 +298,7 @@ export function step(state: SimState): void {
         if (d < wd) { wd = d; wx = cx; wy = cy; }
       }
       if (wd < 0.6 && wd > 1e-6) {
-        const f = PARAMS.wallA * Math.exp((r[a] - wd) / PARAMS.wallB);
+        const f = PARAMS.wallA * Math.exp((ra - wd) / PARAMS.wallB);
         ax += (f * (px - wx)) / wd;
         ay += (f * (py - wy)) / wd;
       }
@@ -327,8 +336,8 @@ export function step(state: SimState): void {
     // Push out of wall edges we overlap, unless that would put us inside a wall.
     for (const s of segments.near(nx, ny)) {
       const [cx, cy, d] = closestOnSegment(nx, ny, segments.segments[s]);
-      if (d >= r[a] || d < 1e-9) continue;
-      const qx = nx + ((nx - cx) / d) * (r[a] - d), qy = ny + ((ny - cy) / d) * (r[a] - d);
+      if (d >= ra || d < 1e-9) continue;
+      const qx = nx + ((nx - cx) / d) * (ra - d), qy = ny + ((ny - cy) / d) * (ra - d);
       if (!segments.insideSolid(qx, qy) && !segments.crosses(nx, ny, qx, qy) && !crossesAnyPortal(compiled, nx, ny, qx, qy)) { nx = qx; ny = qy; }
     }
     x[a] = nx;
@@ -384,7 +393,7 @@ function separateOverlaps(state: SimState) {
     state.hash.forNear(x[a], y[a], b => {
       if (b <= a) return;
       const dx = x[b] - x[a], dy = y[b] - y[a];
-      const d = Math.hypot(dx, dy), min = r[a] + r[b];
+      const d = Math.hypot(dx, dy), min = contactRadius(state, a) + contactRadius(state, b);
       if (d >= min || d < 1e-9) return;
       const push = (min - d) / 2, ux = dx / d, uy = dy / d;
       const ax2 = x[a] - ux * push, ay2 = y[a] - uy * push, bx2 = x[b] + ux * push, by2 = y[b] + uy * push;
@@ -478,6 +487,11 @@ export function metrics(state: SimState): SimulationMetrics {
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** Body radius used for contacts; smaller while turning sideways to squeeze through. */
+function contactRadius(state: SimState, a: number): number {
+  return state.squeeze[a] > 0 ? Math.min(state.r[a], PARAMS.squeezeRadius) : state.r[a];
+}
 
 function normalized(x: number, y: number): { x: number; y: number } | null {
   const len = Math.hypot(x, y);

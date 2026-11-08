@@ -19,7 +19,7 @@ export interface AgentOutcome {
 
 // ── Heuristic ───────────────────────────────────────────────────────────────
 
-interface RunSummary { runId: string; evacuationTimeSeconds: number | null; maxQueueLength: number; error?: string }
+interface RunSummary { runId: string; evacuationTimeSeconds: number | null; effectiveTimeSeconds: number; evacuated: number; people: number; maxQueueLength: number; error?: string }
 interface HotspotResult { suggestions: { suggestionId: string; title: string }[]; hotspots: { description?: string }[] }
 interface CandidateResult extends RunSummary { change: string; delta: Record<string, number>; controlled: boolean }
 
@@ -35,7 +35,7 @@ export async function runHeuristicAgent(tools: ToolBox, context: AgentContext = 
 
   const hot = (await tools.call('get_hotspots', { runId: baseline.runId, topK: 3 })) as HotspotResult;
   if (!hot.suggestions?.length) {
-    return finish(tools, 'heuristic', `The baseline evacuation took ${baseline.evacuationTimeSeconds ?? 'too long'} s with a longest queue of ${baseline.maxQueueLength}, but I found no door or exit change to test near the hotspots.`);
+    return finish(tools, 'heuristic', `The baseline ${describeBaseline(baseline)} with a longest queue of ${baseline.maxQueueLength}, but I found no door or exit change to test near the hotspots.`);
   }
 
   const results: CandidateResult[] = [];
@@ -43,14 +43,20 @@ export async function runHeuristicAgent(tools: ToolBox, context: AgentContext = 
     const r = (await tools.call('test_edit_batch', { baselineRunId: baseline.runId, suggestionId: s.suggestionId })) as CandidateResult;
     if (!r.error) results.push(r);
   }
-  const score = (r: CandidateResult) => (r.delta.evacuationTimeSeconds ?? 0) + (r.delta.maxQueueLength ?? 0) * 0.1;
-  const best = results.filter(r => r.evacuationTimeSeconds !== null).sort((a, b) => score(a) - score(b))[0];
+  const score = (r: CandidateResult) => (r.delta.effectiveTimeSeconds ?? 0) + (r.delta.maxQueueLength ?? 0) * 0.1;
+  const best = [...results].sort((a, b) => score(a) - score(b))[0];
   if (!best || score(best) >= -0.5) {
-    return finish(tools, 'heuristic', `I tested ${results.length} change(s) against the same ${baseline.evacuationTimeSeconds ?? '?'} s baseline; none improved the modeled evacuation enough to propose.`);
+    return finish(tools, 'heuristic', `I tested ${results.length} change(s) against a baseline that ${describeBaseline(baseline)}; none improved the modeled evacuation enough to propose.`);
   }
   const summary = `${best.change}: ${describeDelta(best.delta)} versus the baseline, with the same people and seed. This is a modeled change, not a safety certification.`;
   await tools.call('submit_proposal', { baselineRunId: baseline.runId, candidateRunId: best.runId, summary });
   return finish(tools, 'heuristic', `Worst bottleneck: ${hot.hotspots[0]?.description ?? 'unknown'}. ${summary} Review the highlighted change and accept it if you agree.`);
+}
+
+function describeBaseline(b: RunSummary): string {
+  return b.evacuationTimeSeconds !== null
+    ? `evacuated all ${b.people} people in ${b.evacuationTimeSeconds} s`
+    : `got ${b.evacuated} of ${b.people} people out before the time limit`;
 }
 
 async function finish(tools: ToolBox, mode: AgentOutcome['mode'], message: string): Promise<AgentOutcome> {
