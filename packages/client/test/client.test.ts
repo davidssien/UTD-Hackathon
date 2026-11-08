@@ -26,6 +26,34 @@ function fakeClock() {
 
 const frame = (tick: number, x: number): ActorFrame => ({ tick, actorXY: new Float32Array([x, 0]), actorFlags: new Uint8Array([0]) });
 
+test('LIVE stays lit while following a streaming run, trails the edge, and drops on scrub-back (D82)', () => {
+  const { clock, advance } = fakeClock();
+  const p = new Playback('r', clock);
+  p.setStatus('running');
+  p.pushFrames(Array.from({ length: 40 }, (_, t) => frame(t, t / 10)));
+  p.goLive();
+  assert.equal(p.state.get().tick, 39 - 20, 'follow mode starts one chunk behind the edge');
+  assert.equal(p.state.get().atLiveEdge, true);
+  // The server sends a 2 s chunk every 2 s of wall time while playback runs at 1×.
+  for (let chunk = 0; chunk < 10; chunk++) {
+    for (let i = 0; i < 4; i++) { advance(500); p.tickClock(); assert.equal(p.state.get().atLiveEdge, true, `lit between chunks (chunk ${chunk})`); }
+    const from = p.state.get().liveTick + 1;
+    p.pushFrames(Array.from({ length: 20 }, (_, i) => frame(from + i, (from + i) / 10)));
+    assert.equal(p.state.get().atLiveEdge, true, 'lit when a chunk lands');
+  }
+  assert.ok(p.state.get().liveTick - p.state.get().tick >= 10, 'still trailing, never stalled at the edge');
+  p.skip(-10);
+  assert.equal(p.state.get().atLiveEdge, false, 'scrubbing back leaves LIVE at once');
+  p.goLive();
+  assert.equal(p.state.get().atLiveEdge, true);
+  p.pause();
+  // goLive trails by 2 s; 1.5 s more while paused is 3.5 s behind, still lit.
+  p.pushFrames(Array.from({ length: 15 }, (_, i) => frame(p.state.get().liveTick + 1 + i, 0)));
+  assert.equal(p.state.get().atLiveEdge, true, 'paused 3.5 s behind: still within the debounce');
+  p.pushFrames(Array.from({ length: 10 }, (_, i) => frame(p.state.get().liveTick + 1 + i, 0)));
+  assert.equal(p.state.get().atLiveEdge, false, 'more than 4 s behind: off');
+});
+
 test('playback follows the LIVE edge, skips ±10 s, interpolates, and stops at END', () => {
   const { clock, advance } = fakeClock();
   const p = new Playback('r', clock);

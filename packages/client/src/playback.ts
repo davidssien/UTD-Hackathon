@@ -24,8 +24,14 @@ const systemClock: PlaybackClock = {
   clearInterval: handle => clearInterval(handle as ReturnType<typeof setInterval>),
 };
 
-/** How close to the newest frame counts as "at the LIVE edge", in ticks. */
-const LIVE_EPSILON_TICKS = 1;
+/**
+ * LIVE badge debounce (PLAN.md D82): following live trails the newest frame by about one 2 s
+ * chunk so playback never stalls between chunks. The badge turns on within 1 s of the
+ * edge and only turns off once the playhead is more than 4 s behind, or the user scrubs back.
+ */
+export const LIVE_FOLLOW_BUFFER_TICKS = 2 * TICK_RATE_HZ;
+const LIVE_ON_TICKS = 1 * TICK_RATE_HZ;
+const LIVE_OFF_TICKS = 4 * TICK_RATE_HZ;
 
 export class Playback implements PlaybackController {
   readonly state: WritableStore<PlaybackState>;
@@ -38,6 +44,7 @@ export class Playback implements PlaybackController {
   private layout: EgressDocument | null = null;
   private accumulator: FieldAccumulator | null = null;
   private accumulatedTo = -1;
+  private live = true;
 
   constructor(runId: ID, clock: PlaybackClock = systemClock) {
     this.clock = clock;
@@ -106,7 +113,9 @@ export class Playback implements PlaybackController {
 
   seek(tick: number): void {
     const s = this.state.get();
-    this.patch({ tick: Math.max(0, Math.min(s.liveTick, tick)) });
+    const next = Math.max(0, Math.min(s.liveTick, tick));
+    if (next < s.tick && s.liveTick - next > LIVE_ON_TICKS) this.live = false; // scrubbing back leaves LIVE at once
+    this.patch({ tick: next });
   }
 
   skip(seconds: number): void {
@@ -115,9 +124,11 @@ export class Playback implements PlaybackController {
 
   /** Jump to the LIVE edge and follow it; on a finished run, jump to END and stop there. */
   goLive(): void {
-    this.seek(this.state.get().liveTick);
-    if (this.state.get().complete) this.pause();
-    else this.play();
+    const s = this.state.get();
+    if (s.complete) { this.seek(s.liveTick); this.pause(); return; }
+    this.live = true;
+    this.patch({ tick: Math.max(s.tick, s.liveTick - LIVE_FOLLOW_BUFFER_TICKS, 0) });
+    this.play();
   }
 
   setSpeed(speed: number): void {
@@ -200,7 +211,10 @@ export class Playback implements PlaybackController {
 
   private patch(p: Partial<PlaybackState>) {
     const s = { ...this.state.get(), ...p };
-    s.atLiveEdge = s.liveTick - s.tick <= LIVE_EPSILON_TICKS;
+    const behind = s.liveTick - s.tick;
+    if (behind <= LIVE_ON_TICKS) this.live = true;
+    else if (behind > LIVE_OFF_TICKS) this.live = false;
+    s.atLiveEdge = this.live;
     this.state.set(s);
   }
 }
