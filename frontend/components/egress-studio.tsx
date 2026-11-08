@@ -16,7 +16,7 @@ import {
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison, type RunSummary } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import {
-  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
+  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, PLACEABLES, type Placeable, type PlaceableItem, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
   type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
 } from '@egress/core';
 import { compileFloor, paintWeights, populationCapacity, type WindFrom, type FloorAirflow } from '@egress/sim';
@@ -34,7 +34,8 @@ const Scene = dynamic(() => import('./egress-scene'), { ssr: false, loading: () 
 type Mode = 'edit' | 'simulate' | 'analysis';
 type ProjectEntry = { projectId: string; phase: 'request' | 'iso' | 'reveal' | 'top' };
 type Modal = 'share' | 'import' | 'plans' | null;
-type Menu = { x: number; y: number; wallId: string | null; openingId: string | null; slabId: string | null; stairId: string | null } | null;
+type Menu = { x: number; y: number; wallId: string | null; openingId: string | null; slabId: string | null; stairId: string | null; placeableId: string | null } | null;
+const PLACEABLE_ITEMS = Object.keys(PLACEABLES) as PlaceableItem[];
 
 const WALL_TYPES: { id: WallMaterial; name: string }[] = [{ id: 'normal', name: 'Normal' }, { id: 'reinforced', name: 'Reinforced' }, { id: 'glass', name: 'Glass' }];
 const SLAB_TYPES: { id: SlabMaterial; name: string }[] = [{ id: 'wood', name: 'Wood' }, { id: 'basic', name: 'Basic' }, { id: 'tile', name: 'Tile' }];
@@ -113,6 +114,10 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const [wallType, setWallType] = useState<WallMaterial>('normal');
   const [slabType, setSlabType] = useState<SlabMaterial>('wood');
   const [slabMenu, setSlabMenu] = useState<{ x: number; y: number } | null>(null);
+  // Placeables (+ tool): what to place next and its rotation; R rotates the selection or the next one.
+  const [placeItem, setPlaceItem] = useState<PlaceableItem>('table');
+  const [placeRotation, setPlaceRotation] = useState(0);
+  const [placeMenu, setPlaceMenu] = useState<{ x: number; y: number } | null>(null);
   const [floorId, setFloorId] = useState<string | null>(null);
   const [floorPanel, setFloorPanel] = useState(false);
   // Population painting (D76): strokes for the next run; the run keeps its own copy.
@@ -199,8 +204,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const activeRun = runs.find(r => r.id === activeRunId);
   // Hazard pins for the next run (Simulate): one flame and any number of HVAC supply vents.
   const [fire, setFire] = useState<HazardPin | null>(null);
-  const [vents, setVents] = useState<HazardPin[]>([]);
-  const [placing, setPlacing] = useState<'fire' | 'vent' | null>(null);
+  const [placing, setPlacing] = useState<'fire' | null>(null);
   const hazard = useHazardPlayback(mode === 'edit' ? null : playback, activeRun);
   const running = activeRun?.status === 'queued' || activeRun?.status === 'running';
   useEffect(() => {
@@ -240,7 +244,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       if (attempt !== openSequence.current) return;
       setEntry({ projectId, phase: 'iso' });
       setSelected(null); setRunId(null); setPreviewId(null); setMode('edit'); setTool('select');
-      setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform'); setFire(null); setVents([]); setPlacing(null);
+      setFloorId(null); setStrokes([]); setBrush(null); setDistribution('uniform'); setFire(null); setPlacing(null);
     }).catch(e => { if (attempt === openSequence.current) { setEntry(null); fail(e); } });
   };
   // Keep the first rendered isometric view in place as the saves page slides away.
@@ -348,6 +352,12 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       const m = MODES.find(x => x.key === e.key); if (m) { switchMode(m.id); return; }
       if (k === 'f') { scene.current?.view('fit'); return; }
       if (mode === 'edit') {
+        const turning = doc?.placeables.find(p => p.id === selected);
+        if (k === 'r' && editable && (turning || tool === 'place')) {
+          if (turning) edit([{ kind: 'updatePlaceable', placeableId: turning.id, patch: { rotationDeg: (turning.rotationDeg + 90) % 360 } }]);
+          else setPlaceRotation(r => (r + 90) % 360);
+          return;
+        }
         const tools: Record<string, SceneTool> = { v: 'select', h: 'pan', w: 'wall', r: 'box', g: 'slab', t: 'stair', d: 'door', n: 'window', e: 'exit', x: 'erase' };
         if (tools[k] && (editable || k === 'v' || k === 'h')) { choose(tools[k]); return; }
         if ((e.key === 'Delete' || e.key === 'Backspace') && selected && editable) { e.preventDefault(); edit([{ kind: 'deleteEntities', ids: [selected] }]); setSelected(null); }
@@ -369,7 +379,6 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     setPlacing(null);
     const elements = [
       ...(fire ? [{ kind: 'fire' as const, id: 'fire-1', floorId: fire.floorId, position: fire.position, radiusM: fire.radiusM, startSeconds: 0 }] : []),
-      ...vents.map((v, i) => ({ kind: 'vent' as const, id: `vent-${i + 1}`, floorId: v.floorId, position: v.position, radiusM: v.radiusM })),
     ];
     void client.startRun({ scenarioVersion: 1, id: `s-${crypto.randomUUID()}`, projectId: doc.projectId, name: fire ? 'Fire evacuation' : 'Evacuate', durationSeconds: 900, population: { count: people, distribution: painted ? 'painted' : 'uniform', strokes: painted ? strokes : [], seed }, goal: { kind: 'evacuate', blockedExitIds: [] },
       ...(elements.length ? { elements, windFrom: wind } : {}) }, 'x4')
@@ -388,7 +397,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   const opening = doc?.openings.find(o => o.id === selected) ?? null;
   const slab = doc?.slabs.find(s => s.id === selected) ?? null;
   const stair = doc?.stairs.find(s => s.id === selected) ?? null;
-  const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening || slab || stair)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
+  const placeable = doc?.placeables.find(p => p.id === selected) ?? null;
+  const showPane = mode === 'simulate' || (mode === 'edit' && (wall || opening || slab || stair || placeable)) || (mode === 'analysis' && (proposals.length > 0 || jobs.length > 0));
   const upperContent = !!doc && floors.length > 1 && doc.walls.some(w => w.floorId !== floors[0].id);
   const saving = view.pending > 0;
 
@@ -405,13 +415,13 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     <div className="editor-surface" inert={screen === 'saves'}>
     <Scene ref={scene} theme={theme} gridStyle={appearance.grid} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
+      placeItem={placeItem} placeRotation={placeRotation}
       place={mode === 'simulate' ? placing : null} onPlace={at => {
         if (!floor) return;
         if (placing === 'fire') setFire({ position: at, floorId: floor.id, radiusM: 1 });
-        else if (placing === 'vent') setVents(list => [...list, { position: at, floorId: floor.id, radiusM: 0.6 }].slice(-12));
         setPlacing(null);
       }}
-      hazardPins={mode === 'edit' ? null : hazardPinsFor(running || !!hazard ? activeRun : undefined, fire, vents, hazard?.fireRadiusM)}
+      hazardPins={mode === 'edit' ? null : hazardPinsFor(running || !!hazard ? activeRun : undefined, fire, hazard?.fireRadiusM)}
       inputBlocked={screen === 'saves' || !!entry}
       entryView={entry?.projectId === sceneDoc?.projectId && (entry?.phase === 'iso' || entry?.phase === 'top') ? entry.phase : null}
       onEntryFrame={cameraView => {
@@ -425,8 +435,8 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       tags={tags} onTag={(hash, at) => { if (canEdit) setTagMenu({ hash, ...at }); }}
       onContext={(at, hit) => {
         setTypeMenu(null); setSlabMenu(null);
-        setMenu(hit && editable ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null, slabId: hit.slabId ?? null, stairId: hit.stairId ?? null } : null);
-        if (hit) setSelected(hit.openingId ?? hit.wallId ?? hit.stairId ?? hit.slabId ?? null);
+        setMenu(hit && editable ? { ...at, wallId: hit.wallId ?? null, openingId: hit.openingId ?? null, slabId: hit.slabId ?? null, stairId: hit.stairId ?? null, placeableId: hit.placeableId ?? null } : null);
+        if (hit) setSelected(hit.openingId ?? hit.wallId ?? hit.placeableId ?? hit.stairId ?? hit.slabId ?? null);
       }} />
 
     {/* Top left: project + sync state */}
@@ -468,12 +478,13 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
         {mode === 'edit' && opening && <OpeningInspector opening={opening} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [opening.id] }]); setSelected(null); }} />}
         {mode === 'edit' && slab && <SlabInspector slab={slab} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [slab.id] }]); setSelected(null); }} />}
+        {mode === 'edit' && placeable && <PlaceableInspector placeable={placeable} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [placeable.id] }]); setSelected(null); }} />}
         {mode === 'edit' && stair && doc && <StairInspector stair={stair} doc={doc} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [stair.id] }]); setSelected(null); }} />}
         {mode === 'simulate' && <SimulatePane doc={doc} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }}
           distribution={distribution} onDistribution={d => { setDistribution(d); setBrush(d === 'painted' ? { radiusM: 2, mode: 'increase' } : null); }}
           brush={brush} onBrush={setBrush} strokes={strokes} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent}
-          canRun={canEdit} fire={fire} vents={vents.length} placing={placing} wind={wind}
-          onPlacing={p => { setBrush(null); setPlacing(p); }} onClearHazards={() => { setFire(null); setVents([]); setPlacing(null); }} />}
+          canRun={canEdit} fire={fire} placing={placing} wind={wind}
+          onPlacing={p => { setBrush(null); setPlacing(p); }} onClearHazards={() => { setFire(null); setPlacing(null); }} />}
         {mode === 'analysis' && <AnalysisPane client={client} preview={preview} comparison={comparison} diffMap={diffMap} onDiffMap={setDiffMap} onPreview={setPreviewId} canEdit={canEdit} locked={locked} onError={fail} />}
       </aside>}
     </div>
@@ -522,6 +533,10 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
           <Squares2X2Icon /><i className={`swatch floor-${slabType}`} />
         </Tool>
         <Tool tip={floor && floors.some(f => f.level === floor.level + 1) ? 'Stair (T) · drag toward the top' : 'Stair (T) · add a floor above first'} on={tool === 'stair'} disabled={!editable} onClick={() => choose('stair')}><BarsArrowUpIcon /></Tool>
+        <Tool tip={`Place · ${PLACEABLES[placeItem].name} · R rotates`} on={tool === 'place'} disabled={!editable}
+          onClick={() => { if (tool === 'place') { setPlaceMenu(null); choose('select'); return; } const r = document.querySelector('[aria-label^="Place ·"]')?.getBoundingClientRect(); choose('place'); if (r) setPlaceMenu({ x: r.left + r.width / 2, y: r.top }); }}>
+          <PlusIcon />
+        </Tool>
         <span className="sep" />
         <Tool tip="Door (D)" on={tool === 'door'} disabled={!editable} onClick={() => choose('door')}><ArrowRightEndOnRectangleIcon /></Tool>
         <Tool tip="Window (N)" on={tool === 'window'} disabled={!editable} onClick={() => choose('window')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden><path d="M4 3.5h16v16H4z M12 3.5v16 M4 10h16 M2 21h20" /></svg></Tool>
@@ -547,6 +562,10 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         onDelete={() => { edit([{ kind: 'deleteEntities', ids: [floor.id] }]); setFloorId(null); setFloorPanel(false); }} />}
     </div>}
 
+    {placeMenu && tool === 'place' && <div className="menu type-menu" role="menu" style={{ left: placeMenu.x, top: placeMenu.y }} onMouseLeave={() => setPlaceMenu(null)}>
+      {PLACEABLE_ITEMS.map(id => <button key={id} role="menuitemradio" aria-checked={placeItem === id} onClick={() => { setPlaceItem(id); setPlaceMenu(null); }}>
+        {PLACEABLES[id].name}{placeItem === id && <CheckIcon />}</button>)}
+    </div>}
     {slabMenu && <div className="menu type-menu" style={{ left: slabMenu.x, top: slabMenu.y }}>
       {SLAB_TYPES.map(t => <button key={t.id} aria-pressed={slabType === t.id} onClick={() => { setSlabType(t.id); setTool('slab'); setSlabMenu(null); }}><i className={`swatch floor-${t.id}`} />{t.name}{slabType === t.id && <CheckIcon />}</button>)}
     </div>}
@@ -559,7 +578,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       {menu.wallId && !menu.openingId && <hr />}
       {!menu.wallId && menu.slabId && !menu.stairId && <>{SLAB_TYPES.map(t => <button key={t.id} onClick={() => { edit([{ kind: 'updateSlab', slabId: menu.slabId!, patch: { material: t.id } }]); setMenu(null); }}>
         <i className={`swatch floor-${t.id}`} />{t.name}{doc?.slabs.find(s => s.id === menu.slabId)?.material === t.id && <CheckIcon />}</button>)}<hr /></>}
-      <button className="danger" onClick={() => { edit([{ kind: 'deleteEntities', ids: [menu.openingId ?? menu.wallId ?? menu.stairId ?? menu.slabId!] }]); setSelected(null); setMenu(null); }}><TrashIcon />Delete</button>
+      <button className="danger" onClick={() => { edit([{ kind: 'deleteEntities', ids: [menu.openingId ?? menu.wallId ?? menu.placeableId ?? menu.stairId ?? menu.slabId!] }]); setSelected(null); setMenu(null); }}><TrashIcon />Delete</button>
     </div>}
 
     {tagMenu && <RoomTagMenu at={tagMenu} label={labelMap.get(tagMenu.hash)} onClose={() => setTagMenu(null)}
@@ -700,9 +719,9 @@ function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
 
 // ── Simulate ────────────────────────────────────────────────────────────────
 
-function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun, fire, vents, placing, wind, onPlacing, onClearHazards }: {
+function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun, fire, placing, wind, onPlacing, onClearHazards }: {
   doc: EgressDocument | null; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; canRun: boolean;
-  fire: HazardPin | null; vents: number; placing: 'fire' | 'vent' | null; wind: WindFrom; onPlacing(p: 'fire' | 'vent' | null): void; onClearHazards(): void;
+  fire: HazardPin | null; placing: 'fire' | null; wind: WindFrom; onPlacing(p: 'fire' | null): void; onClearHazards(): void;
   onRun(people: number, seed: number): void; onStop(): void;
   distribution: 'uniform' | 'painted'; onDistribution(d: 'uniform' | 'painted'): void;
   brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: PopulationBrushStroke[]; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
@@ -734,13 +753,11 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
         </div>
         <p className="fine">Painting changes where people start, not how many. Left-drag on the plan while the brush is out.</p>
       </div>}
-      <div className="field"><span>Hazards</span>
-        <button className={`button ${placing === 'fire' ? 'on' : ''}`} aria-pressed={placing === 'fire'} disabled={running} onClick={() => onPlacing(placing === 'fire' ? null : 'fire')}><FireIcon />{fire ? 'Move fire' : 'Fire'}</button>
-        <button className={`button ${placing === 'vent' ? 'on' : ''}`} aria-pressed={placing === 'vent'} disabled={running} onClick={() => onPlacing(placing === 'vent' ? null : 'vent')}><PlusIcon />Vent</button>
-        {(fire || vents > 0) && <button className="icon-button" data-tip="Remove fire and vents" disabled={running} onClick={onClearHazards}><XMarkIcon /></button>}
+      <div className="hazard-row">
+        <button className={`button fire-button ${placing === 'fire' ? 'on' : ''}`} aria-pressed={placing === 'fire'} disabled={running} onClick={() => onPlacing(placing === 'fire' ? null : 'fire')}><FireIcon />{placing === 'fire' ? 'Click the plan to place the fire' : fire ? 'Move fire' : 'Add fire'}</button>
+        {fire && <button className="icon-button" data-tip="Remove fire" aria-label="Remove fire" disabled={running} onClick={onClearHazards}><XMarkIcon /></button>}
       </div>
-      {placing && <p className="fine">Click the plan to place the {placing === 'fire' ? 'fire on the floor you are viewing' : 'HVAC supply vent'}.</p>}
-      {(fire || vents > 0) && <p className="fine">{fire ? `Fire on ${doc?.floors.find(f => f.id === fire.floorId)?.name ?? 'a floor'}` : 'No fire'}{vents ? ` · ${vents} supply vent${vents === 1 ? '' : 's'}` : ''} · wind from the {wind} (Layers → Airflow). Smoke follows the airflow; routes avoid the flames.</p>}
+      {fire && <p className="fine">Fire on {doc?.floors.find(f => f.id === fire.floorId)?.name ?? 'a floor'} · wind from the {wind} (Layers → Airflow). Smoke follows the airflow and the building&apos;s HVAC vents; routes avoid the flames.</p>}
       <label className="field"><span>Seed</span>
         <input type="number" className="narrow" min={0} value={seed} disabled={running} onChange={e => setSeed(Math.max(0, Number(e.target.value) || 0))} />
         <button className="icon-button" data-tip="New seed" disabled={running} onClick={() => setSeed(Math.floor(Math.random() * 100000))}><ArrowPathIcon /></button>
@@ -760,19 +777,34 @@ function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, 
 }
 
 /** Pins shown on the plan: the playing run's own elements, else the ones staged for the next run. */
-function hazardPinsFor(run: RunSummary | undefined, fire: HazardPin | null, vents: HazardPin[], fireRadiusM?: number): HazardPins | null {
-  if (run?.elements?.length) {
-    const f = run.elements.find(e => e.kind === 'fire');
-    return { fire: f ? { position: f.position, floorId: f.floorId, radiusM: f.radiusM } : null, fireRadiusM: fireRadiusM ?? null,
-      vents: run.elements.filter(e => e.kind === 'vent').map(v => ({ position: v.position, floorId: v.floorId, radiusM: v.radiusM })) };
-  }
-  return fire || vents.length ? { fire, vents } : null;
+function hazardPinsFor(run: RunSummary | undefined, fire: HazardPin | null, fireRadiusM?: number): HazardPins | null {
+  const f = run?.elements?.find(e => e.kind === 'fire');
+  if (f) return { fire: { position: f.position, floorId: f.floorId, radiusM: f.radiusM }, fireRadiusM: fireRadiusM ?? null, vents: [] };
+  return fire ? { fire, vents: [] } : null;
+}
+
+function PlaceableInspector({ placeable, canEdit, onEdit, onDelete }: { placeable: Placeable; canEdit: boolean; onEdit(c: EditCommand[]): void; onDelete(): void }) {
+  const spec = PLACEABLES[placeable.item];
+  const rotate = () => onEdit([{ kind: 'updatePlaceable', placeableId: placeable.id, patch: { rotationDeg: (placeable.rotationDeg + 90) % 360 } }]);
+  return <>
+    <header className="pane-head"><h2>{spec.name}</h2><span>{spec.widthM.toFixed(1)} × {spec.depthM.toFixed(1)} m</span></header>
+    <div className="pane-body">
+      <div className="field"><span>Rotation</span><b className="value">{Math.round(placeable.rotationDeg)}°</b><button className="button" disabled={!canEdit} onClick={rotate}><ArrowPathIcon />Rotate (R)</button></div>
+      <p className="fine">{spec.suppliesAir ? 'Ceiling supply: people pass under it, and it pushes air toward open doors and windows.' : 'Up to 0.5 m tall: people walk around it, air passes over it.'}</p>
+    </div>
+    <div className="pane-actions"><button className="button danger" disabled={!canEdit} onClick={onDelete}><TrashIcon />Delete</button></div>
+  </>;
 }
 
 function endText(m: SimulationMetrics | null): string {
   if (!m) return 'Queued';
   if (!m.complete) return 'Running';
-  if (m.endReason === 'all-out') return (m.fireDeaths ?? 0) + (m.smokeDeaths ?? 0) > 0 ? 'Everyone else is out' : m.unreachablePeople ? 'Everyone reachable is out' : 'Everyone is out';
+  // Outcome of the whole run (it can show before the playhead reaches the end).
+  if (m.endReason === 'all-out') {
+    const lost = (m.fireDeaths ?? 0) + (m.smokeDeaths ?? 0);
+    if (lost > 0) return `${m.evacuatedPeople} of ${m.initialPeople} survived`;
+    return m.unreachablePeople ? 'Everyone reachable survived' : 'Everyone survived';
+  }
   if (m.endReason === 'stabilized') return 'Flow stopped changing';
   return 'Time limit reached';
 }

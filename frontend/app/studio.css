@@ -390,3 +390,7 @@
 /* Hazard placement (fire, HVAC vent) in the Simulate pane */
 .pane .button.on{background:var(--ink)!important;color:#fff;border-color:var(--ink)!important}
 .pane .field .button{height:28px;padding:0 9px;font-weight:500}
+.hazard-row{display:flex;align-items:center;gap:6px;margin:6px 0 2px}
+.hazard-row .fire-button{flex:1;justify-content:center;height:32px;color:#b2361a}
+.hazard-row .fire-button.on{color:#fff}
+.egress-scene.tool-place canvas{cursor:crosshair}

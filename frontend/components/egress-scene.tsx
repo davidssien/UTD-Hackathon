@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   ACTOR_DOWN, ACTOR_EXITED, ACTOR_QUEUED, ACTOR_TRANSITIONING, deriveLayout, floorsByLevel, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
-  type Vec2, type WallMaterial,
+  PLACEABLES, placeableFootprint, type PlaceableItem, type Vec2, type WallMaterial,
 } from '@egress/core';
 import type { FloorAirflow } from '@egress/sim';
 import type { PlaybackController } from '@egress/client';
@@ -20,7 +20,7 @@ import { stairSteps, upEdgeOf } from '@/lib/stairs';
 import { floorSurface, slabCutouts } from '@/lib/floor-surfaces';
 import { ViewCube } from './scene/viewcube';
 
-export type SceneTool = 'pan' | 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'slab' | 'stair';
+export type SceneTool = 'pan' | 'select' | 'wall' | 'box' | 'erase' | 'door' | 'window' | 'exit' | 'slab' | 'stair' | 'place';
 /** Population brush (Simulate, D76): strokes change where people start, never how many. */
 export interface PaintBrush { radiusM: number; mode: 'increase' | 'decrease' | 'erase' }
 export interface PaintStroke { points: Vec2[]; radiusM: number; mode: PaintBrush['mode'] }
@@ -33,7 +33,7 @@ export interface HazardPin { position: Vec2; floorId: string; radiusM: number }
 export interface HazardPins { fire: HazardPin | null; vents: HazardPin[]; fireRadiusM?: number | null }
 export interface HeatOverlay { field: ScalarField; diverging: boolean; airflow?: FloorAirflow; /** Colour-scale maximum (defaults to the layer's). */ max?: number }
 export interface SceneNote { key: string; text: string; entityId: string }
-export interface SceneHit { wallId?: string; openingId?: string; slabId?: string; stairId?: string }
+export interface SceneHit { wallId?: string; openingId?: string; slabId?: string; stairId?: string; placeableId?: string }
 export interface SceneTag { key: string; text: string; at: Vec2; muted?: boolean }
 export interface SceneHandle { view(view: 'top' | 'iso' | 'fit'): void; exportImage(): void }
 
@@ -50,6 +50,9 @@ interface Props {
   floorId?: string | null;
   /** Finish for the Floor tool (D74). */
   slabMaterial?: SlabMaterial;
+  /** The + tool: which placeable a click places, and its rotation (degrees). */
+  placeItem?: PlaceableItem;
+  placeRotation?: number;
   /** When set outside Edit, left-drag paints population weights instead of orbiting. */
   paint?: PaintBrush | null;
   onPaint?(stroke: PaintStroke): void;
@@ -425,10 +428,10 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       const floorId = workFloor()?.id;
       const hits = ray.intersectObjects([...walls.children, ...floors.children], true)
         .filter(h => h.object.userData.floorId === floorId && !h.object.userData.below);
-      const hit = hits.find(h => h.object.userData.openingId) ?? hits.find(h => h.object.userData.wallId) ?? hits.find(h => h.object.userData.stairId) ?? hits.find(h => h.object.userData.slabId);
+      const hit = hits.find(h => h.object.userData.openingId) ?? hits.find(h => h.object.userData.wallId) ?? hits.find(h => h.object.userData.placeableId) ?? hits.find(h => h.object.userData.stairId) ?? hits.find(h => h.object.userData.slabId);
       if (!hit) return null;
-      const { wallId, openingId, slabId, stairId } = hit.object.userData as SceneHit;
-      return { wallId, openingId, slabId, stairId };
+      const { wallId, openingId, slabId, stairId, placeableId } = hit.object.userData as SceneHit;
+      return { wallId, openingId, slabId, stairId, placeableId };
     };
     const showDim = (e: PointerEvent, text: string) => {
       const el = dim.current; if (!el) return;
@@ -529,6 +532,12 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           const outline = slab ? slab.polygon : floor ? roomAt(raw, floor.id)?.polygon : null;
           if (outline) { line([...outline, outline[0]], '#ffc65c'); ring.visible = false; }
         }
+      } else if (tool === 'place') {
+        const item = state.placeItem ?? 'table';
+        const corners = placeableFootprint({ item, position: p, rotationDeg: state.placeRotation ?? 0 });
+        line([...corners, corners[0]], PLACEABLES[item].suppliesAir ? '#6fc3ff' : '#ffc65c');
+        showDim(e, `${PLACEABLES[item].name} · R rotates`);
+        ring.visible = false;
       } else if (tool === 'stair' && dragging) {
         rectangle(dragging, p, '#7dc8ff');
         const up = upEdgeOf(dragging, p), c = { x: (dragging.x + p.x) / 2, y: (dragging.y + p.y) / 2 };
@@ -589,9 +598,11 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         }
       } else if (state.tool === 'erase') {
         if (from && moved) state.onEdit([{ kind: 'eraseByLine', floorId, from, to: p }]);
-        else { const hit = pick(e); const id = hit?.openingId ?? hit?.wallId ?? hit?.stairId ?? hit?.slabId; if (id) state.onEdit([{ kind: 'deleteEntities', ids: [id] }]); }
+        else { const hit = pick(e); const id = hit?.openingId ?? hit?.wallId ?? hit?.placeableId ?? hit?.stairId ?? hit?.slabId; if (id) state.onEdit([{ kind: 'deleteEntities', ids: [id] }]); }
       } else if (state.tool === 'select') {
-        const hit = pick(e); state.onSelect(hit?.openingId ?? hit?.wallId ?? hit?.stairId ?? hit?.slabId ?? null);
+        const hit = pick(e); state.onSelect(hit?.openingId ?? hit?.wallId ?? hit?.placeableId ?? hit?.stairId ?? hit?.slabId ?? null);
+      } else if (state.tool === 'place' && !moved) {
+        state.onEdit([{ kind: 'createPlaceable', floorId, item: state.placeItem ?? 'table', position: p, rotationDeg: state.placeRotation ?? 0 }]);
       } else if (state.tool === 'slab') {
         const material = state.slabMaterial ?? 'wood';
         if (from && moved) {
@@ -1003,6 +1014,21 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       mesh.rotation.x = -Math.PI / 2; mesh.position.y = height(slab.floorId) + 0.008; mesh.receiveShadow = true;
       mesh.userData = { slabId: slab.id, floorId: slab.floorId, below: below(slab.floorId) };
       r.floors.add(mesh);
+    }
+    // Placeables: furniture as 0.5 m blocks, HVAC vents as ceiling grilles.
+    const PLACEABLE_COLOR: Record<PlaceableItem, string> = { table: '#b98b5e', desk: '#c9a27a', chair: '#8a6a4c', counter: '#9aa7b4', vent: '#6fc3ff' };
+    for (const p of doc.placeables ?? []) {
+      const f = shown.get(p.floorId); if (!f) continue;
+      const spec = PLACEABLES[p.item];
+      const top = spec.maxZ ?? f.ceilingHeightM - 0.05, bottom = spec.suppliesAir ? top - 0.06 : spec.minZ;
+      const m = dimmed(style(new THREE.MeshStandardMaterial({ color: PLACEABLE_COLOR[p.item], roughness: 0.75 }), [p.id]), p.floorId);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(spec.widthM, Math.max(0.03, top - bottom), spec.depthM), m);
+      mesh.position.set(p.position.x, f.elevationM + (top + bottom) / 2, -p.position.y);
+      mesh.rotation.y = (p.rotationDeg * Math.PI) / 180;
+      mesh.castShadow = !below(p.floorId) && !spec.suppliesAir; mesh.receiveShadow = true;
+      mesh.userData = { placeableId: p.id, floorId: p.floorId, below: below(p.floorId) };
+      r.floors.add(mesh);
+      entityAnchor.set(p.id, toWorld(p.position, f.elevationM + top + 0.2));
     }
     // Stairs (D75): solid steps from the lower floor up to the next.
     for (const stair of doc.stairs ?? []) {
