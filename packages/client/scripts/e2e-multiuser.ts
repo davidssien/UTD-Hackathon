@@ -49,20 +49,39 @@ await new Promise(r => setTimeout(r, 300));
 if (b.projects.get().some(p => p.id === projectId)) throw new Error('B can see A\'s private project');
 await expectError(b.openProject(projectId), 'UNAUTHORIZED', 'B opens A\'s project without an invite');
 
-// Viewer invite: B can read but not write.
-const viewerCode = await a.createInvite('viewer');
-await b.joinProject(viewerCode);
+// Permanent share link (D59): B joins as a viewer; the link stays the same.
+const link = await a.shareLink();
+if ((await a.shareLink()) !== link) throw new Error('the share link changed between calls');
+await expectError(b.joinByLink('x'.repeat(22)), 'NOT_FOUND', 'B joins with a made-up link');
+await b.joinByLink(link);
 await until(() => b.document.get().doc?.walls.length === 4, 10_000, 'B (viewer) sees the project');
-ok('viewer invite: B can read the project');
+await until(() => b.projects.get().find(p => p.id === projectId)?.role === 'viewer', 10_000, 'B is a viewer');
+ok(`share link (${link.length} chars): B joined as a viewer and reads the project`);
+await until(() => a.members.get().filter(m => m.online).length === 2, 10_000, 'presence shows both');
+ok(`presence: A sees ${a.members.get().filter(m => m.online).length} online, identities ${a.members.get().map(m => m.identity.slice(0, 8)).join(', ')}`);
 const floorId = b.document.get().doc!.floors[0].id;
 const viewerEdit = await b.edit([{ kind: 'createWallChain', floorId, points: [{ x: 2, y: 2 }, { x: 2, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'normal' }]);
 if (viewerEdit.ok) throw new Error('viewer edit was accepted');
 ok(`viewer edit refused by the server (${viewerEdit.error.code}); optimistic change rolled back: ${b.document.get().doc!.walls.length === 4}`);
 
-// Editor invite upgrades B; edits sync between the two clients.
-const editorCode = await a.createInvite('editor');
-await b.joinProject(editorCode);
+// Only owners change roles; the owner promotes B to editor; edits then sync between the two clients.
+const bIdentity = b.members.get().find(m => m.me)!.identity;
+await expectError(b.setMemberRole(bIdentity, 'owner'), 'UNAUTHORIZED', 'a viewer promotes themself');
+const aIdentity = a.members.get().find(m => m.me)!.identity;
+await expectError(a.setMemberRole(aIdentity, 'editor'), 'INVALID_INPUT', 'demoting the last owner');
+await a.setMemberRole(bIdentity, 'editor');
 await until(() => b.projects.get().find(p => p.id === projectId)?.role === 'editor', 10_000, 'B upgraded to editor');
+ok('owner promoted B to editor');
+const freshLink = await a.resetShareLink();
+if (freshLink === link) throw new Error('reset kept the old link');
+const c = makeClient({});
+await until(() => c.status.get() === 'connected', 10_000, 'C connects');
+await expectError(c.joinByLink(link), 'NOT_FOUND', 'C uses the link after it was reset');
+await c.joinByLink(freshLink);
+await until(() => a.members.get().length === 3, 10_000, 'C joined with the new link');
+c.dispose();
+await until(() => a.members.get().filter(m => m.online).length === 2, 10_000, 'presence drops when C leaves');
+ok('reset link: the old one is refused, the new one works, and presence drops when C disconnects');
 const started = Date.now();
 const editorEdit = await b.edit([{ kind: 'createWallChain', floorId, points: [{ x: 2, y: 2 }, { x: 2, y: 6 }], thicknessM: 0.2, heightM: 2.8, material: 'glass' }]);
 if (!editorEdit.ok) throw new Error(editorEdit.error.message);

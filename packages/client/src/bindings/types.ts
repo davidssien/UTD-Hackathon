@@ -28,6 +28,9 @@ export type ActiveEntities = __Infer<typeof ActiveEntities>;
 export const ActiveMembers = __t.object("ActiveMembers", {});
 export type ActiveMembers = __Infer<typeof ActiveMembers>;
 
+export const ActivePresence = __t.object("ActivePresence", {});
+export type ActivePresence = __Infer<typeof ActivePresence>;
+
 export const ActiveProposals = __t.object("ActiveProposals", {});
 export type ActiveProposals = __Infer<typeof ActiveProposals>;
 
@@ -45,6 +48,9 @@ export type ActiveRuns = __Infer<typeof ActiveRuns>;
 
 export const ActiveScenarios = __t.object("ActiveScenarios", {});
 export type ActiveScenarios = __Infer<typeof ActiveScenarios>;
+
+export const ActiveShareLink = __t.object("ActiveShareLink", {});
+export type ActiveShareLink = __Infer<typeof ActiveShareLink>;
 
 export const AgentJobs = __t.object("AgentJobs", {
   id: __t.string(),
@@ -118,6 +124,13 @@ export type MyProjects = __Infer<typeof MyProjects>;
 export const MySession = __t.object("MySession", {});
 export type MySession = __Infer<typeof MySession>;
 
+export const OnlineConnections = __t.object("OnlineConnections", {
+  identity: __t.identity(),
+  connections: __t.u32(),
+  since: __t.timestamp(),
+});
+export type OnlineConnections = __Infer<typeof OnlineConnections>;
+
 export const PreviewEntities = __t.object("PreviewEntities", {});
 export type PreviewEntities = __Infer<typeof PreviewEntities>;
 
@@ -130,6 +143,14 @@ export const ProjectInvites = __t.object("ProjectInvites", {
   revoked: __t.bool(),
 });
 export type ProjectInvites = __Infer<typeof ProjectInvites>;
+
+export const ProjectLinks = __t.object("ProjectLinks", {
+  projectId: __t.string(),
+  code: __t.string(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type ProjectLinks = __Infer<typeof ProjectLinks>;
 
 export const ProjectMembers = __t.object("ProjectMembers", {
   id: __t.u64(),

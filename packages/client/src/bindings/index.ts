@@ -44,8 +44,10 @@ import ClaimSimulationReducer from "./claim_simulation_reducer.ts";
 import CreateInviteReducer from "./create_invite_reducer.ts";
 import CreateProjectReducer from "./create_project_reducer.ts";
 import DeleteProjectReducer from "./delete_project_reducer.ts";
+import EnsureShareLinkReducer from "./ensure_share_link_reducer.ts";
 import FailSimulationReducer from "./fail_simulation_reducer.ts";
 import FinishAgentJobReducer from "./finish_agent_job_reducer.ts";
+import JoinByLinkReducer from "./join_by_link_reducer.ts";
 import JoinProjectReducer from "./join_project_reducer.ts";
 import OpenCompareReducer from "./open_compare_reducer.ts";
 import OpenProjectReducer from "./open_project_reducer.ts";
@@ -59,6 +61,7 @@ import RemoveMemberReducer from "./remove_member_reducer.ts";
 import RenameProjectReducer from "./rename_project_reducer.ts";
 import RequestAgentJobReducer from "./request_agent_job_reducer.ts";
 import RequestSimulationReducer from "./request_simulation_reducer.ts";
+import ResetShareLinkReducer from "./reset_share_link_reducer.ts";
 import RevokeInviteReducer from "./revoke_invite_reducer.ts";
 import RunnerHeartbeatReducer from "./runner_heartbeat_reducer.ts";
 import SaveScenarioReducer from "./save_scenario_reducer.ts";
@@ -75,12 +78,14 @@ import ActiveCompareResultsRow from "./active_compare_results_table.ts";
 import ActiveEditLogRow from "./active_edit_log_table.ts";
 import ActiveEntitiesRow from "./active_entities_table.ts";
 import ActiveMembersRow from "./active_members_table.ts";
+import ActivePresenceRow from "./active_presence_table.ts";
 import ActiveProposalsRow from "./active_proposals_table.ts";
 import ActiveReplayRow from "./active_replay_table.ts";
 import ActiveResultRow from "./active_result_table.ts";
 import ActiveRunLayoutRow from "./active_run_layout_table.ts";
 import ActiveRunsRow from "./active_runs_table.ts";
 import ActiveScenariosRow from "./active_scenarios_table.ts";
+import ActiveShareLinkRow from "./active_share_link_table.ts";
 import MyMembershipsRow from "./my_memberships_table.ts";
 import MyProfileRow from "./my_profile_table.ts";
 import MyProjectStatsRow from "./my_project_stats_table.ts";
@@ -138,6 +143,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ActiveMembersRow),
+  activePresence: __table({
+    name: 'active_presence',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ActivePresenceRow),
   activeProposals: __table({
     name: 'active_proposals',
     indexes: [
@@ -180,6 +192,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, ActiveScenariosRow),
+  activeShareLink: __table({
+    name: 'active_share_link',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, ActiveShareLinkRow),
   myMemberships: __table({
     name: 'my_memberships',
     indexes: [
@@ -264,8 +283,10 @@ const reducersSchema = __reducers(
   __reducerSchema("create_invite", CreateInviteReducer),
   __reducerSchema("create_project", CreateProjectReducer),
   __reducerSchema("delete_project", DeleteProjectReducer),
+  __reducerSchema("ensure_share_link", EnsureShareLinkReducer),
   __reducerSchema("fail_simulation", FailSimulationReducer),
   __reducerSchema("finish_agent_job", FinishAgentJobReducer),
+  __reducerSchema("join_by_link", JoinByLinkReducer),
   __reducerSchema("join_project", JoinProjectReducer),
   __reducerSchema("open_compare", OpenCompareReducer),
   __reducerSchema("open_project", OpenProjectReducer),
@@ -279,6 +300,7 @@ const reducersSchema = __reducers(
   __reducerSchema("rename_project", RenameProjectReducer),
   __reducerSchema("request_agent_job", RequestAgentJobReducer),
   __reducerSchema("request_simulation", RequestSimulationReducer),
+  __reducerSchema("reset_share_link", ResetShareLinkReducer),
   __reducerSchema("revoke_invite", RevokeInviteReducer),
   __reducerSchema("runner_heartbeat", RunnerHeartbeatReducer),
   __reducerSchema("save_scenario", SaveScenarioReducer),
@@ -305,6 +327,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "active_entities": Omit<typeof tablesSchema.schemaType.tables["activeEntities"], "accessorName"> & { readonly accessorName: "active_entities" };
     /** @deprecated Use `activeMembers` instead. This alias will be removed in the next major version. */
     readonly "active_members": Omit<typeof tablesSchema.schemaType.tables["activeMembers"], "accessorName"> & { readonly accessorName: "active_members" };
+    /** @deprecated Use `activePresence` instead. This alias will be removed in the next major version. */
+    readonly "active_presence": Omit<typeof tablesSchema.schemaType.tables["activePresence"], "accessorName"> & { readonly accessorName: "active_presence" };
     /** @deprecated Use `activeProposals` instead. This alias will be removed in the next major version. */
     readonly "active_proposals": Omit<typeof tablesSchema.schemaType.tables["activeProposals"], "accessorName"> & { readonly accessorName: "active_proposals" };
     /** @deprecated Use `activeReplay` instead. This alias will be removed in the next major version. */
@@ -317,6 +341,8 @@ type __SchemaWithTableAccessorAliases = Omit<typeof tablesSchema.schemaType, "ta
     readonly "active_runs": Omit<typeof tablesSchema.schemaType.tables["activeRuns"], "accessorName"> & { readonly accessorName: "active_runs" };
     /** @deprecated Use `activeScenarios` instead. This alias will be removed in the next major version. */
     readonly "active_scenarios": Omit<typeof tablesSchema.schemaType.tables["activeScenarios"], "accessorName"> & { readonly accessorName: "active_scenarios" };
+    /** @deprecated Use `activeShareLink` instead. This alias will be removed in the next major version. */
+    readonly "active_share_link": Omit<typeof tablesSchema.schemaType.tables["activeShareLink"], "accessorName"> & { readonly accessorName: "active_share_link" };
     /** @deprecated Use `myMemberships` instead. This alias will be removed in the next major version. */
     readonly "my_memberships": Omit<typeof tablesSchema.schemaType.tables["myMemberships"], "accessorName"> & { readonly accessorName: "my_memberships" };
     /** @deprecated Use `myProfile` instead. This alias will be removed in the next major version. */
@@ -361,12 +387,14 @@ const tableAccessorAliases = {
   "active_edit_log": "activeEditLog",
   "active_entities": "activeEntities",
   "active_members": "activeMembers",
+  "active_presence": "activePresence",
   "active_proposals": "activeProposals",
   "active_replay": "activeReplay",
   "active_result": "activeResult",
   "active_run_layout": "activeRunLayout",
   "active_runs": "activeRuns",
   "active_scenarios": "activeScenarios",
+  "active_share_link": "activeShareLink",
   "my_memberships": "myMemberships",
   "my_profile": "myProfile",
   "my_project_stats": "myProjectStats",
@@ -409,6 +437,8 @@ export type DbView = __DbViewBase & {
   readonly "active_entities": __DbViewBase["activeEntities"];
   /** @deprecated Use `activeMembers` instead. This alias will be removed in the next major version. */
   readonly "active_members": __DbViewBase["activeMembers"];
+  /** @deprecated Use `activePresence` instead. This alias will be removed in the next major version. */
+  readonly "active_presence": __DbViewBase["activePresence"];
   /** @deprecated Use `activeProposals` instead. This alias will be removed in the next major version. */
   readonly "active_proposals": __DbViewBase["activeProposals"];
   /** @deprecated Use `activeReplay` instead. This alias will be removed in the next major version. */
@@ -421,6 +451,8 @@ export type DbView = __DbViewBase & {
   readonly "active_runs": __DbViewBase["activeRuns"];
   /** @deprecated Use `activeScenarios` instead. This alias will be removed in the next major version. */
   readonly "active_scenarios": __DbViewBase["activeScenarios"];
+  /** @deprecated Use `activeShareLink` instead. This alias will be removed in the next major version. */
+  readonly "active_share_link": __DbViewBase["activeShareLink"];
   /** @deprecated Use `myMemberships` instead. This alias will be removed in the next major version. */
   readonly "my_memberships": __DbViewBase["myMemberships"];
   /** @deprecated Use `myProfile` instead. This alias will be removed in the next major version. */
@@ -457,6 +489,8 @@ export type Tables = __TablesBase & {
   readonly "active_entities": __TablesBase["activeEntities"];
   /** @deprecated Use `activeMembers` instead. This alias will be removed in the next major version. */
   readonly "active_members": __TablesBase["activeMembers"];
+  /** @deprecated Use `activePresence` instead. This alias will be removed in the next major version. */
+  readonly "active_presence": __TablesBase["activePresence"];
   /** @deprecated Use `activeProposals` instead. This alias will be removed in the next major version. */
   readonly "active_proposals": __TablesBase["activeProposals"];
   /** @deprecated Use `activeReplay` instead. This alias will be removed in the next major version. */
@@ -469,6 +503,8 @@ export type Tables = __TablesBase & {
   readonly "active_runs": __TablesBase["activeRuns"];
   /** @deprecated Use `activeScenarios` instead. This alias will be removed in the next major version. */
   readonly "active_scenarios": __TablesBase["activeScenarios"];
+  /** @deprecated Use `activeShareLink` instead. This alias will be removed in the next major version. */
+  readonly "active_share_link": __TablesBase["activeShareLink"];
   /** @deprecated Use `myMemberships` instead. This alias will be removed in the next major version. */
   readonly "my_memberships": __TablesBase["myMemberships"];
   /** @deprecated Use `myProfile` instead. This alias will be removed in the next major version. */

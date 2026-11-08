@@ -13,6 +13,7 @@ import {
   type AgentContext, type DomainErrorData, type EditCommand, type EgressDocument, type Entity, type ID, type Pace, type Role,
   type SimulationMetrics, type SimulationScenario,
 } from '@egress/core';
+import { Identity } from 'spacetimedb';
 import { DbConnection, tables } from './bindings/index.ts';
 import { ghostFor } from './ghost.ts';
 import { OptimisticDocument } from './optimistic.ts';
@@ -20,7 +21,7 @@ import { Playback } from './playback.ts';
 import { writable } from './store.ts';
 import { parseProjectFile } from './stats.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectStats, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, Member, ProjectStats, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
 } from './types.ts';
 
 export interface SpacetimeClientOptions {
@@ -35,6 +36,8 @@ export function createSpacetimeClient(options: SpacetimeClientOptions): EgressCl
 }
 
 const uuid = () => globalThis.crypto.randomUUID();
+/** A 128-bit random share code, base64url (22 characters). */
+const shareCode = () => btoa(String.fromCharCode(...globalThis.crypto.getRandomValues(new Uint8Array(16)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const ms = (t: { toMillis(): bigint }) => Number(t.toMillis());
 const parse = <T>(text: string, fallback: T): T => { try { return JSON.parse(text) as T; } catch { return fallback; } };
 const wireError = (e: unknown): DomainErrorData => (e instanceof DomainError ? e.toJSON() : DomainError.fromWire(e instanceof Error ? e.message : String(e)).toJSON());
@@ -53,6 +56,7 @@ class SpacetimeEgressClient implements EgressClient {
   readonly me = writable<Me | null>(null);
   readonly projects = writable<ProjectSummary[]>([]);
   readonly projectStats = writable<ProjectStats[]>([]);
+  readonly members = writable<Member[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
   readonly runs = writable<RunSummary[]>([]);
   readonly agentJobs = writable<AgentJob[]>([]);
@@ -95,7 +99,7 @@ class SpacetimeEgressClient implements EgressClient {
               tables.myProfile, tables.mySession, tables.myProjects, tables.myMemberships, tables.activeMembers, tables.activeEntities,
               tables.activeEditLog, tables.activeScenarios, tables.activeRuns, tables.activeReplay, tables.activeResult,
               tables.activeAgentJobs, tables.activeAgentSteps, tables.activeProposals, tables.activeRunLayout, tables.runnerStatus, tables.activeCompareResults,
-              tables.myProjectStats, tables.previewEntities,
+              tables.myProjectStats, tables.previewEntities, tables.activeShareLink, tables.activePresence,
             ]);
         })
         .onConnectError((_ctx, error) => {
@@ -134,7 +138,7 @@ class SpacetimeEgressClient implements EgressClient {
     const handles = [
       conn.db.myProfile, conn.db.mySession, conn.db.myProjects, conn.db.myMemberships, conn.db.activeEntities, conn.db.activeEditLog,
       conn.db.activeRuns, conn.db.activeReplay, conn.db.activeResult, conn.db.activeAgentJobs, conn.db.activeAgentSteps, conn.db.activeProposals,
-      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities,
+      conn.db.activeRunLayout, conn.db.runnerStatus, conn.db.activeCompareResults, conn.db.myProjectStats, conn.db.previewEntities, conn.db.activeShareLink, conn.db.activePresence,
     ] as { onInsert(cb: () => void): void; onDelete(cb: () => void): void; onUpdate?: (cb: () => void) => void }[];
     // Status changes (runs, jobs, proposals, sessions) arrive as updates on rows with a primary key.
     for (const h of handles) { h.onInsert(schedule); h.onDelete(schedule); h.onUpdate?.(schedule); }
@@ -166,6 +170,13 @@ class SpacetimeEgressClient implements EgressClient {
       projectId: s.projectId, sizeBytes: s.sizeBytes, walls: s.walls, doors: s.doors, windows: s.windows, exits: s.exits,
       floors: s.floors, members: s.members, lastEvacuationSeconds: s.lastEvacuationSeconds < 0 ? null : s.lastEvacuationSeconds,
     })));
+
+    const online = new Set([...conn.db.activePresence.iter()].map(p => p.identity.toHexString()));
+    const myIdentity = profile?.identity.toHexString();
+    this.members.set([...conn.db.activeMembers.iter()].filter(m => m.projectId === this.activeProjectId).map(m => {
+      const identity = m.identity.toHexString();
+      return { identity, role: m.role as Role, joinedAt: ms(m.joinedAt), online: online.has(identity), me: identity === myIdentity };
+    }).sort((a, b) => Number(b.me) - Number(a.me) || Number(b.online) - Number(a.online) || a.joinedAt - b.joinedAt));
 
     // Document: entity rows of the active project, with optimistic edits rebased on top.
     const project = projectRows.find(p => p.id === this.activeProjectId);
@@ -313,6 +324,58 @@ class SpacetimeEgressClient implements EgressClient {
     await this.call(c => c.reducers.joinProject({ code }));
     this.refresh();
     return this.activeProjectId ?? '';
+  }
+
+  // ── sharing (PLAN.md §3 C) ──
+
+  /** Resolves once `read` returns a value from the subscribed caches. */
+  private async waitFor<T>(read: () => T | undefined | null, what: string, ms = 8000): Promise<T> {
+    const end = Date.now() + ms;
+    for (;;) {
+      const value = read();
+      if (value !== undefined && value !== null) return value;
+      if (Date.now() > end) throw new DomainError('INTERNAL_ERROR', `Timed out waiting for ${what}.`);
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+  }
+
+  private currentLink(projectId: ID) {
+    return this.conn ? [...this.conn.db.activeShareLink.iter()].find(l => l.projectId === projectId)?.code : undefined;
+  }
+
+  async shareLink() {
+    await this.ready;
+    const projectId = this.activeProjectId;
+    if (!projectId) throw new DomainError('NOT_FOUND', 'Open a project first.');
+    if (!this.currentLink(projectId)) await this.call(c => c.reducers.ensureShareLink({ projectId, code: shareCode() }));
+    return this.waitFor(() => this.currentLink(projectId), 'the share link');
+  }
+
+  async resetShareLink() {
+    await this.ready;
+    const projectId = this.activeProjectId;
+    if (!projectId) throw new DomainError('NOT_FOUND', 'Open a project first.');
+    const code = shareCode();
+    await this.call(c => c.reducers.resetShareLink({ projectId, code }));
+    return this.waitFor(() => (this.currentLink(projectId) === code ? code : undefined), 'the new share link');
+  }
+
+  async joinByLink(code: string) {
+    await this.call(c => c.reducers.joinByLink({ code }));
+    this.refresh();
+    return this.waitFor(() => this.activeProjectId, 'the shared project');
+  }
+
+  async setMemberRole(identity: string, role: Role) {
+    const projectId = this.activeProjectId;
+    if (!projectId) throw new DomainError('NOT_FOUND', 'Open a project first.');
+    await this.call(c => c.reducers.setMemberRole({ projectId, member: Identity.fromString(identity), role }));
+  }
+
+  async removeMember(identity: string) {
+    const projectId = this.activeProjectId;
+    if (!projectId) throw new DomainError('NOT_FOUND', 'Open a project first.');
+    await this.call(c => c.reducers.removeMember({ projectId, member: Identity.fromString(identity) }));
   }
 
   async edit(commands: EditCommand[]): Promise<EditResult> {

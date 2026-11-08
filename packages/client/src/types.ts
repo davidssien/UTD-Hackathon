@@ -38,6 +38,17 @@ export interface ProjectSummary {
   updatedAt: number; // ms since epoch
 }
 
+/** A member of the open project (PLAN.md §3 C). People are identified by token identity for now. */
+export interface Member {
+  /** Identity hex. Public; never an auth token. */
+  identity: string;
+  role: Role;
+  joinedAt: number;
+  /** Connected with this project open right now. */
+  online: boolean;
+  me: boolean;
+}
+
 /** Saves page details for one project (PLAN.md §3 B). */
 export interface ProjectStats {
   projectId: ID;
@@ -193,6 +204,19 @@ export interface EgressClient {
   /** Returns the plain invite code to share; only its hash is stored. */
   createInvite(role: Exclude<Role, 'owner'>, ttlHours?: number): Promise<string>;
   joinProject(code: string): Promise<ID>;
+
+  /** Members of the open project, with who is online now (presence). */
+  readonly members: Store<Member[]>;
+  /** The open project's permanent share link code; created on first use. */
+  shareLink(): Promise<string>;
+  /** Owners only: replace the link. The old one stops working; members keep access. */
+  resetShareLink(): Promise<string>;
+  /** Joins as a viewer (or keeps a higher role) and opens the project. */
+  joinByLink(code: string): Promise<ID>;
+  /** Owners only. A project always keeps at least one owner. */
+  setMemberRole(identity: string, role: Role): Promise<void>;
+  /** Owners remove anyone; anyone may remove themselves. */
+  removeMember(identity: string): Promise<void>;
 
   /** Applies optimistically, then confirms with the server. Atomic batch. */
   edit(commands: EditCommand[]): Promise<EditResult>;

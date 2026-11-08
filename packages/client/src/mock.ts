@@ -6,7 +6,7 @@
  */
 import {
   applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, metricsDelta,
-  type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type SimulationScenario,
+  type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type Role, type SimulationScenario,
 } from '@egress/core';
 import { initialize, simulateChunks, type RunChunk, type SimState } from '@egress/sim';
 import { LocalEnvironment, runHeuristicAgent, ToolBox, type RunRecord } from '@egress/agent';
@@ -15,7 +15,7 @@ import { Playback } from './playback.ts';
 import { writable } from './store.ts';
 import { parseProjectFile, statsFor } from './stats.ts';
 import type {
-  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, ProjectStats, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
+  AgentJob, AgentStep, ConnectionStatus, DocumentView, EditResult, EgressClient, Me, Member, ProjectStats, ProjectSummary, ProposalView, RunComparison, RunnerStatus, RunSummary,
 } from './types.ts';
 
 type PatchCommand = Extract<EditCommand, { kind: 'applyPatch' }>;
@@ -48,6 +48,7 @@ class MockEgressClient implements EgressClient {
   readonly me = writable<Me | null>({ identity: 'mock-identity', displayName: 'Mock user' });
   readonly projects = writable<ProjectSummary[]>([]);
   readonly projectStats = writable<ProjectStats[]>([]);
+  readonly members = writable<Member[]>([]);
   readonly document = writable<DocumentView>({ projectId: null, doc: null, pending: 0, canUndo: false, canRedo: false, lastError: null });
   readonly runs = writable<RunSummary[]>([]);
   readonly agentJobs = writable<AgentJob[]>([]);
@@ -132,6 +133,7 @@ class MockEgressClient implements EgressClient {
 
   async openProject(projectId: ID | null) {
     this.active = projectId;
+    this.members.set(projectId ? [{ identity: 'mock-identity', role: 'owner', joinedAt: Date.now(), online: true, me: true }] : []);
     this.publishDocument(null);
     this.runs.set([]);
     this.agentJobs.set([]);
@@ -148,6 +150,40 @@ class MockEgressClient implements EgressClient {
     await this.wait();
     if (!this.active) throw new Error('The mock client has no shared projects.');
     return this.active;
+  }
+
+  // ── sharing: a single local user who owns everything ──
+
+  private readonly links = new Map<ID, string>();
+
+  async shareLink() {
+    await this.wait();
+    if (!this.active) throw new DomainError('NOT_FOUND', 'Open a project first.');
+    if (!this.links.has(this.active)) this.links.set(this.active, `mock-${uuid().replaceAll('-', '')}`);
+    return this.links.get(this.active)!;
+  }
+
+  async resetShareLink() {
+    if (this.active) this.links.delete(this.active);
+    return this.shareLink();
+  }
+
+  async joinByLink(code: string): Promise<ID> {
+    await this.wait();
+    const id = [...this.links].find(([, c]) => c === code)?.[0];
+    if (!id) throw new DomainError('NOT_FOUND', 'This share link is not valid. Ask an owner for a new one.');
+    await this.openProject(id);
+    return id;
+  }
+
+  async setMemberRole(identity: string, role: Role) {
+    await this.wait();
+    if (identity === 'mock-identity' && role !== 'owner') throw new DomainError('INVALID_INPUT', 'A project needs at least one owner.');
+  }
+
+  async removeMember(_identity: string) {
+    await this.wait();
+    throw new DomainError('INVALID_INPUT', 'A project needs at least one owner.');
   }
 
   // ── editing ──

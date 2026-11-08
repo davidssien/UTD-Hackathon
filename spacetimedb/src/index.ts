@@ -145,6 +145,21 @@ const project_stats = table({ name: 'project_stats' }, {
   lastEvacuationSeconds: t.f64(),
 });
 
+/** One permanent share link per project (PLAN.md §3 C). Joining through it gives viewer access. */
+const project_links = table({ name: 'project_links' }, {
+  projectId: t.string().primaryKey(),
+  code: t.string().unique(),
+  createdBy: t.identity(),
+  createdAt: t.timestamp(),
+});
+
+/** Live connections per identity, for presence. Rows exist only while connected. */
+const online_connections = table({ name: 'online_connections' }, {
+  identity: t.identity().primaryKey(),
+  connections: t.u32(),
+  since: t.timestamp(),
+});
+
 /** Which project the caller previews on the saves page without opening it (`preview_entities`). */
 const session_preview = table({ name: 'session_preview' }, {
   identity: t.identity().primaryKey(),
@@ -230,7 +245,7 @@ const session_compare = table({ name: 'session_compare' }, {
 const spacetimedb = schema({
   users, sessions, service_identities, projects, project_members, project_invites, entities, edit_log, scenarios,
   layout_snapshots, sim_runs, sim_results, replay_chunks, agent_jobs, agent_steps, proposals, runner_heartbeats, session_compare,
-  project_stats, session_preview,
+  project_stats, session_preview, project_links, online_connections,
 });
 export default spacetimedb;
 
@@ -334,6 +349,16 @@ export const init = spacetimedb.init(() => {});
 
 export const onConnect = spacetimedb.clientConnected(ctx => {
   ensureUser(ctx);
+  const online = ctx.db.online_connections.identity.find(ctx.sender);
+  if (online) ctx.db.online_connections.identity.update({ ...online, connections: online.connections + 1 });
+  else ctx.db.online_connections.insert({ identity: ctx.sender, connections: 1, since: ctx.timestamp });
+});
+
+export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
+  const online = ctx.db.online_connections.identity.find(ctx.sender);
+  if (!online) return;
+  if (online.connections <= 1) ctx.db.online_connections.identity.delete(ctx.sender);
+  else ctx.db.online_connections.identity.update({ ...online, connections: online.connections - 1 });
 });
 
 // ── Identity ────────────────────────────────────────────────────────────────
@@ -389,6 +414,7 @@ export const delete_project = spacetimedb.reducer({ projectId: t.string() }, (ct
   for (const r of [...ctx.db.agent_jobs.projectId.filter(projectId)]) ctx.db.agent_jobs.id.delete(r.id);
   for (const s of [...ctx.db.sessions.activeProjectId.filter(projectId)]) ctx.db.sessions.identity.update({ ...s, activeProjectId: '', activeRunId: '' });
   for (const p of [...ctx.db.session_preview.iter()]) if (p.projectId === projectId) ctx.db.session_preview.identity.delete(p.identity);
+  if (ctx.db.project_links.projectId.find(projectId)) ctx.db.project_links.projectId.delete(projectId);
   ctx.db.projects.id.delete(projectId);
 }));
 
@@ -429,6 +455,40 @@ export const join_project = spacetimedb.reducer({ code: t.string() }, (ctx, { co
     }
   }
   setSession(ctx, { activeProjectId: invite!.projectId, activeRunId: '' });
+}));
+
+const LINK_CODE = /^[A-Za-z0-9_-]{22,64}$/;
+
+/**
+ * Makes sure the project has its permanent share link. The client proposes a random code
+ * (≥ 128 bits); if a link already exists it is kept, so concurrent callers converge on one.
+ */
+export const ensure_share_link = spacetimedb.reducer({ projectId: t.string(), code: t.string() }, (ctx, { projectId, code }) => guard(() => {
+  requireRole(ctx, projectId, 'viewer');
+  if (ctx.db.project_links.projectId.find(projectId)) return;
+  if (!LINK_CODE.test(code)) fail('INVALID_INPUT', 'Share codes must be 22–64 URL-safe characters.');
+  if (ctx.db.project_links.code.find(code)) fail('INVALID_INPUT', 'That share code is taken.');
+  ctx.db.project_links.insert({ projectId, code, createdBy: ctx.sender, createdAt: ctx.timestamp });
+}));
+
+/** Owners can replace the link; the old one stops working at once. Members keep their access. */
+export const reset_share_link = spacetimedb.reducer({ projectId: t.string(), code: t.string() }, (ctx, { projectId, code }) => guard(() => {
+  requireRole(ctx, projectId, 'owner');
+  if (!LINK_CODE.test(code)) fail('INVALID_INPUT', 'Share codes must be 22–64 URL-safe characters.');
+  if (ctx.db.project_links.code.find(code)) fail('INVALID_INPUT', 'That share code is taken.');
+  if (ctx.db.project_links.projectId.find(projectId)) ctx.db.project_links.projectId.delete(projectId);
+  ctx.db.project_links.insert({ projectId, code, createdBy: ctx.sender, createdAt: ctx.timestamp });
+}));
+
+/** Joining through a share link always gives viewer access (owners may promote later). */
+export const join_by_link = spacetimedb.reducer({ code: t.string() }, (ctx, { code }) => guard(() => {
+  ensureUser(ctx);
+  const link = LINK_CODE.test(code) ? ctx.db.project_links.code.find(code) : undefined;
+  if (!link) fail('NOT_FOUND', 'This share link is not valid. Ask an owner for a new one.');
+  if (!roleOf(ctx, link!.projectId, ctx.sender)) {
+    ctx.db.project_members.insert({ id: 0n, projectId: link!.projectId, identity: ctx.sender, role: 'viewer', joinedAt: ctx.timestamp });
+  }
+  setSession(ctx, { activeProjectId: link!.projectId, activeRunId: '' });
 }));
 
 export const set_member_role = spacetimedb.reducer(
@@ -839,6 +899,28 @@ export const preview_entities = spacetimedb.view({ name: 'preview_entities', pub
   const preview = ctx.db.session_preview.identity.find(ctx.sender);
   if (!preview || !isMember(ctx, preview.projectId)) return [];
   return [...ctx.db.entities.projectId.filter(preview.projectId)];
+});
+
+/** The permanent share link of the caller's active project (members only). */
+export const active_share_link = spacetimedb.view({ name: 'active_share_link', public: true }, t.array(project_links.rowType), ctx => {
+  const session = ctx.db.sessions.identity.find(ctx.sender);
+  if (!session?.activeProjectId || !isMember(ctx, session.activeProjectId)) return [];
+  const link = ctx.db.project_links.projectId.find(session.activeProjectId);
+  return link ? [link] : [];
+});
+
+/** Who is online on the caller's active project right now: members whose session has it open. */
+export const active_presence = spacetimedb.view({ name: 'active_presence', public: true }, t.array(online_connections.rowType), ctx => {
+  const session = ctx.db.sessions.identity.find(ctx.sender);
+  const projectId = session?.activeProjectId;
+  if (!projectId || !isMember(ctx, projectId)) return [];
+  const out = [];
+  for (const m of ctx.db.project_members.projectId.filter(projectId)) {
+    const other = ctx.db.sessions.identity.find(m.identity);
+    const online = other?.activeProjectId === projectId ? ctx.db.online_connections.identity.find(m.identity) : undefined;
+    if (online) out.push(online);
+  }
+  return out;
 });
 
 /** Runner liveness for every client (no project data). Clients treat a runner as online if seen in the last ~20 s. */
