@@ -104,11 +104,11 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
     }} />;
 
   const row = (p: ProjectSummary) => <tr key={p.id} className={p.id === current ? 'selected' : ''} onClick={() => setSelected(p.id)} onDoubleClick={() => onOpen(p.id)}>
-    <td className="name">
+    <td className="name"><div className="save-name-line">
       {renaming?.id === p.id && renaming.location === 'row'
         ? renameInput(p) : <button className="save-name" onClick={() => setSelected(p.id)}>{p.name}</button>}
       {p.id === view.projectId && <em>Open</em>}
-    </td>
+    </div></td>
     <td className="role">{p.role}</td>
     <td className="num">{kb(byId.get(p.id)?.sizeBytes)}</td>
     <td className="num">{when(p.updatedAt)}</td>

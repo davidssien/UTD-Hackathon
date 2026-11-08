@@ -258,8 +258,9 @@
 .saves-list tr.selected{background:var(--accent-2)!important}
 .saves-list tr.group td{font-size:11px;color:var(--muted);padding:12px 12px 4px;border:0}
 .saves-list td.name{max-width:0;width:50%;overflow:hidden;text-overflow:ellipsis;font-weight:550}
-.saves-list td.name em{font-style:normal;font-size:11px;font-weight:600;color:var(--accent);margin-left:8px}
-.save-name{text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.save-name-line{display:flex;align-items:baseline;gap:8px}
+.saves-list td.name em{flex:none;font-style:normal;font-size:11px;font-weight:600;color:var(--accent)}
+.save-name{text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;min-width:0;white-space:nowrap}
 .save-name:hover{text-decoration:underline}
 .saves-detail h2 input,.saves-list td.name input{width:100%;height:26px;padding:0 6px;border:1px solid var(--accent);border-radius:5px}
 .saves-list td.role{text-transform:capitalize;color:var(--muted)}

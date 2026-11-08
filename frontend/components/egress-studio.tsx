@@ -65,7 +65,7 @@ export default function EgressStudio() {
     const client = backend === 'local'
       ? createSpacetimeClient({ uri: params.get('uri') ?? 'ws://127.0.0.1:3010', db: params.get('db') ?? 'egress-local' })
       : backend === 'mock' // in-memory, development only; nothing is stored
-        ? createMockClient({ seed: [{ name: 'Courtyard study', doc: example() }] })
+        ? createMockClient({ seed: [{ name: 'Courtyard Study', doc: example() }] })
         : backend === 'maincloud'
           ? createSpacetimeClient({ uri: 'wss://maincloud.spacetimedb.com', db: 'egress-dev' })
           : createSpacetimeClient({ uri: process.env.EGRESS_SPACETIME_URI || 'wss://maincloud.spacetimedb.com', db: process.env.EGRESS_SPACETIME_DB || 'egress-dev' });

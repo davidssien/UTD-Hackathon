@@ -23,9 +23,9 @@ async function courtyard(): Promise<EgressDocument> {
 }
 
 export const EXAMPLES: ExampleSave[] = [
-  { id: 'courtyard', name: 'Courtyard study', note: '16 × 12 m · two rooms on a corridor', people: 150, load: courtyard },
-  { id: 'office', name: 'Office floor', note: '24 × 16 m · offices, meeting room, open plan', people: 120, load: json(() => import('../../content/examples/office.json')) },
-  { id: 'school', name: 'School wing', note: '48 × 20 m · eleven classrooms off one corridor', people: 320, load: json(() => import('../../content/examples/school.json')) },
-  { id: 'event-hall', name: 'Event hall', note: '36 × 24 m · foyer, hall and backstage', people: 500, load: json(() => import('../../content/examples/event-hall.json')) },
-  { id: 'clinic', name: 'Two-story clinic', note: '20 × 15 m · two floors joined by a stair', people: 80, load: json(() => import('../../content/examples/clinic.json')) },
+  { id: 'courtyard', name: 'Courtyard Study', note: '16 × 12 m · two rooms on a corridor', people: 150, load: courtyard },
+  { id: 'office', name: 'Office Floor', note: '24 × 16 m · offices, meeting room, open plan', people: 120, load: json(() => import('../../content/examples/office.json')) },
+  { id: 'school', name: 'School Wing', note: '48 × 20 m · eleven classrooms off one corridor', people: 320, load: json(() => import('../../content/examples/school.json')) },
+  { id: 'event-hall', name: 'Event Hall', note: '36 × 24 m · foyer, hall and backstage', people: 500, load: json(() => import('../../content/examples/event-hall.json')) },
+  { id: 'clinic', name: 'Two-Story Clinic', note: '20 × 15 m · two floors joined by a stair', people: 80, load: json(() => import('../../content/examples/clinic.json')) },
 ];
