@@ -5,11 +5,11 @@
  */
 import { z } from 'zod';
 import {
-  applyEdit, deriveLayout, DomainError, EditCommandSchema, effectiveTime, layoutHash, metricsDelta, openingCenter,
-  type EditCommand, type ID, type SimulationMetrics,
+  applyEdit, deriveLayout, DomainError, EditCommandSchema, effectiveTime, groundFloorId, layoutHash, metricsDelta, openingCenter,
+  type EditCommand, type EgressDocument, type ID, type SimulationMetrics,
 } from '@egress/core';
 import type { AgentEnvironment, RunRecord } from './environment.ts';
-import { populationCapacity } from '@egress/sim';
+import { floorAirflow, populationCapacity, type WindFrom } from '@egress/sim';
 import { cornerRooms } from './corner-rooms.ts';
 import { suggestionsFor, type Suggestion } from './candidates.ts';
 import { complianceChecks, describeLayout, resolvePlacement } from './layout.ts';
@@ -35,6 +35,7 @@ export interface ToolSpec {
 const id = z.string().min(1).max(200);
 const ARGS = {
   inspect_layout: z.object({}).strict(),
+  inspect_airflow: z.object({ floorId: id.optional(), windFrom: z.enum(['west', 'north', 'east', 'south']).optional() }).strict(),
   inspect_run: z.object({ runId: id }).strict(),
   run_scenario: z.object({ people: z.number().int().min(1).max(2000).optional(), blockedExitIds: z.array(id).max(20).optional() }).strict(),
   get_hotspots: z.object({ runId: id, topK: z.number().int().min(1).max(5).optional() }).strict(),
@@ -62,6 +63,9 @@ export const TOOL_SPECS: ToolSpec[] = [
     at: { type: 'string', enum: ['start', 'center', 'end'] }, roomId: { type: 'string' }, farthestFromOpeningId: { type: 'string' },
   }, ['kind']),
   spec('check_compliance', 'Modeled code-style checks (door width, exit count and capacity for the head count, corridor width, travel distance). Failing door widths come back as suggestionIds you can test. Not a code review.', {}),
+  spec('inspect_airflow', 'Measure steady planar airflow on one floor of the current layout. Use the selected floor and wind from the user context unless they specify another. Returns open exterior aperture count and a relative pressure gradient, including a location for the strongest flow. The model excludes smoke, mechanical ventilation and vertical exchange.', {
+    floorId: { type: 'string' }, windFrom: { type: 'string', enum: ['west', 'north', 'east', 'south'] },
+  }),
   spec('inspect_run', 'Get the scenario and measured metrics of an existing simulation run.', { runId: { type: 'string' } }, ['runId']),
   spec('run_scenario', 'Run an evacuation simulation on the current layout (counts against a budget of 2). Optionally change head count or block exits.', {
     people: { type: 'integer', minimum: 1, maximum: 2000 }, blockedExitIds: { type: 'array', items: { type: 'string' } },
@@ -152,6 +156,10 @@ export class ToolBox {
   private async execute(name: ToolName, args: Record<string, unknown>): Promise<unknown> {
     switch (name) {
       case 'inspect_layout': return this.inspectLayout();
+      case 'inspect_airflow': {
+        const doc = this.env.document();
+        return inspectAirflow(doc, args.floorId as string ?? groundFloorId(doc), args.windFrom as WindFrom ?? 'west');
+      }
       case 'inspect_run': {
         const run = await this.run(args.runId as string);
         return { ...summarizeRun(run), matchesLayout: run.layoutHash === layoutHash(this.env.document()) };
@@ -180,7 +188,7 @@ export class ToolBox {
         for (const s of suggestions) this.suggestions.set(s.suggestionId, s);
         return {
           runId: run.runId,
-          hotspots: hotspots.map(h => ({ center: h.regionCenter, score: h.score, peakAtSecond: (h.observedAtTick ?? 0) / 10, description: h.description })),
+          hotspots: hotspots.map(h => ({ floorId: h.floorId, center: h.regionCenter, score: h.score, peakAtSecond: (h.observedAtTick ?? 0) / 10, description: h.description })),
           suggestions: suggestions.map(s => ({ suggestionId: s.suggestionId, title: s.title, rationale: s.rationale })),
         };
       }
@@ -310,17 +318,33 @@ export class ToolBox {
     const wallEntities = new Map(doc.walls.map(w => [w.id, w]));
     const openings = doc.openings.filter(o => o.openingKind !== 'window').map(o => {
       const c = openingCenter(doc, o);
-      return { id: o.id, kind: o.openingKind, wallId: o.wallId, widthM: o.widthM, state: o.state, center: c ? { x: round(c.x), y: round(c.y) } : null };
+      return { id: o.id, floorId: o.floorId, kind: o.openingKind, wallId: o.wallId, widthM: o.widthM, state: o.state, center: c ? { x: round(c.x), y: round(c.y) } : null };
     });
     return {
       floors: doc.floors.map(f => ({ id: f.id, name: f.name, level: f.level })),
-      rooms: rooms.map(r => ({ id: r.id, kind: r.kind, areaM2: r.areaM2, widthM: r.widthM, lengthM: r.lengthM, center: r.center, neighbours: r.neighbours, openingIds: r.openingIds })),
+      stairs: doc.stairs.map(s => ({ id: s.id, lowerFloorId: s.floorId, upperFloorId: s.toFloorId, min: s.min, max: s.max, upEdge: s.upEdge })),
+      rooms: rooms.map(r => ({ id: r.id, floorId: r.floorId, kind: r.kind, areaM2: r.areaM2, widthM: r.widthM, lengthM: r.lengthM, center: r.center, neighbours: r.neighbours, openingIds: r.openingIds })),
       exits: openings.filter(o => o.kind === 'exit'),
       doors: openings.filter(o => o.kind === 'door'),
       walls: walls.map(w => ({ id: w.id, floorId: wallEntities.get(w.id)?.floorId, startVertexId: wallEntities.get(w.id)?.startVertexId, endVertexId: wallEntities.get(w.id)?.endVertexId, lengthM: w.lengthM, from: { x: round(w.from.x), y: round(w.from.y) }, to: { x: round(w.to.x), y: round(w.to.y) }, outside: w.exterior, roomIds: w.roomIds, openings: w.openings })),
       warnings: diagnostics.map(d => `${d.code}: ${d.message}`),
     };
   }
+}
+
+export function inspectAirflow(doc: EgressDocument, floorId: string, windFrom: WindFrom) {
+  const floor = doc.floors.find(f => f.id === floorId);
+  if (!floor) throw new DomainError('NOT_FOUND', `No floor ${floorId}. Inspect the layout for floor IDs.`);
+  const flow = floorAirflow(doc, floorId, windFrom);
+  const { grid, values } = flow.magnitude;
+  const i = flow.peak > 0 ? values.indexOf(flow.peak) : -1;
+  return {
+    floorId, floorName: floor.name, windFrom, openExteriorApertures: flow.exteriorOpenings,
+    peakRelativeGradient: Number(flow.peak.toPrecision(4)), units: flow.magnitude.units,
+    strongestAtM: i < 0 ? null : { x: round(grid.origin.x + (i % grid.width + 0.5) * grid.cellSizeM),
+      y: round(grid.origin.y + (Math.floor(i / grid.width) + 0.5) * grid.cellSizeM) },
+    throughFlow: flow.peak > 1e-6,
+  };
 }
 
 /** Moved to @egress/core so the UI clients compute identical deltas; kept here for existing imports. */
@@ -351,6 +375,7 @@ export function summarizeRun(run: RunRecord) {
     peakCongestion: m.peakCongestion,
     meanCongestion: m.meanCongestion,
     perExitThroughput: m.perExitThroughput,
+    perFloor: m.perFloor,
     timedOut: !m.complete || m.evacuationTimeSeconds === null,
   };
 }

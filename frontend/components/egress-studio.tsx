@@ -41,7 +41,7 @@ const STAIR_EDGES: { id: Stair['upEdge']; name: string }[] = [{ id: 'n', name: '
 const MODE_LABEL: Record<PresenceMode, string> = { edit: 'Editing', simulate: 'Simulating', analysis: 'Analysis' };
 const MODES: { id: Mode; name: string; key: string }[] = [{ id: 'edit', name: 'Edit', key: '1' }, { id: 'simulate', name: 'Simulate', key: '2' }, { id: 'analysis', name: 'Analysis', key: '3' }];
 const STEP_LABEL: Record<string, string> = {
-  inspect_layout: 'Read layout', inspect_run: 'Read run', run_scenario: 'Baseline simulation', get_hotspots: 'Find bottlenecks',
+  inspect_layout: 'Read layout', inspect_airflow: 'Measure airflow', inspect_run: 'Read run', run_scenario: 'Baseline simulation', get_hotspots: 'Find bottlenecks',
   plan_corner_room: 'Plan room placements', test_edit_batch: 'Test change', confirm_candidate: 'Re-test on new crowds', compare_runs: 'Compare runs', submit_proposal: 'Propose change',
 };
 
@@ -511,7 +511,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         <Tool tip="Redo (Ctrl+Shift+Z)" disabled={!view.canRedo || !editable} onClick={() => void client.redo().catch(fail)}><ArrowUturnRightIcon /></Tool>
       </>}
       {mode === 'simulate' && <Transport playback={playback} running={running} onSpeed={s => { speedRef.current = s; }} />}
-      {mode === 'analysis' && <ChatBar client={client} playback={playback} onSent={() => setPreviewId(null)} onError={fail} disabled={!doc} />}
+      {mode === 'analysis' && <ChatBar floorId={floor?.id} windFrom={wind} client={client} playback={playback} onSent={() => setPreviewId(null)} onError={fail} disabled={!doc} />}
     </footer>
 
     {/* Bottom left: floor switcher (D75) */}
@@ -780,7 +780,7 @@ function LiveTransport({ playback, onSpeed }: { playback: PlaybackController; ru
 
 // ── Analysis ────────────────────────────────────────────────────────────────
 
-function ChatBar({ client, playback, disabled, onSent, onError }: { onSent(): void; client: EgressClient; playback: PlaybackController | null; disabled: boolean; onError(e: unknown): void }) {
+function ChatBar({ client, playback, floorId, windFrom, disabled, onSent, onError }: { floorId?: string; windFrom: WindFrom; onSent(): void; client: EgressClient; playback: PlaybackController | null; disabled: boolean; onError(e: unknown): void }) {
   const jobs = useEgress(client.agentJobs);
   const [prompt, setPrompt] = useState('');
   const working = jobs.some(j => j.status === 'queued' || j.status === 'running');
@@ -788,7 +788,7 @@ function ChatBar({ client, playback, disabled, onSent, onError }: { onSent(): vo
     const text = prompt.trim() || 'Find the worst bottleneck and propose a measured improvement.';
     const state = playback?.state.get();
     const runId = state?.status === 'complete' ? state.runId : undefined; // the agent measures its own baseline otherwise
-    void client.askAgent(text, runId ? { runId } : undefined).then(() => { setPrompt(''); onSent(); }).catch(onError);
+    void client.askAgent(text, { runId, floorId, windFrom }).then(() => { setPrompt(''); onSent(); }).catch(onError);
   };
   return <form className="chat" onSubmit={e => { e.preventDefault(); if (!working) send(); }}>
     <input value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ask about this layout" disabled={disabled} aria-label="Message the agent" />
@@ -801,6 +801,7 @@ function stepValue(step: AgentStep): string | null {
   if (!p || typeof p !== 'object') return null;
   if (step.kind === 'error') return String((p as { message?: unknown }).message ?? 'error');
   const d = p.delta as Record<string, number> | undefined;
+  if (step.toolName === 'inspect_airflow' && typeof p.peakRelativeGradient === 'number') return `${p.peakRelativeGradient} rel./m`;
   if (step.toolName === 'confirm_candidate' && typeof p.meanSeconds === 'number') return `mean ${signed(p.meanSeconds, ' s')}`;
   if (d && typeof d.effectiveTimeSeconds === 'number') return signed(d.effectiveTimeSeconds, ' s');
   if (typeof p.evacuationTimeSeconds === 'number') return `${p.evacuationTimeSeconds.toFixed(1)} s`;

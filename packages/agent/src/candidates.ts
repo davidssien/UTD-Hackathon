@@ -34,7 +34,7 @@ export function suggestionsFor(doc: EgressDocument, hotspots: BottleneckMetric[]
   };
 
   for (const h of hotspots) {
-    const near = nearestOpening(doc, h.regionCenter);
+    const near = nearestOpening(doc, h.floorId, h.regionCenter);
     if (!near || near.distance > NEAR_HOTSPOT_M) continue;
     const o = near.opening;
     const kind = o.openingKind === 'exit' ? 'exit' : 'door';
@@ -51,17 +51,17 @@ export function suggestionsFor(doc: EgressDocument, hotspots: BottleneckMetric[]
       }
     }
     if (o.openingKind === 'exit') {
-      const extraExit = secondExit(doc, h.regionCenter);
+      const extraExit = secondExit(doc, h.floorId, h.regionCenter);
       if (extraExit) push(extraExit);
     }
   }
   return out;
 }
 
-function nearestOpening(doc: EgressDocument, p: Vec2): { opening: Opening; distance: number } | null {
+function nearestOpening(doc: EgressDocument, floorId: string, p: Vec2): { opening: Opening; distance: number } | null {
   let best: { opening: Opening; distance: number } | null = null;
   for (const o of doc.openings) {
-    if (o.openingKind === 'window') continue;
+    if (o.floorId !== floorId || o.openingKind === 'window') continue;
     const c = openingCenter(doc, o);
     if (!c) continue;
     const d = distance(c, p);
@@ -86,11 +86,12 @@ function widestFit(doc: EgressDocument, o: Opening, target: number): number {
 }
 
 /** A 1.2 m exit in the middle of the longest outside wall far from the hotspot that has room for it. */
-function secondExit(doc: EgressDocument, hotspot: Vec2): Omit<Suggestion, 'suggestionId'> | null {
+function secondExit(doc: EgressDocument, floorId: string, hotspot: Vec2): Omit<Suggestion, 'suggestionId'> | null {
   const { topology } = deriveLayout(doc);
   const isRoom = (faceId: string) => (topology.faceById.get(faceId)?.area ?? 0) > 1e-6;
   let best: { wallId: string; offset: number; score: number; mid: Vec2 } | null = null;
   for (const w of doc.walls) {
+    if (w.floorId !== floorId) continue;
     const sides = topology.wallSides.get(w.id);
     if (!sides || isRoom(sides.left) === isRoom(sides.right)) continue; // must border the outside
     if (doc.openings.some(o => o.wallId === w.id)) continue;

@@ -14,6 +14,7 @@ export type { RoomKind } from '@egress/core';
 
 export interface RoomInfo {
   id: string;
+  floorId: string;
   roomHash: string;
   kind: RoomKind;
   areaM2: number;
@@ -58,7 +59,7 @@ export function describeLayout(doc: EgressDocument, labels?: ReadonlyMap<string,
   });
   // Rooms come from @egress/core so the agent, runner and UI agree on hashes and rule kinds (D73).
   const rooms: RoomInfo[] = describeRooms(doc).map(d => ({
-    id: d.id, roomHash: d.roomHash, kind: labels?.get(d.roomHash) ?? d.ruleKind, areaM2: d.areaM2, widthM: d.widthM, lengthM: d.lengthM,
+    id: d.id, floorId: d.floorId, roomHash: d.roomHash, kind: labels?.get(d.roomHash) ?? d.ruleKind, areaM2: d.areaM2, widthM: d.widthM, lengthM: d.lengthM,
     center: d.center, wallIds: d.wallIds, neighbours: d.neighbours, openingIds: d.openingIds,
   }));
   return { rooms, walls };

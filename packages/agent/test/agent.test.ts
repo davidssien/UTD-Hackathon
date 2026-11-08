@@ -187,3 +187,18 @@ let callCounter = 0;
 function call(name: string, args: unknown): ChatMessage {
   return { role: 'assistant', content: null, tool_calls: [{ id: `c${callCounter++}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] };
 }
+
+test('airflow questions use the selected floor and wind without running or editing the crowd scenario', async () => {
+  const doc = parseDocument(JSON.parse(readFileSync(join(import.meta.dirname, '../../../content/examples/clinic.json'), 'utf8')));
+  const floorId = doc.floors.find(f => f.level === 1)!.id;
+  const env = new LocalEnvironment({ document: doc, scenario: scenario(doc.projectId, 80), jobId: 'vent' });
+  const tools = new ToolBox(env, 'vent');
+  const result = await runHeuristicAgent(tools, { floorId, windFrom: 'north' }, 'What is the airflow on this floor?');
+  assert.match(result.message, /north/);
+  assert.equal(tools.tested, 0);
+  assert.equal(env.runs.size, 0);
+  const payload = env.steps.find(s => s.kind === 'tool_result' && s.toolName === 'inspect_airflow')!.payload as { floorId: string; throughFlow: boolean };
+  assert.equal(payload.floorId, floorId);
+  assert.equal(payload.throughFlow, false);
+  assert.match(JSON.stringify(await tools.call('inspect_airflow', { floorId: 'missing' })), /No floor/);
+});

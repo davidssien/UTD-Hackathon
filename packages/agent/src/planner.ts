@@ -7,8 +7,8 @@
  *   model is configured, and as the fallback when the model misbehaves. It is
  *   never a canned transcript: every number comes from a simulation.
  */
-import type { AgentContext, ID } from '@egress/core';
-import { ToolBox, TOOL_SPECS, delta, describeDelta, summarizeRun, type ToolSpec } from './tools.ts';
+import { groundFloorId, type AgentContext, type ID } from '@egress/core';
+import { ToolBox, TOOL_SPECS, delta, describeDelta, summarizeRun, type inspectAirflow, type ToolSpec } from './tools.ts';
 
 export interface AgentOutcome {
   mode: 'llm' | 'heuristic' | 'llm+heuristic-fallback';
@@ -25,7 +25,7 @@ interface CandidateResult extends RunSummary { change: string; delta: Record<str
 
 /** What the user asked for (D72). The LLM decides through its tool choices; the heuristic uses this. */
 export interface Intent {
-  kind: 'targeted' | 'corner-room' | 'improve' | 'question';
+  kind: 'targeted' | 'corner-room' | 'improve' | 'question' | 'airflow';
   opening?: 'door' | 'window' | 'exit';
   farEnd: boolean;
   hallway: boolean;
@@ -39,6 +39,8 @@ export function classifyIntent(prompt: string): Intent {
   if (/\b(?:add|build|create|design|place|fit|need|partition|enclose)\b[^.!?\n]{0,75}\b(?:corner (?:office|room)|(?:small|new) office|(?:an?|the) office)\b/.test(p)) {
     return { kind: 'corner-room', farEnd, hallway };
   }
+  const asksAboutAir = /\b(airflow|air flow|ventilation|wind)\b/.test(p);
+  if (asksAboutAir && !(opening && /\b(add|place|put|move|install|create)\b/.test(p))) return { kind: 'airflow', farEnd, hallway };
   if (opening && /\b(add|place|put|move|where|new|another|second|extra|install|create|position)\b/.test(p)) return { kind: 'targeted', opening, farEnd, hallway };
   if (/^\s*(why|what|how (many|long|much|fast)|explain|is|are|does|do|which)\b/.test(p) && !/\b(fix|improve|better|reduce|faster|change)\b/.test(p)) return { kind: 'question', farEnd, hallway };
   return { kind: 'improve', farEnd, hallway };
@@ -61,6 +63,15 @@ interface LayoutResult {
 
 export async function runHeuristicAgent(tools: ToolBox, context: AgentContext = {}, prompt = ''): Promise<AgentOutcome> {
   const intent = classifyIntent(prompt);
+  if (intent.kind === 'airflow') {
+    const doc = tools.env.document();
+    const floorId = doc.floors.find(f => prompt.toLowerCase().includes(f.name.toLowerCase()))?.id ?? context.floorId ?? groundFloorId(doc);
+    const windFrom = prompt.toLowerCase().match(/\b(?:from (?:the )?(west|east|north|south)|(west|east|north|south)(?:erly)? wind)\b/)?.slice(1).find(Boolean) ?? context.windFrom ?? 'west';
+    const air = await tools.call('inspect_airflow', { floorId, windFrom }) as ReturnType<typeof inspectAirflow> & { error?: string };
+    if (air.error) return finish(tools, 'heuristic', air.error);
+    const peak = air.strongestAtM;
+    return finish(tools, 'heuristic', `${air.floorName} has ${air.openExteriorApertures} open exterior apertures. With wind from the ${air.windFrom}, ${peak ? `the peak modeled pressure gradient is ${air.peakRelativeGradient} relative units/m near (${peak.x}, ${peak.y}) m` : 'there is no modeled through-flow'}.`);
+  }
   const layout = (await tools.call('inspect_layout', {})) as LayoutResult;
   if (intent.kind === 'corner-room') return planRoom(tools, context, prompt);
   if (intent.kind === 'targeted' && intent.opening) return targeted(tools, context, intent, layout);
@@ -197,9 +208,10 @@ export interface ChatMessage {
 
 export type ChatFn = (messages: ChatMessage[], tools: ToolSpec[]) => Promise<ChatMessage>;
 
-export const SYSTEM_PROMPT = `You are Egress's building-flow analysis agent. You investigate evacuation bottlenecks in a 2D building model using tools, never guesses.
+export const SYSTEM_PROMPT = `You are Egress's building-flow analysis agent. You investigate evacuation bottlenecks in a multi-floor building model using tools, never guesses.
 
 First decide what the user asked for, and answer THAT:
+- For airflow or ventilation questions, call inspect_airflow. For a named floor, use inspect_layout to identify it. Include the selected floor and wind from Context where available. Report the strongest location using the exact measured coordinates in metres. Explain the relative flow and limits using the returned measurement.
 - To build a room or corner office, call plan_corner_room and test its placements. Submit the best requested room. Keep its partitions and doorway together in the proposal.
 - A specific change ("add a door at the far end of the hallway", "move the exit", "where should a second exit go"): call inspect_layout to find the rooms, walls and openings they mean (room kinds include "hallway"), then place_opening to turn it into a suggestionId, test_edit_batch it, and submit_proposal with requested=true even if it does not help. Say honestly what it measured. Then you may test the worst-bottleneck fix from get_hotspots and submit it as a second, separate proposal only if it does clearly better. Never replace the requested change with a different one.
 - For other requested partitions or wall moves, inspect the actual wall endpoints, test native edit commands with test_edit_batch, and submit the measured requested design.
@@ -224,22 +236,28 @@ export async function runLlmAgent(tools: ToolBox, chat: ChatFn, prompt: string, 
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: `${prompt}\n\nContext: ${JSON.stringify(context)}` },
   ];
+  let measuredAir = false;
+  const specs = intent.kind === 'airflow' ? TOOL_SPECS.filter(t => ['inspect_layout', 'inspect_airflow'].includes(t.function.name)) : TOOL_SPECS;
   try {
     for (let turn = 0; turn < tools.budget.maxToolCalls + 2; turn++) {
-      const reply = await chat(messages, TOOL_SPECS);
+      const reply = await chat(messages, specs);
       messages.push({ role: 'assistant', content: reply.content ?? null, tool_calls: reply.tool_calls });
       if (reply.content && reply.tool_calls?.length) await tools.env.log({ kind: 'thought', toolName: '', payload: { text: reply.content } });
       if (!reply.tool_calls?.length) {
         const text = (reply.content ?? '').trim();
         if (!text) break;
-        if (tools.proposals.length || (intent.kind === 'question' && tools.calls > 0)) return finish(tools, 'llm', text);
+        if (tools.proposals.length || (intent.kind === 'question' && tools.calls > 0) || (intent.kind === 'airflow' && measuredAir)) return finish(tools, 'llm', text);
         break; // Finish the measured work before accepting a prose-only answer.
       }
       for (const call of reply.tool_calls) {
         let args: unknown = {};
         try { args = call.function.arguments ? JSON.parse(call.function.arguments) : {}; } catch { args = { _unparsable: call.function.arguments }; }
         if (intent.kind === 'improve' && tools.tested && !tools.proposals.length && tools.calls >= tools.budget.maxToolCalls - 2) break;
+        if (call.function.name === 'inspect_airflow' && args && typeof args === 'object') {
+          args = { floorId: context.floorId, windFrom: context.windFrom, ...args };
+        }
         const result = await tools.call(call.function.name, args);
+        if (call.function.name === 'inspect_airflow' && result && typeof result === 'object' && 'throughFlow' in result) measuredAir = true;
         messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result).slice(0, 6000) });
       }
       if (intent.kind === 'improve' && tools.tested && !tools.proposals.length && tools.calls >= tools.budget.maxToolCalls - 2) break;

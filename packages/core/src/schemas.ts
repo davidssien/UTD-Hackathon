@@ -285,6 +285,8 @@ export const AgentStepKindSchema = z.enum(['thought', 'tool_call', 'tool_result'
 export const ProposalStatusSchema = z.enum(['proposed', 'accepted', 'rejected', 'stale']);
 
 export const AgentContextSchema = z.object({
+  floorId: IdSchema.optional(),
+  windFrom: z.enum(['west', 'north', 'east', 'south']).optional(),
   selectedEntityIds: z.array(IdSchema).max(64).optional(),
   runId: IdSchema.optional(),
   tick: z.number().int().nonnegative().optional(),
