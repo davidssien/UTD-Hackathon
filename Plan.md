@@ -33,6 +33,11 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Floor surfaces return, with wood / basic / tile materials.
 - Multiple floors with stairs.
 - Fire, after an airflow layer and smoke.
+- **First:** a small pass so everyone shares one central `.env` (NVIDIA key and SpacetimeDB credentials) and can use SpacetimeDB without `spacetime login`.
+- **Evacuation behavior has two modes:**
+  - (a) the deterministic model, fixed so crowds stop flip-flopping between exits, with per-person attention span and patience;
+  - (b) an agentic mode where Nemotron estimates human behavior at low cost.
+- **A security phase** (IDOR, auth and the rest) before the public tag.
 
 ---
 
@@ -52,7 +57,10 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 ## 2. Priorities
 
 **`STABLE-V2` gate.**
+- One central `.env`: a fresh clone plus the shared `.env` publishes, runs the runner and runs the site, with no `spacetime login`.
 - https://dontrepeatyourself.dev serves Egress from the home desktop: web, SpacetimeDB and the runner.
+- The deterministic evacuation model (v0.2) no longer flip-flops: people commit to exits by attention span and patience.
+- The security review has passed: the authorization matrix test is green and there are no open high-severity findings.
 - The saves page is the landing page.
 - The display fixes are in.
 - The agent answers the question that was asked.
@@ -60,21 +68,60 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 - Floor surfaces have materials.
 - Multiple floors with stairs work: people walk down stairs and out.
 
-**`STABLE-V3`:** airflow particles, then smoke, then fire, combined into hazard evacuations.
+**`STABLE-V3`:** the agentic evacuation mode; airflow particles, then smoke, then fire, combined into hazard evacuations.
 
 | # | Workstream | Target | Why now |
 |---|---|---|---|
+| T | Team access: one central `.env` | V2, **first** | Everyone needs the same credentials before parallel work; it's small. |
 | A | Display fixes | V2 | Small, visible, and unblocks every review. |
 | B | Saves landing page | V2 | It's the front door of the public site, and its JSON export/import is how projects move off Maincloud. |
 | C | Hosting, secrets, sharing | V2 (**required**) | A public domain is mandatory for V2; other people need to see projects. |
 | D | Agent that answers the question | V2 | It's a correctness bug in the headline feature. |
 | E | Rooms and escape plans | V2 | New capability that builds on D's layout grounding. |
 | F | Floor surfaces, multiple floors, stairs | V2 | Cody asked for floors in the next major pass. Floor surfaces come first. |
+| H | Evacuation behavior v0.2 (deterministic mode) | V2 | Crowds shimmying between doors undermine every number the product shows. |
+| S | Security review | V2, before the tag | The site becomes public; IDOR and auth gaps must be found first. |
+| I | Agentic evacuation mode (Nemotron behavior) | V3 | Needs H's per-person parameters to steer, and a cost budget. |
 | G | Airflow → smoke → fire | V3 | Airflow must exist before smoke, and fire needs both. |
 
 ---
 
 ## 3. Workstreams
+
+### T. Team access: one central `.env` (first pass)
+
+**Goal.** A teammate clones the repo and receives the shared `.env` through a password manager. They can then publish the module, run the runner (with Nemotron) and run the site against the team database. Nobody runs `spacetime login`.
+
+**One file at the repo root** (gitignored), documented by a committed `.env.example`. It replaces the per-component examples added on 2026-11-08 (`services/runner/.env.example`, `.env.deploy.example`, `frontend/.env.example`).
+
+| Key | Used by | Notes |
+|---|---|---|
+| `NVIDIA_API_KEY`, `NEMOTRON_MODEL` | runner | Server-side only. |
+| `EGRESS_SERVICE_SECRET` | runner | Its sha256 is compiled into the module. |
+| `SPACETIME_URL` | runner, CLI wrapper, site | The HTTP(S) form, e.g. `https://maincloud.spacetimedb.com` or `http://127.0.0.1:3010`. The runner and browser derive `ws(s)://`. |
+| `SPACETIME_PUBLIC_URL` | site | Optional. What browsers connect to when it differs from `SPACETIME_URL`, e.g. `https://db.dontrepeatyourself.dev` on the home server. |
+| `SPACETIME_DB` | all | e.g. `egress-dev`, later `egress`. |
+| `SPACETIME_TOKEN` | CLI wrapper | A **team** identity's token, not a personal one (see below). |
+
+**How each piece reads it**
+- **Runner:** `config.ts` loads the root `.env`, then `services/runner/.env` as an optional local override (today's setups keep working).
+- **Site:** `next.config.ts` loads the root `.env` and passes **only** the derived public URI and database name to the browser. A test checks the production bundle contains no `NVIDIA_API_KEY` or `SPACETIME_TOKEN` values.
+- **CLI:** `npm run db -- <spacetime args>` wraps the CLI with a repo-local config (`.spacetime/cli.toml`, gitignored). It adds the server, runs `login --token $SPACETIME_TOKEN`, then passes your arguments through. Shortcuts:
+  - `npm run db:publish` (always `--delete-data=never`)
+  - `npm run db:logs`
+  - `npm run db:sql`
+  
+  This was verified on 2026-11-08 with a server-issued token against a local server.
+
+**Which token**
+- **Home server:** a server-issued *publisher identity* (`POST /v1/identity`). It is team-owned by design.
+- **Maincloud:** don't share Cody's personal login token, which controls his whole SpacetimeDB account. Make a dedicated team account, or a Maincloud organization (`spacetime publish --organization`), that owns the team database, and put its token in the `.env`. This may mean re-creating `egress-dev` under that identity; dev data may be wiped, or moved via JSON export.
+
+*Done when:*
+- A second machine with only a fresh clone, `npm ci` and the shared `.env` runs `npm run db:publish`, `npm start -w @egress/runner` (Nemotron answers) and `npm run dev` against the team database.
+- No `spacetime login` was used.
+- The bundle check passes.
+- SELF_HOSTING.md is updated to the central `.env`.
 
 ### A. Display fixes
 
@@ -88,13 +135,17 @@ This file holds **priorities, the work ahead and decisions**. Reference material
    - *Time:* fields arrive at 2 Hz. Keep the two samples around the playhead and blend them in the shader by the fractional time (lerp). The heat changes smoothly during playback and scrubbing.
    - *Space:* upload the field as a float texture and sample it bicubically in a fragment shader, then apply the palette after interpolation. This gives smooth curves instead of 0.25 m squares.
    - Walls stay crisp: the walkable mask is sampled separately, so heat never bleeds through a wall. Optional thin iso-contour lines at palette stops.
-5. **Chat bar:** remove the sparkle icon.
-6. **Small fixes:**
+5. **A steady LIVE badge.** Today the playhead catches the edge, stalls until the next 2 s chunk, and the badge blinks on and off with every chunk.
+   - *Follow mode:* after Go live, the playhead trails the edge by a small buffer (one chunk, about 2 s) so it plays continuously instead of stopping at each chunk.
+   - *Debounce:* LIVE switches on within 1 s of the edge and stays on until the playhead is more than `n` = 4 s behind or the user scrubs back.
+   - The scrubber thumb sits at the front of the timeline while live, and the timeline shows a live-edge marker.
+6. **Chat bar:** remove the sparkle icon.
+7. **Small fixes:**
    - Keep the drawing dimension label inside the viewport.
    - Hide tooltips while a menu is open.
    - Make the readout show the playhead's metrics where available, not only the live edge's.
 
-*Done when:* in a browser at 1440×900 and 1024×768, opening Layers in Simulate and Analysis never overlaps the pane; both panes collapse and restore; the heatmap plays smoothly with no visible cells; Cody has picked black or blueprint.
+*Done when:* in a browser at 1440×900 and 1024×768, opening Layers in Simulate and Analysis never overlaps the pane; both panes collapse and restore; the heatmap plays smoothly with no visible cells; LIVE stays lit through a whole followed run without blinking; Cody has picked black or blueprint.
 
 ### B. Saves landing page
 
@@ -132,15 +183,9 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 **Secrets and configuration**
 
-| File (gitignored) | Keys |
-|---|---|
-| `services/runner/.env` | `EGRESS_SERVICE_SECRET`, `NVIDIA_API_KEY`, `NEMOTRON_MODEL`, `SPACETIME_URI`, `SPACETIME_DB` |
-| `.env.deploy` (repo root) | `SPACETIME_SERVER_URL`, `SPACETIME_DB`, `SPACETIME_PUBLISH_TOKEN` |
-| `frontend/.env.local` | `NEXT_PUBLIC_EGRESS_SPACETIME_URI`, `NEXT_PUBLIC_EGRESS_SPACETIME_DB` |
-
-- **The runner already loads `services/runner/.env`**, so `NVIDIA_API_KEY` belongs there rather than in a shell variable.
-- **No interactive `spacetime login`.** The home server issues a *publisher identity* once (`POST /v1/identity`), and its token goes into `.env.deploy`.
-  - `npm run deploy:module` runs `spacetime login --token` and `spacetime publish` against a project-local CLI config (`--config-path`), so nobody's personal login changes.
+- Everything comes from the **central `.env`** (§3 T). On the desktop, `SPACETIME_URL=http://127.0.0.1:3010` and `SPACETIME_DB=egress`; the public site derives `wss://db.dontrepeatyourself.dev` from a public-URL override.
+- **No interactive `spacetime login`.** The home server issues a *publisher identity* once (`POST /v1/identity`), and its token is the `.env`'s `SPACETIME_TOKEN`.
+  - `npm run db:publish` (T) logs in with it through a repo-local CLI config (`--config-path`), so nobody's personal login changes.
   - Verified 2026-11-08: a server-issued token published a throwaway database to the local server.
   - That identity owns the database. Store the token in a password manager: without it, the module can't be updated.
 - **The studio's default backend comes from env.** No more hard-coded Maincloud. `?backend=` stays for development.
@@ -284,21 +329,142 @@ This file holds **priorities, the work ahead and decisions**. Reference material
 
 **Before G:** the population painting UI (the backend has existed since D30) ships in V2, because fire painting reuses the brush.
 
+### H. Evacuation behavior v0.2 — deterministic mode (a)
+
+**What goes wrong today** (`chooseExit`, PEOPLE_FLOW_MODEL §5.2)
+- Every person re-picks an exit on the **same tick** (every 2 s), minimizing `D_e/v₀ + Q_e/cap_e`.
+- `Q_e` counts only people already **standing near** that exit.
+- So when exit A queues, everyone at once sees B as empty and switches. B's queue only builds once they arrive, so they all switch back. The only damper is a 10% hysteresis.
+- The result is a crowd shimmying between doors instead of committing.
+
+**Model** (people know the full layout and can reach any exit; the per-exit Dijkstra fields are already exact, so A* adds nothing)
+
+1. **Attention span `τ_i`, staggered.** Each person re-evaluates on their own clock, every `τ_i` seconds (seeded lognormal, median ≈ 6 s, clamped to 2–15 s), with a random phase. Nobody switches in lockstep.
+2. **Expected wait counts the people ahead of you, not the crowd at the door.** The wait for exit `e` is the number of people **heading to `e`** who are closer to it than you, divided by its capacity:
+   ```
+   W_e(i) = |{ j : exit_j = e, D_e(x_j) < D_e(x_i) }| / cap_e
+   ```
+   Computed per replan from cumulative distance histograms per exit, O(1) per lookup. Committed demand is visible before it arrives.
+3. **Perceived cost.** Waiting feels longer than walking. Each person weighs their wait by `κ_i` (seeded, ≈ 1.5):
+   ```
+   C_e(i) = D_e(x_i)/v_i + κ_i · W_e(i)
+   ```
+4. **Commitment.** Switch only if the gain beats both an absolute and a relative threshold:
+   ```
+   C_cur − C_best > max(Δ_abs, ρ · C_cur)        Δ_abs ≈ 3 s, ρ ≈ 0.15
+   ```
+   - No switching within 4 m of your current exit.
+   - After a switch there's a cooldown of `2τ_i`.
+5. **Patience `P_i`** (seeded, ≈ 20–90 s, longer for longer attention spans). While queued, waiting time `w_i` accumulates.
+   - As `w_i → P_i`, `κ_i` rises and the thresholds fall, so the person becomes willing to walk to a farther exit that "feels better".
+   - At `w_i ≥ P_i` they re-evaluate immediately; a further switch then needs a fresh `P_i`.
+6. **Seeded and reproducible.** All per-person draws come from the run seed, so the same people make the same decisions, which keeps `test_edit_batch` comparisons fair.
+
+**New metrics:** exit switches per person and a reversal count (A→B→A), so flip-flopping is visible. Shown in the Simulate readout and the agent's run summaries.
+
+**Before code:** write PEOPLE_FLOW_MODEL §5.2 v0.2, with parameters and sources (pre-movement and patience ranges from the evacuation literature). The model id becomes `egress-pedestrian 0.2`.
+
+*Done when:*
+- On a symmetric two-exit hall, the reversal count is near zero and queues balance within ±20%.
+- On Courtyard, no group visibly shimmies at a door.
+- Fixtures still evacuate fully, and evacuation times are within 10% of v0.1 or better.
+- Determinism holds.
+
+### I. Agentic evacuation mode (b) — Nemotron estimates human behavior (`STABLE-V3`)
+
+**Why not one LLM per person.** 150–500 people deciding every few seconds means thousands of calls per run. That's far beyond cost and the ~40 requests/min limit, and too slow.
+
+**Design: a director, not a swarm.** The deterministic engine (H) still moves everyone; Nemotron only sets **who wants what**, at a few moments, for groups.
+
+1. **Population profile (one call per run).** Nemotron gets the scenario: building use, occupancy, time of day, alarm type and exits. It returns 4–8 behavior profiles with population shares. Each profile sets:
+   - pre-movement delay distribution (time before people start leaving)
+   - familiarity (bias toward the entrance used or known exits)
+   - attention span, patience and waiting weight (H's `τ`, `P`, `κ`)
+   - group size and how tightly a group stays together
+   - speed factor
+   
+   People are assigned to profiles with the run seed.
+2. **Event-driven group decisions (≤ 8 calls per run).** Triggers:
+   - an exit's expected wait passes a threshold
+   - an exit becomes blocked
+   - a group has stalled beyond its patience
+   - later: smoke or fire seen (G)
+   
+   The runner groups people by room and current exit and sends one compact summary: groups, sizes, room names, waits per exit, what each group can see. Nemotron returns group-level intents, such as "40% of the east-room group head for the north exit; the rest wait". They're applied to members with the seed.
+3. **Budget and fallback.** Lightning model by default, temperature 0, Zod-validated JSON, all groups batched in one call. A hard per-run budget: about 10 calls and 20k tokens, shown in the UI. Answers are cached by a situation hash. When the budget runs out, a call fails or no key exists, groups follow the deterministic rules (H).
+4. **Reproducible.** Every Nemotron answer is recorded with its tick in the run, a "decision tape". A replay or re-simulation reads the tape, so the run is identical without new calls and doesn't depend on latency. The server can pause simulated time at a decision point; it runs ahead of playback anyway.
+5. **Accuracy.**
+   - Profiles and outputs are checked against published ranges: pre-movement times, door flow and familiarity effects.
+   - Analysis shows agentic and deterministic side by side for the same layout and seed.
+   - The decision tape is visible: timeline markers, with bubbles on the groups they affected.
+
+**Contracts** (additive)
+- `scenario.behavior = { mode: 'deterministic' | 'agentic', budgetCalls? }`.
+- The decision tape is stored with the run result.
+- The Simulate pane gets a Behavior choice: Deterministic | Agentic.
+
+*Done when:*
+- An agentic run on the hall uses ≤ 10 calls and plays back identically from its tape.
+- Without a key it degrades to deterministic.
+- The side-by-side comparison shows where behavior differs and why, in the model's own one-line reasons.
+
+### S. Security review (before the `STABLE-V2` tag)
+
+**Threat model:**
+- anonymous public visitors with self-issued identities
+- share-link holders
+- members at each role
+- the runner's service identity
+- the Nemotron API
+- the home desktop and Cloudflare edge
+
+**Checks**
+
+1. **Authorization matrix (IDOR).** An automated e2e calls **every reducer and view** as each of anonymous, non-member, viewer, editor, owner and runner. It covers both a project the caller belongs to and a foreign one, passing ids that belong to someone else: `projectId`, `runId`, `jobId`, `proposalId`, compare pairs, invite and share codes. Every denial must hold, and views must re-check membership at read time.
+2. **Auth and identities.**
+   - service secret strength and a rotation procedure
+   - runner-only reducers reject everyone else
+   - heartbeat spoofing
+   - presence shows **identity** hex only, never an auth token
+   - browser token storage vs XSS
+3. **Share links and invites.** At least 128 bits, no enumeration, revocation, rate-limited joins.
+4. **Abuse and DoS limits.** Maximums per identity on projects, entities per project, edit batch size, population, run duration, replay bytes, queued runs and agent jobs; string lengths; storage quotas.
+5. **LLM.** Prompt injection through project names, room names and prompts: tools stay allowlisted and Zod-validated, no secrets in prompts, per-job budgets, output is never executed.
+6. **Web.**
+   - CSP and security headers, `frame-ancestors`
+   - no secrets in the client bundle
+   - names rendered as text
+   - `npm audit`
+   - the QR/phone upload routes (`/api/import-sessions`): auth, expiry, size and type checks, path traversal
+7. **Edge and host.** SpacetimeDB route allowlist, Cloudflare WAF and rate limits, no admin ports open, Windows firewall, services running with least privilege.
+8. **Secrets and data.** `.env` handling, a rotation runbook (NVIDIA key, service secret, publisher token), logs scrubbed, backups protected.
+
+**Outputs:**
+- `docs/SECURITY.md`: threat model, findings and fixes.
+- The authorization matrix test, run with the e2e suite from then on.
+
+*Done when:* the matrix test is green, there are no open high or critical findings, and medium findings are fixed or accepted in writing.
+
 ---
 
 ## 4. Pass sequence
 
 | Pass | Contents | Gate |
 |---|---|---|
-| 6 | A (display) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists |
-| 7 | C: env-driven endpoints, deploy script, the home server live, sharing and presence | C done-when list from a phone on cellular data |
-| 8 | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron |
-| 9 | E: room labels and escape plans | E done-when list |
-| 10 | F: slabs and materials, then floors and stairs (core, then sim, then UI), plus population painting | F done-when list |
-| 11 | Harden, final review and docs; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
-| 12+ | G: airflow, then smoke, then fire; tag `STABLE-V3` | — |
+| 6 | **T: one central `.env`, `npm run db` wrapper, team token.** Small, and first. | T done-when list on a second machine |
+| 7 | A (display, including the steady LIVE badge) + the B UI shell, then the B backend (stats, preview, import) | A and B done-when lists |
+| 8 | C: env-driven endpoints, the home server live with edge lockdown, sharing and presence | C done-when list from a phone on cellular data |
+| 9 | H: evacuation behavior v0.2 (attention span, patience, commitment, wait counted from people ahead) | H done-when list; PEOPLE_FLOW_MODEL updated |
+| 10 | D: agent intent, grounded layout, placement tools, compliance | D done-when list, with Nemotron |
+| 11 | E: room labels and escape plans | E done-when list |
+| 12 | F: slabs and materials, then floors and stairs (core, then sim, then UI), plus population painting | F done-when list |
+| 13 | S: security review and fixes | S done-when list |
+| 14 | Harden, final review and docs; fast-forward `main` and tag **`STABLE-V2`** | Every V2 gate on the public site |
+| 15+ | I: agentic evacuation mode; then G: airflow, smoke, fire; tag `STABLE-V3` | I and G done-when lists |
 
-Pass 7 can start alongside 6 (it's mostly setup on the desktop); it needs B's JSON import before moving projects off Maincloud.
+- Pass 8 can start alongside 7 (it's mostly setup on the desktop). It needs B's JSON import before moving projects off Maincloud.
+- Pass 9 comes before the agent work because agent proposals are only as good as the crowd model they measure.
+- Within V3, the order of I and G is open (§8).
 
 ---
 
@@ -308,6 +474,8 @@ Pass 7 can start alongside 6 (it's mostly setup on the desktop); it needs B's JS
 - E2E against a local SpacetimeDB: `e2e:local`, `e2e:client`, `e2e:multiuser`. New flows (stats, preview, links, presence, rooms, floors) each add a step.
 - Browser check of every changed UI at two sizes. Agent changes are also checked with Nemotron, not only the heuristic.
 - Determinism: frame hashes per seed. A model change updates PEOPLE_FLOW_MODEL.md in the same commit.
+- Behavior (H): exit switches and reversals per person on fixtures, with thresholds in tests. Agentic (I): runs replay identically from their decision tape, with no network.
+- Security (S): the authorization matrix runs with every e2e from Pass 13 on. The client bundle is scanned for secrets in every build from Pass 6 on.
 
 ## 6. Risks
 
@@ -319,6 +487,9 @@ Pass 7 can start alongside 6 (it's mostly setup on the desktop); it needs B's JS
 | Nemotron mislabels rooms | Rule fallback, confidence shown, user override |
 | Multi-floor sim takes longer than planned | Ship floor surfaces and floors in the UI first; the sim allows down-only stairs and one stair per pair of floors to start |
 | Smooth heatmap costs too much GPU | One bicubic sample per pixel at playback resolution; fall back to linear filtering |
+| One shared `.env` leaks (every secret in one place) | Shared only through a password manager; team identities, never personal tokens; a rotation runbook (S) |
+| Behavior v0.2 makes evacuations slower or less stable | Parameters from the literature; the v0.1 fixtures stay as a regression bar (within 10%) |
+| Agentic mode costs or latency creep | A hard per-run call and token budget, cached situations, decision tapes for replays, deterministic fallback |
 
 ## 7. Human action items (Cody)
 
@@ -326,7 +497,8 @@ Pass 7 can start alongside 6 (it's mostly setup on the desktop); it needs B's JS
 - [ ] On the desktop: put `NVIDIA_API_KEY` into `services/runner/.env` (from `.env.example`).
 - [ ] Create the publisher token (SELF_HOSTING §4) and keep it in a password manager.
 - [ ] Set the desktop to never sleep, use wired ethernet, and set Windows Update active hours around demos.
-- [ ] Pick black or blueprint after the Pass 6 trial.
+- [ ] Pick black or blueprint after the Pass 7 trial.
+- [ ] **Pass 6:** make the team SpacetimeDB identity, either a dedicated account or an organization for Maincloud (§3 T). Put its token, the NVIDIA key and the service secret into the central `.env`, and share that file through a password manager.
 
 ## 8. Open questions for Cody
 
@@ -335,6 +507,8 @@ Pass 7 can start alongside 6 (it's mostly setup on the desktop); it needs B's JS
 3. **Stairs:** down-only for evacuation? (Assumed yes.) Any outdoor stairs or ramps?
 4. **Upper floors:** should walls placed on floor 2 require a slab underneath, or warn?
 5. **Fire:** realism target. Fire-modeling grade (t² growth, smoke dose) or a believable visual first?
+6. **Team token on Maincloud:** a dedicated team account (simple, but the database may need re-creating under it) or a Maincloud organization? Or move straight to the home server's publisher token and keep Maincloud only as a fallback?
+7. **V3 order:** agentic mode (I) before hazards (G), or hazards first so agentic behavior can react to fire and smoke from day one?
 
 ---
 
@@ -421,3 +595,9 @@ D1–D63 are carried over unchanged from `STABLE-V1`; D64 onward come from the r
 | D74 | 11-08 | **Floor surfaces return:** a `slab` entity with `wood`, `basic` (the wall look) or `tile`, drawn with a Floor tool or filled into a room. Ground-floor rooms stay walkable; on upper floors only slabs are walkable. |
 | D75 | 11-08 | **Multiple floors and stairs:** a bottom-left `‹ Floor n ›` switcher with per-floor floor-to-floor height; floors below render darker and floors above are hidden; the dot grid rises with the current floor while the ground stays at 0. Stairs are rectangles with an up edge, rendered as risers; evacuation routes go down only; frames gain a per-actor floor index. |
 | D76 | 11-08 | **Hazard order:** airflow particles, then smoke (time-based hazard carried by airflow), then fire (painted zones that spread through rooms independent of material; an immediate hazard). The population painting UI ships in V2 so fire painting can reuse the brush. |
+| D77 | 11-08 | **Team access first (Pass 6):** one gitignored root `.env` (NVIDIA key, service secret, SpacetimeDB URL/DB and a team token) replaces the per-component env files. `npm run db` wraps the CLI with a repo-local config logged in by token, so nobody runs `spacetime login`. Only the derived public URI and database name reach the browser. Team identities only, never a personal token. |
+| D78 | 11-08 | **Evacuation has two behavior modes.** Deterministic (v0.2) is the default and the basis for the agent's measurements; agentic is an opt-in mode on top of it. |
+| D79 | 11-08 | **Deterministic v0.2 route choice.** Staggered per-person attention span `τ_i`; expected wait counted from people *ahead* who are heading to the same exit; waiting weighted by `κ_i`; commitment thresholds (absolute and relative), a no-switch zone near the exit and a cooldown; patience `P_i` that, once used up, lets a person walk to a farther exit. All draws are seeded. People know the full layout (per-exit Dijkstra fields). |
+| D80 | 11-08 | **Agentic mode is a director, not a swarm.** One Nemotron call sets population behavior profiles; at most ~8 event-driven calls set group intents. There's a hard per-run budget, cached situations, deterministic fallback, and a recorded decision tape so replays need no calls. The engine still moves everyone. |
+| D81 | 11-08 | **Security review before the public tag.** An authorization matrix e2e (every reducer and view × every role × own and foreign ids) plus checks on auth, links, abuse limits, LLM injection, web headers and upload routes, the edge and secrets. Recorded in `docs/SECURITY.md`. |
+| D82 | 11-08 | **A steady LIVE badge.** Following live trails the edge by about one chunk so playback never stalls. The badge debounces: on within 1 s of the edge, off only when more than 4 s behind or after a scrub back. The thumb sits at the front of the timeline with a live-edge marker. |

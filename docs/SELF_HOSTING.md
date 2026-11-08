@@ -9,7 +9,7 @@ One Windows desktop runs everything: the database, the simulation runner, the we
 | Website (Next.js production build) | `127.0.0.1:3100` | `https://dontrepeatyourself.dev` |
 | Cloudflare Tunnel | outbound to Cloudflare | — |
 
-Steps marked **(Pass 7)** depend on code landing in Pass 7: env-driven endpoints and `npm run deploy:module`. Until then, use the manual commands shown next to them.
+Steps marked **(Pass 6)** depend on code landing in Pass 6: the central `.env` and the `npm run db` wrapper. Until then, use the manual commands shown next to them.
 
 ---
 
@@ -52,14 +52,15 @@ npm ci
    (Invoke-RestMethod -Method Post http://127.0.0.1:3010/v1/identity).token
    ```
    Save the token in a password manager. **The identity that first publishes `egress` owns it; without this token the module can't be updated.**
-3. `Copy-Item .env.deploy.example .env.deploy` and fill it in:
+3. Put the token in the central `.env` at the repo root. **(Pass 6)** Copy `.env.example` to `.env`; until then use `.env.deploy` from `.env.deploy.example`.
    ```ini
-   SPACETIME_SERVER_URL=http://127.0.0.1:3010
+   SPACETIME_URL=http://127.0.0.1:3010
+   SPACETIME_PUBLIC_URL=https://db.dontrepeatyourself.dev
    SPACETIME_DB=egress
-   SPACETIME_PUBLISH_TOKEN=<the token>
+   SPACETIME_TOKEN=<the token>
    ```
 4. Publish the module. This uses a CLI config inside the repo (`.spacetime/`, gitignored), so nobody's personal `spacetime login` is touched.
-   - **(Pass 7)** `npm run deploy:module`
+   - **(Pass 6)** `npm run db:publish`
    - Until then:
      ```powershell
      $cfg = "C:\Egress\.spacetime\cli.toml"
@@ -71,24 +72,19 @@ npm ci
 
 ## 5. Runner
 
-1. `Copy-Item services\runner\.env.example services\runner\.env` and fill it in:
+1. Add the runner's keys to the same central `.env`. **(Pass 6)** Until then the runner reads `services\runner\.env` (from its `.env.example`) with `SPACETIME_URI=ws://127.0.0.1:3010`.
    ```ini
    EGRESS_SERVICE_SECRET=<the team's runner secret; its sha256 is built into the module>
    NVIDIA_API_KEY=<your key; it never leaves this machine>
    NEMOTRON_MODEL=nvidia/nemotron-3.5-lightning-30b-a3b
-   SPACETIME_URI=ws://127.0.0.1:3010
-   SPACETIME_DB=egress
    ```
 2. Test it: `npm start -w @egress/runner`. It should log that it connected and registered. On first connect it saves its own token next to `.env`. Stop it with Ctrl+C.
 
 ## 6. Website
 
 1. Point the site at the public database:
-   - **(Pass 7)** `Copy-Item frontend\.env.example frontend\.env.local`, then set:
-     ```ini
-     NEXT_PUBLIC_EGRESS_SPACETIME_URI=wss://db.dontrepeatyourself.dev
-     NEXT_PUBLIC_EGRESS_SPACETIME_DB=egress
-     ```
+   - **(Pass 6)** Nothing to do: the site reads `SPACETIME_PUBLIC_URL` and `SPACETIME_DB` from the central `.env`, and only those two values reach the browser.
+
    - Until then, use `https://dontrepeatyourself.dev/?backend=local&uri=wss://db.dontrepeatyourself.dev&db=egress`.
 2. Build and test:
    ```powershell
@@ -177,7 +173,7 @@ Reboot the desktop and confirm the site comes back without logging in.
 cd C:\Egress
 git fetch --tags; git checkout STABLE-V2      # or the new tag
 npm ci
-npm run deploy:module                          # (Pass 7); or the step 4 commands. Additive changes only.
+npm run db:publish                             # (Pass 6); or the step 4 commands. Additive changes only.
 npm run build
 nssm restart EgressRunner; nssm restart EgressWeb
 ```
@@ -191,7 +187,7 @@ nssm restart EgressRunner; nssm restart EgressWeb
   nssm start EgressDB; nssm start EgressRunner
   ```
   Keep the last 7 copies.
-- Owners can also download any project as JSON from the saves page (Pass 6).
+- Owners can also download any project as JSON from the saves page (Pass 7).
 
 ## 12. Moving projects off Maincloud
 
