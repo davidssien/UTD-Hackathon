@@ -38,15 +38,16 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ id: string; doc: EgressDocument } | null>(null);
   const [failedPreview, setFailedPreview] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [renaming, setRenaming] = useState<{ id: string; location: 'row' | 'detail' } | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const byId = useMemo(() => new Map(stats.map(s => [s.projectId, s])), [stats]);
-  const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
+  const search = query.trim().toLocaleLowerCase();
+  const sorted = projects.filter(p => p.name.toLocaleLowerCase().includes(search)).sort((a, b) => b.updatedAt - a.updatedAt);
   const owned = sorted.filter(p => p.role === 'owner'), shared = sorted.filter(p => p.role !== 'owner');
-  const current = selected && projects.some(p => p.id === selected) ? selected : view.projectId ?? sorted[0]?.id ?? null;
+  const current = sorted.find(p => p.id === selected)?.id ?? sorted.find(p => p.id === view.projectId)?.id ?? sorted[0]?.id ?? null;
   const project = projects.find(p => p.id === current) ?? null;
   const projectStats = current ? byId.get(current) : undefined;
 
@@ -71,16 +72,14 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
     return () => { live = false; };
   }, [client, current, revision, active, openDoc, status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const create = (e: React.FormEvent) => {
-    e.preventDefault();
-    void client.createProject(name.trim() || 'Untitled plan').then(id => { setName(''); setSelected(id); }).catch(onError);
-  };
+  const selectNew = (id: string) => { setQuery(''); setSelected(id); };
+  const create = () => { void client.createProject('Untitled plan').then(selectNew).catch(onError); };
   const importFile = async (file: File | undefined) => {
     if (!file) return;
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('That file is larger than 20 MB.');
       const id = await client.importProject(file.name.replace(/\.json$/i, '') || 'Imported plan', await file.text());
-      setSelected(id);
+      selectNew(id);
     } catch (e) { onError(e); }
   };
   const download = async (p: ProjectSummary) => {
@@ -89,17 +88,25 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
   };
   const remove = async (p: ProjectSummary) => {
     setMenu(null);
-    if (!confirm(`Delete "${p.name}" and all of its runs? This cannot be undone.`)) return;
     try { await client.deleteProject(p.id); if (selected === p.id) setSelected(null); } catch (e) { onError(e); }
   };
 
+  const renameInput = (p: ProjectSummary) => <input key={p.id} autoFocus defaultValue={p.name} maxLength={80} aria-label="Project name"
+    onFocus={e => e.target.select()} onClick={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()}
+    onBlur={e => {
+      const value = e.target.value.trim();
+      setRenaming(null);
+      if (value && value !== p.name) void client.renameProject(p.id, value).catch(onError);
+    }}
+    onKeyDown={e => {
+      if (e.key === 'Escape') { e.currentTarget.value = p.name; e.currentTarget.blur(); }
+      if (e.key === 'Enter') e.currentTarget.blur();
+    }} />;
+
   const row = (p: ProjectSummary) => <tr key={p.id} className={p.id === current ? 'selected' : ''} onClick={() => setSelected(p.id)} onDoubleClick={() => onOpen(p.id)}>
     <td className="name">
-      {renaming === p.id
-        ? <input autoFocus defaultValue={p.name} maxLength={80} aria-label="Project name" onClick={e => e.stopPropagation()}
-          onBlur={e => { const v = e.target.value.trim(); setRenaming(null); if (v && v !== p.name) void client.renameProject(p.id, v).catch(onError); }}
-          onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(null); }} />
-        : <span>{p.name}</span>}
+      {renaming?.id === p.id && renaming.location === 'row'
+        ? renameInput(p) : <button className="save-name" onClick={() => setSelected(p.id)}>{p.name}</button>}
       {p.id === view.projectId && <em>Open</em>}
     </td>
     <td className="role">{p.role}</td>
@@ -110,7 +117,7 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
       <span className="row-menu">
         <button className="icon-button" aria-label={`More actions for ${p.name}`} aria-expanded={menu === p.id} onClick={() => setMenu(m => (m === p.id ? null : p.id))}><EllipsisHorizontalIcon /></button>
         {menu === p.id && <div className="menu">
-          <button disabled={p.role === 'viewer'} onClick={() => { setMenu(null); setRenaming(p.id); }}><PencilSquareIcon />Rename</button>
+          <button disabled={p.role === 'viewer'} onClick={() => { setMenu(null); setSelected(p.id); setRenaming({ id: p.id, location: 'row' }); }}><PencilSquareIcon />Rename</button>
           <button className="danger" disabled={p.role !== 'owner'} onClick={() => void remove(p)}><TrashIcon />Delete</button>
         </div>}
       </span>
@@ -130,15 +137,13 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
     </div>}
     <header className="saves-header" inert={splash !== 'done'}>
       <EgressLogo />
+      <input className="project-search" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search projects" aria-label="Search projects" />
       <div className="saves-actions">
-        <form onSubmit={create} className="new-project">
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="New project name" aria-label="New project name" maxLength={80} />
-          <button className="button primary" type="submit" disabled={status !== 'connected'}><PlusIcon />New</button>
-        </form>
+        <button className="button primary" onClick={create} disabled={status !== 'connected'}><PlusIcon />New</button>
         <span className="examples-anchor">
           <button className="button" aria-expanded={examplesOpen} onClick={() => setExamplesOpen(v => !v)} disabled={status !== 'connected'}><PlusIcon />Example<ChevronDownIcon /></button>
           {examplesOpen && <div className="menu examples-menu" role="menu">
-            {EXAMPLES.map(x => <button key={x.id} role="menuitem" onClick={() => { setExamplesOpen(false); void onCreateExample(x).then(setSelected).catch(onError); }}>
+            {EXAMPLES.map(x => <button key={x.id} role="menuitem" onClick={() => { setExamplesOpen(false); void onCreateExample(x).then(selectNew).catch(onError); }}>
               <span className="example-name">{x.name}</span><span className="example-note">{x.note} · about {x.people} people</span>
             </button>)}
           </div>}
@@ -159,18 +164,21 @@ export default function SavesPage({ pageRef, client, active, onOpen, onImportIma
             {shared.map(row)}
           </tbody>
         </table>
+        {!!projects.length && !sorted.length && <p className="empty">No matching projects.</p>}
         {!projects.length && <p className="empty">{status === 'connected' ? 'No projects yet.' : 'Saves unavailable.'}</p>}
       </div>
       <aside className="saves-detail" aria-label="Project details">
         {project ? <>
           <div className="plan-frame">{plan ? <PlanImage doc={plan} /> : <span className="plan-placeholder">{failedPreview === project.id ? 'Preview unavailable' : 'Loading plan…'}</span>}</div>
-          <h2>{project.name}</h2>
+          <h2>{renaming?.id === project.id && renaming.location === 'detail' ? renameInput(project)
+            : project.role === 'viewer' ? project.name
+            : <button className="save-name" aria-label={`Rename ${project.name}`} onClick={() => setRenaming({ id: project.id, location: 'detail' })}>{project.name}</button>}</h2>
           <Details stats={projectStats} project={project} />
           <div className="detail-actions">
             <button className="button" onClick={() => void download(project)}><ArrowDownTrayIcon />Download JSON</button>
             <button className="button primary" onClick={() => onOpen(project.id)}>Open</button>
           </div>
-        </> : <p className="empty">Create or import a project to begin.</p>}
+        </> : !projects.length && <p className="empty">Create or import a project to begin.</p>}
       </aside>
     </div>
   </section>;

@@ -196,8 +196,7 @@
 .modal{width:min(440px,calc(100vw - 32px));max-height:min(640px,calc(100vh - 48px));display:flex;flex-direction:column;background:var(--chrome);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.35);user-select:text}
 .modal>header{display:flex;align-items:center;justify-content:space-between;padding:12px 12px 10px 16px;border-bottom:1px solid var(--chrome-3)}
 .modal>header h2{margin:0;font-size:14px;font-weight:650}
-.new-project{display:flex;gap:8px;padding:12px 16px}
-.new-project input{flex:1;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:#fff}
+.project-search{width:100%;min-width:0;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:#fff}
 .project-list{overflow:auto;padding:0 8px 12px}
 .list-label{font-size:11px;color:var(--muted);padding:8px 8px 4px}
 .project-row{width:100%;display:flex;align-items:center;gap:10px;height:38px;padding:0 8px;border-radius:7px;text-align:left}
@@ -229,7 +228,7 @@
 .saves{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;background:var(--chrome-2);color:var(--ink);transition:transform .45s cubic-bezier(.4,0,.2,1),visibility 0s linear .45s;user-select:text}
 .saves.shown{transform:translateX(0);visibility:visible;transition:transform .45s cubic-bezier(.4,0,.2,1),visibility 0s}
 .saves.hidden{transform:translateX(-100%);visibility:hidden}
-.saves-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--chrome)}
+.saves-header{display:grid;grid-template-columns:minmax(0,1fr) clamp(170px,20vw,320px) minmax(0,1fr);align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--chrome)}
 .egress-logo{display:block;width:120px;height:auto;flex:none}
 .saves-splash{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:var(--chrome)}
 .saves-splash>div{position:relative}
@@ -239,7 +238,15 @@
 @keyframes splash-fade{to{opacity:0}}
 @media(prefers-reduced-motion:reduce){.saves-splash.fading{animation-duration:1ms}}
 .saves-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.saves-actions .new-project{padding:0}
+.saves-actions{justify-self:end;justify-content:flex-end}
+@media(max-width:1020px){
+  .saves-header{grid-template-columns:1fr minmax(160px,32vw) 1fr}
+  .saves-actions{grid-column:1/-1;justify-self:stretch;justify-content:center}
+}
+@media(max-width:540px){
+  .saves-header{grid-template-columns:auto 1fr;padding:10px;gap:8px}
+  .saves-header .egress-logo{width:84px}
+}
 .saves-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;padding:16px 20px}
 .saves-list{overflow:auto;background:var(--chrome);border:1px solid var(--line);border-radius:12px}
 .saves-list table{width:100%;border-collapse:collapse}
@@ -251,7 +258,9 @@
 .saves-list tr.group td{font-size:11px;color:var(--muted);padding:12px 12px 4px;border:0}
 .saves-list td.name{max-width:0;width:50%;overflow:hidden;text-overflow:ellipsis;font-weight:550}
 .saves-list td.name em{font-style:normal;font-size:11px;font-weight:600;color:var(--accent);margin-left:8px}
-.saves-list td.name input{width:100%;height:26px;padding:0 6px;border:1px solid var(--accent);border-radius:5px}
+.save-name{text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.save-name:hover{text-decoration:underline}
+.saves-detail h2 input,.saves-list td.name input{width:100%;height:26px;padding:0 6px;border:1px solid var(--accent);border-radius:5px}
 .saves-list td.role{text-transform:capitalize;color:var(--muted)}
 .saves-list .num{text-align:right;font-variant-numeric:tabular-nums}
 .saves-list td.actions{text-align:right;width:84px}
