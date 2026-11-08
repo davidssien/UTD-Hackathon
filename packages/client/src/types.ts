@@ -130,7 +130,7 @@ export interface PlaybackController {
   /** Interpolated actor positions at the current playhead. */
   actorsNow(): ActorFrame | null;
   /** Heatmap for the current playhead (instant) or accumulated up to it. Pass 2. */
-  field(id: FieldId, aggregation: Aggregation, floorId?: string): ScalarField | null;
+  field(id: FieldId, aggregation: Aggregation, floorId?: string, exitId?: string): ScalarField | null;
   dispose(): void;
 }
 

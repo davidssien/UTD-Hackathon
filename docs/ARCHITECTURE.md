@@ -446,6 +446,7 @@ Reference sketches: [layout-v2-rail-open.png](reference/gui/sketches/layout-v2-r
 **Layers** (dropdown, select one)
 - **People** (now). Options: **Discrete** (people as dots) or **Heatmap**. Heatmap field: Density or Congestion. Statistic: Current / Average / Peak. After a run completes, Average is the default, because the final frame is an empty building.
 - **Airflow:** a steady per-floor pressure solve (`floorAirflow`) under an assumed wind of any bearing, with HVAC ceiling vents as supply; shown as `air.flowMagnitude` with flow arrows.
+- **Exit reach (D95):** `exitReach` assigns each cell to its nearest exit, through stairs on upper floors, and estimates each exit's people and clear time for the current crowd size. Hovering an exit in Edit shows one area; this layer shows them all.
 
 **Scene**
 - **One 3D scene; Edit is always top-down.** Edit locks the scene to an orthographic overhead camera. Leaving Edit transitions to isometric and enables orbit. There is no second 2D model.

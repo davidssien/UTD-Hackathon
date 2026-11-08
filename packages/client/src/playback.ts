@@ -5,10 +5,10 @@
  * touches the server; the runner keeps simulating to completion.
  */
 import {
-  ACTOR_EXITED, floorsByLevel, TICK_RATE_HZ, type ActorFrame, type Aggregation, type FieldId, type ID, type RunStatus, type ScalarField,
+  ACTOR_EXITED, floorsByLevel, openingSegment, projectOnSegment, TICK_RATE_HZ, type ActorFrame, type Aggregation, type FieldId, type ID, type RunStatus, type ScalarField,
   type EgressDocument, type SimulationMetrics,
 } from '@egress/core';
-import { compileFloor, FieldAccumulator, PARAMS } from '@egress/sim';
+import { compileFloor, FieldAccumulator, PARAMS, type CompiledFloor } from '@egress/sim';
 import { writable, type WritableStore } from './store.ts';
 import type { PlaybackController, PlaybackState } from './types.ts';
 
@@ -44,6 +44,8 @@ export class Playback implements PlaybackController {
   private layout: EgressDocument | null = null;
   private accumulator: FieldAccumulator | null = null;
   private accumulatedTo = -1;
+  private readonly compiled = new Map<ID, CompiledFloor>();
+  private exitView: { exitId: ID; floor: number; users: number; accumulator: FieldAccumulator; accumulatedTo: number } | null = null;
   private live = true;
 
   constructor(runId: ID, clock: PlaybackClock = systemClock) {
@@ -161,22 +163,27 @@ export class Playback implements PlaybackController {
     this.layout = doc;
     this.accumulator = null;
     this.accumulatedTo = -1;
+    this.compiled.clear();
+    this.exitView = null;
   }
 
   /**
    * Heatmap at the playhead: 'instant' is the latest 2 Hz sample at or before it;
    * 'timeAverage' and 'perCellPeak' accumulate from the start of the run up to it.
    * Scrubbing backwards recomputes from tick 0 (cheap: ~25 cell updates per person per sample).
+   * With `exitId`, only the people who left through that exit count. In a live run that means
+   * those who have left so far.
    */
-  field(id: FieldId, aggregation: Aggregation, floorId?: string): ScalarField | null {
+  field(id: FieldId, aggregation: Aggregation, floorId?: string, exitId?: string): ScalarField | null {
     if (!this.layout) return null;
     const every = PARAMS.fieldEvery;
     const target = Math.floor(this.state.get().tick / every) * every;
     const floors = floorsByLevel(this.layout);
     const floor = floorId ? floors.findIndex(f => f.id === floorId) : 0;
     if (floor < 0) return null;
+    if (exitId) return this.exitField(id, aggregation, floors[floor].id, floor, exitId, target);
     if (!this.accumulator || target < this.accumulatedTo || this.accumulator.compiled.floorId !== floors[floor].id) {
-      this.accumulator = new FieldAccumulator(compileFloor(this.layout, floors[floor].id));
+      this.accumulator = new FieldAccumulator(this.compiledFloor(floors[floor].id));
       this.accumulatedTo = -every;
     }
     for (let t = this.accumulatedTo + every; t <= target; t += every) {
@@ -199,6 +206,52 @@ export class Playback implements PlaybackController {
   }
 
   // ── internals ──
+
+  private compiledFloor(floorId: ID): CompiledFloor {
+    let compiled = this.compiled.get(floorId);
+    if (!compiled) { compiled = compileFloor(this.layout!, floorId); this.compiled.set(floorId, compiled); }
+    return compiled;
+  }
+
+  /** Who left through an exit: everyone frozen at an exit in the newest frame, by the nearest door on their floor. */
+  private exitUsers(exitId: ID): { mask: Uint8Array; count: number } | null {
+    const layout = this.layout!, last = this.frameAtOrBefore(this.state.get().liveTick);
+    if (!last) return null;
+    const floors = floorsByLevel(layout);
+    const doors = layout.openings.filter(o => o.openingKind === 'exit').map(o => ({ id: o.id, floor: floors.findIndex(f => f.id === o.floorId), segment: openingSegment(layout, o) }));
+    const mask = new Uint8Array(last.actorFlags.length);
+    let count = 0;
+    for (let a = 0; a < mask.length; a++) {
+      if (last.actorFlags[a] !== ACTOR_EXITED) continue;
+      const at = { x: last.actorXY[a * 2], y: last.actorXY[a * 2 + 1] }, floor = last.actorFloor?.[a] ?? 0;
+      let nearest: ID | null = null, best = Infinity;
+      for (const door of doors) {
+        if (door.floor !== floor || !door.segment) continue;
+        const d = projectOnSegment(at, door.segment.a, door.segment.b).distance;
+        if (d < best) { best = d; nearest = door.id; }
+      }
+      if (nearest === exitId) { mask[a] = 1; count++; }
+    }
+    return { mask, count };
+  }
+
+  private exitField(id: FieldId, aggregation: Aggregation, floorId: ID, floor: number, exitId: ID, target: number): ScalarField | null {
+    const users = this.exitUsers(exitId);
+    if (!users) return null;
+    const every = PARAMS.fieldEvery;
+    let view = this.exitView;
+    if (!view || view.exitId !== exitId || view.floor !== floor || view.users !== users.count || target < view.accumulatedTo) {
+      view = { exitId, floor, users: users.count, accumulator: new FieldAccumulator(this.compiledFloor(floorId)), accumulatedTo: -every };
+      this.exitView = view;
+    }
+    for (let t = view.accumulatedTo + every; t <= target; t += every) {
+      const f = this.frames[t];
+      if (!f) break;
+      view.accumulator.addFrame(f, this.frames[t - 1] ?? null, floor, users.mask);
+      view.accumulatedTo = t;
+    }
+    return view.accumulator.field(id, aggregation);
+  }
 
   private ensureTimer() {
     if (this.timer === null) this.timer = this.clock.setInterval(() => this.tickClock(), 33);

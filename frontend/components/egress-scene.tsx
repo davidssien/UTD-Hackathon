@@ -9,10 +9,10 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
-  ACTOR_EXITED, ACTOR_QUEUED, ACTOR_TRANSITIONING, deriveLayout, floorsByLevel, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
-  PLACEABLES, placeableFootprint, type PlaceableItem, type Vec2, type WallMaterial,
+  ACTOR_EXITED, ACTOR_QUEUED, ACTOR_TRANSITIONING, deriveLayout, floorsByLevel, openingSegment, pointInPolygon, projectOnSegment, type EditCommand, type EgressDocument, type Floor, type ScalarField, type SlabMaterial,
+  PLACEABLES, placeableFootprint, type PlaceableItem, type Vec2, type Wall, type WallMaterial,
 } from '@egress/core';
-import type { FloorAirflow } from '@egress/sim';
+import type { BuildingReach, FloorAirflow } from '@egress/sim';
 import type { PlaybackController } from '@egress/client';
 import { WallLibrary } from '@/lib/wall-textures';
 import { encodeField, fieldScale } from '@/lib/heatmap';
@@ -37,7 +37,7 @@ export interface PaintStroke { points: Vec2[]; radiusM: number; mode: PaintBrush
 export type PeopleView = 'discrete' | 'heatmap';
 export type HeatField = 'people.density' | 'people.congestion';
 export type HeatStat = 'instant' | 'timeAverage' | 'perCellPeak';
-export interface SceneLayer { family: 'people' | 'air'; people: PeopleView; field: HeatField; stat: HeatStat }
+export interface SceneLayer { family: 'people' | 'air' | 'reach'; people: PeopleView; field: HeatField; stat: HeatStat }
 /** An explicit heatmap, e.g. a before/after difference map (diverging palette). */
 export interface HeatOverlay { field: ScalarField; diverging: boolean; airflow?: FloorAirflow }
 export interface SceneNote { key: string; text: string; entityId: string }
@@ -74,16 +74,22 @@ interface Props {
   playback?: PlaybackController | null;
   layer: SceneLayer;
   theme?: SceneTheme;
+  wallColor?: WallColor;
   gridStyle?: GridStyle;
   overlay?: HeatOverlay | null;
+  /** Which exit each area walks to. Hovering an exit in Edit shows its area; `showReach` shows them all. */
+  reach?: BuildingReach | null;
+  showReach?: boolean;
   onSelect(id: string | null): void;
   onEdit(commands: EditCommand[]): void;
   onContext?(at: { x: number; y: number }, hit: SceneHit | null): void;
 }
 
-export type SceneTheme = 'black' | 'white' | 'blueprint';
+export type SceneTheme = 'black' | 'white' | 'blueprint' | 'red';
+export type WallColor = 'original' | 'blue' | 'white' | 'black' | 'red';
+const WALL_COLORS: Record<Exclude<WallColor, 'original'>, string> = { blue: '#2f6aa8', white: '#ffffff', black: '#2a2d33', red: '#c62828' };
 export type GridStyle = 'lined' | 'dotted' | 'off';
-const THEMES: Record<SceneTheme, { ground: string; dots: number }> = { white: { ground: '#ffffff', dots: 0.72 }, black: { ground: '#0b0c0e', dots: 0.7 }, blueprint: { ground: '#1c446f', dots: 1 } };
+const THEMES: Record<SceneTheme, { ground: string; dots: number }> = { white: { ground: '#ffffff', dots: 0.72 }, black: { ground: '#0b0c0e', dots: 0.7 }, blueprint: { ground: '#1c446f', dots: 1 }, red: { ground: '#8f1d1d', dots: 0.85 } };
 const SUGGEST = '#3d9bff';
 const SELECT = '#ffb020';
 const WALL_STYLE: Record<WallMaterial, { thicknessM: number }> = { normal: { thicknessM: 0.2 }, reinforced: { thicknessM: 0.3 }, glass: { thicknessM: 0.12 } };
@@ -91,6 +97,9 @@ const OPENING_WIDTH = { door: 0.9, window: 1.2, exit: 1.2 } as const;
 const MAX_POLAR = Math.PI * 0.44;
 const HEAT_MAX: Record<HeatField, number> = { 'people.density': 3.5, 'people.congestion': 2 };
 const HEAT_BLEND_MS = 250;
+const REACH_COLORS: [number, number, number][] = [[255, 198, 92], [94, 224, 192], [255, 143, 177], [157, 183, 255], [200, 231, 106], [255, 164, 107]];
+
+const clearText = (seconds: number) => (seconds < 90 ? `≈${Math.max(5, Math.round(seconds / 5) * 5)} s` : `≈${(seconds / 60).toFixed(1)} min`);
 
 const toWorld = (p: Vec2, h = 0) => new THREE.Vector3(p.x, h, -p.y);
 
@@ -123,22 +132,34 @@ function extrude(points: Vec2[], height: number, material: THREE.Material, botto
   return mesh;
 }
 
-/** Cross-hatching for walls that hide the floor (D57): evenly spaced screen-space lines, no dither. */
+/** Editor cursor and preview lines: white ones vanished on white backgrounds and light floors. */
+const INVERTING = {
+  color: '#ffffff', depthTest: false, transparent: true,
+  blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneMinusDstColorFactor, blendDst: THREE.ZeroFactor,
+} as const;
+
+/** Drawing-buffer size, shared by every dithered material. */
+const VIEWPORT_PX = { value: new THREE.Vector2(1, 1) };
+
+/** Dithers away walls that hide the floor (D57): most transparent at the viewport centre, feathering to solid outwards. */
 function hatchable<M extends THREE.Material>(m: M): M {
   const hatch = { value: 0 };
-  const spacing = { value: 7 * Math.min(globalThis.devicePixelRatio ?? 1, 2) };
+  const ditherPx = { value: Math.min(Math.max(Math.round(globalThis.devicePixelRatio ?? 1), 1), 2) };
   m.userData.hatch = hatch;
   m.onBeforeCompile = shader => {
-    shader.uniforms.uHatch = hatch;
-    shader.uniforms.uHatchSpacing = spacing;
-    shader.fragmentShader = 'uniform float uHatch;\nuniform float uHatchSpacing;\n' + shader.fragmentShader.replace('void main() {', `void main() {
+    Object.assign(shader.uniforms, { uHatch: hatch, uDitherPx: ditherPx, uViewportPx: VIEWPORT_PX });
+    shader.fragmentShader = `uniform float uHatch; uniform float uDitherPx; uniform vec2 uViewportPx;
+      const float BAYER[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+      ` + shader.fragmentShader.replace('void main() {', `void main() {
       if (uHatch > 0.5) {
-        float a = mod(gl_FragCoord.x + gl_FragCoord.y, uHatchSpacing);
-        float b = mod(gl_FragCoord.x - gl_FragCoord.y + 8192.0, uHatchSpacing);
-        if (min(a, b) > uHatchSpacing * 0.17) discard;
+        vec2 fromCenter = gl_FragCoord.xy - 0.5 * uViewportPx;
+        float reach = length(fromCenter) / (0.5 * min(uViewportPx.x, uViewportPx.y));
+        float keep = mix(0.35, 1.0, pow(smoothstep(0.2, 1.35, reach), 1.5));
+        ivec2 cell = ivec2(mod(floor(gl_FragCoord.xy / uDitherPx), 4.0));
+        if ((BAYER[cell.x + cell.y * 4] + 0.5) / 16.0 > keep) discard;
       }`);
   };
-  m.customProgramCacheKey = () => 'egress-hatch';
+  m.customProgramCacheKey = () => 'egress-dither';
   return m;
 }
 
@@ -242,6 +263,7 @@ interface Runtime {
   /** Dots-only grid raised to the viewed floor; the ground then renders only the background. */
   grid: THREE.Mesh;
   ground: THREE.Mesh;
+  reach: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   library: WallLibrary;
   cube: ViewCube;
   anchors: Map<string, THREE.Vector3>;
@@ -260,6 +282,9 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
   const dim = useRef<HTMLDivElement>(null);
   const noteEls = useRef(new Map<string, HTMLDivElement>());
   const tagEls = useRef(new Map<string, HTMLButtonElement>());
+  const reachEls = useRef(new Map<string, HTMLDivElement>());
+  const [hoverExit, setHoverExit] = useState<string | null>(null);
+  const hoverRef = useRef<string | null>(null); // the render loop reads this without waiting for React
   const runtime = useRef<Runtime | null>(null);
   const latest = useRef(props);
   const framedProject = useRef<string | null>(null);
@@ -307,7 +332,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const brush = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 64), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, depthTest: false }));
     brush.rotation.x = -Math.PI / 2; brush.renderOrder = 10; brush.visible = false; scene.add(brush);
 
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', depthTest: false }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.11, 24), new THREE.MeshBasicMaterial(INVERTING));
     ring.rotation.x = -Math.PI / 2; ring.renderOrder = 10; ring.visible = false; scene.add(ring);
 
     const people = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 12, 8), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.6 }), 4000);
@@ -316,6 +341,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     heat.rotation.x = -Math.PI / 2; heat.position.y = 0.03; heat.visible = false; heat.renderOrder = 2; scene.add(heat);
     const arrows = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#184b68', depthWrite: false }));
     arrows.visible = false; arrows.renderOrder = 3; scene.add(arrows);
+    const reach = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+    reach.rotation.x = -Math.PI / 2; reach.visible = false; reach.renderOrder = 2; scene.add(reach);
     let heatKey = '', lastHeat = -Infinity, lastSample = '';
     let lastHeatSource: ScalarField | PlaybackController | null = null;
 
@@ -379,7 +406,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     const r: Runtime = {
-      camera, controls, renderer, scene, walls, floors, grid, ground, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true, viewedFloor: 0,
+      camera, controls, renderer, scene, walls, floors, grid, ground, reach, library, cube, anchors: new Map(), bounds, dirty: true, geometryChanged: true, viewedFloor: 0,
       cancel() { r.dirty = true; anchor = null; chainStart = null; stroke = null; disposeChildren(preview); if (dim.current) dim.current.hidden = true; },
       frame(view, animate = true) {
         r.cancel();
@@ -444,11 +471,14 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       const y = Math.min(e.clientY - rect.top + 14, rect.height - el.offsetHeight - 8);
       el.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
     };
-    const line = (points: Vec2[], color = '#ffffff') => {
+    /** Drawn over everything. With no colour it inverts what's beneath, so it shows on any floor or background. */
+    const line = (points: Vec2[], color?: string) => {
       const h = workHeight() + 0.06;
-      preview.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => toWorld(p, h))), new THREE.LineBasicMaterial({ color, depthTest: false })));
+      const stroke = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => toWorld(p, h))), new THREE.LineBasicMaterial(color ? { color, depthTest: false } : INVERTING));
+      stroke.renderOrder = 10;
+      preview.add(stroke);
     };
-    const rectangle = (a: Vec2, b: Vec2, color = '#ffffff') => line([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a], color);
+    const rectangle = (a: Vec2, b: Vec2, color?: string) => line([a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }, a], color);
     const nearestWall = (p: Vec2) => {
       const doc = latest.current.doc; if (!doc) return null;
       const vertices = new Map(doc.vertices.map(v => [v.id, v.position]));
@@ -471,6 +501,27 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       return { ...w, offset, width };
     };
 
+    /** The exit under the pointer, within half a metre of its door line. */
+    const exitNear = (p: Vec2) => {
+      const doc = latest.current.doc, floorId = workFloor()?.id;
+      if (!doc) return null;
+      for (const o of doc.openings) {
+        if (o.openingKind !== 'exit' || o.floorId !== floorId) continue;
+        const segment = openingSegment(doc, o);
+        if (segment && projectOnSegment(p, segment.a, segment.b).distance < 0.5) return o.id;
+      }
+      return null;
+    };
+    /** `upright` also accepts the door itself, for tilted views where it stands away from its floor line. */
+    const exitAtPointer = (e: PointerEvent, upright = false) => {
+      if (upright) {
+        const id = pick(e)?.openingId;
+        if (id && latest.current.doc?.openings.find(o => o.id === id)?.openingKind === 'exit') return id;
+      }
+      const at = groundAt(e);
+      return at ? exitNear(at) : null;
+    };
+    const hover = (id: string | null) => { hoverRef.current = id; setHoverExit(id); };
     const painting = () => !latest.current.editing && !!latest.current.paint;
     const onDown = (e: PointerEvent) => {
       r.dirty = true;
@@ -499,6 +550,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         return;
       }
       brush.visible = false;
+      hover(state.editing ? (!down && !spaceHeld && (state.tool === 'select' || state.tool === 'pan') ? exitAtPointer(e) : null)
+        : state.playback && !e.buttons && !transition ? exitAtPointer(e, true) : null);
       if (!state.editing || spaceHeld || state.tool === 'pan') { ring.visible = false; return; }
       const raw = groundAt(e); if (!raw) return;
       const p = snap(raw), tool = state.tool;
@@ -540,7 +593,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           const ux = (o.b.x - o.a.x) / o.length, uy = (o.b.y - o.a.y) / o.length;
           const c = { x: o.a.x + ux * o.offset, y: o.a.y + uy * o.offset };
           const half = o.width / 2, n = { x: -uy * (o.thickness / 2 + 0.08), y: ux * (o.thickness / 2 + 0.08) };
-          line([{ x: c.x - ux * half + n.x, y: c.y - uy * half + n.y }, { x: c.x + ux * half + n.x, y: c.y + uy * half + n.y }, { x: c.x + ux * half - n.x, y: c.y + uy * half - n.y }, { x: c.x - ux * half - n.x, y: c.y - uy * half - n.y }, { x: c.x - ux * half + n.x, y: c.y - uy * half + n.y }], tool === 'exit' ? '#7dffa8' : '#ffffff');
+          line([{ x: c.x - ux * half + n.x, y: c.y - uy * half + n.y }, { x: c.x + ux * half + n.x, y: c.y + uy * half + n.y }, { x: c.x + ux * half - n.x, y: c.y + uy * half - n.y }, { x: c.x - ux * half - n.x, y: c.y - uy * half - n.y }, { x: c.x - ux * half + n.x, y: c.y - uy * half + n.y }], tool === 'exit' ? '#7dffa8' : undefined);
           showDim(e, `${o.width.toFixed(2)} m`);
           ring.visible = false;
         }
@@ -617,7 +670,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       disposeChildren(preview);
       if (dim.current && state.tool !== 'wall') dim.current.hidden = true;
     };
-    const onLeave = () => { r.dirty = true; ring.visible = false; brush.visible = false; };
+    const onLeave = () => { r.dirty = true; ring.visible = false; brush.visible = false; hover(null); };
     const keydown = (e: KeyboardEvent) => {
       if (latest.current.inputBlocked || (e.target as HTMLElement)?.closest?.('input, textarea, select')) return;
       if (e.key === 'Escape') r.cancel();
@@ -641,6 +694,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     const resize = new ResizeObserver(() => {
       r.dirty = true;
       renderer.setSize(node.clientWidth, node.clientHeight);
+      renderer.getDrawingBufferSize(VIEWPORT_PX.value);
       const half = camera.top, aspect = node.clientWidth / Math.max(1, node.clientHeight);
       camera.left = -half * aspect; camera.right = half * aspect; camera.updateProjectionMatrix();
     });
@@ -670,7 +724,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       const cameraChanged = controls.update();
       cube.sync(camera, controls.target);
 
-      // Cross-hatch walls that hide the floor; never in top-down views (D57).
+      // Dither away walls that hide the floor; never in top-down views (D57).
       if (r.geometryChanged || lastEditing !== state.editing || (now - lastHatch > 150 && !hatchOrientation.equals(camera.quaternion))) {
         r.geometryChanged = false;
         lastEditing = state.editing;
@@ -737,13 +791,17 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       // 250 ms, blended in from the previous one over the same 250 ms (D71).
       const heatUniforms = (heat.material as THREE.ShaderMaterial).uniforms;
       const overlay = state.overlay;
-      const crowdHeat = state.layer.family === 'people' && state.layer.people === 'heatmap' ? playback : null;
+      // Hovering an exit in Simulate shows the heatmap of just the people who used it, whatever the layer.
+      const exitFilter = !state.editing && !overlay && playback ? hoverRef.current ?? undefined : undefined;
+      const heatLayer = state.layer.family === 'people' && state.layer.people === 'heatmap';
+      const crowdHeat = heatLayer || exitFilter ? playback : null;
+      const heatField = heatLayer ? state.layer.field : 'people.density', heatStat = heatLayer ? state.layer.stat : 'perCellPeak';
       const source = overlay?.field ?? crowdHeat ?? null;
       const tick = crowdHeat?.state.get().tick ?? 0;
-      const sample = overlay ? 'static' : `${state.floorId},${state.layer.field},${state.layer.stat},${Math.floor(tick / 5)}`;
+      const sample = overlay ? 'static' : `${state.floorId},${heatField},${heatStat},${exitFilter},${Math.floor(tick / 5)}`;
       if ((source !== lastHeatSource || sample !== lastSample) && (source !== lastHeatSource || now - lastHeat >= HEAT_BLEND_MS)) {
         lastSample = sample; lastHeatSource = source;
-        const field = overlay?.field ?? crowdHeat?.field(state.layer.field, state.layer.stat, state.floorId ?? undefined);
+        const field = overlay?.field ?? crowdHeat?.field(heatField, heatStat, state.floorId ?? undefined, exitFilter);
         r.dirty = true;
         heat.visible = !!field;
         arrows.visible = !!overlay?.airflow;
@@ -758,7 +816,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
           heatUniforms.uPrev.value = fresh ? next : current;
           heatUniforms.uNext.value = next;
           heatUniforms.uSize.value.set(g.width, g.height);
-          heatUniforms.uScale.value = overlay?.airflow ? 0.25 : fieldScale(field, !!overlay?.diverging, HEAT_MAX[state.layer.field] ?? 2);
+          heatUniforms.uScale.value = overlay?.airflow ? 0.25 : fieldScale(field, !!overlay?.diverging, HEAT_MAX[heatField] ?? 2);
           heatUniforms.uDiverging.value = overlay?.diverging ? 1 : 0;
           heatUniforms.uAir.value = overlay?.airflow ? 1 : 0;
           lastHeat = fresh ? -Infinity : now;
@@ -802,6 +860,11 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
         screen.set(tag.at.x, tagHeight, -tag.at.y).project(camera);
         el.style.transform = `translate(${(screen.x + 1) / 2 * w}px, ${(1 - screen.y) / 2 * h}px) translate(-50%, -50%)`;
       }
+      for (const exit of latest.current.reach?.exits ?? []) {
+        const el = reachEls.current.get(exit.openingId); if (!el) continue;
+        screen.set(exit.center.x, tagHeight, -exit.center.y).project(camera);
+        el.style.transform = `translate(${(screen.x + 1) / 2 * w}px, ${(1 - screen.y) / 2 * h}px) translate(-50%, -135%)`;
+      }
     };
     raf = requestAnimationFrame(loop);
 
@@ -812,7 +875,8 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       el.removeEventListener('pointerleave', onLeave); el.removeEventListener('contextmenu', noMenu);
       window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', restorePointer);
       disposeChildren(walls); disposeChildren(floors); disposeChildren(preview);
-      for (const m of [ground, shadowCatcher, grid, brush, ring, people, heat, arrows]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
+      reach.material.map?.dispose();
+      for (const m of [ground, shadowCatcher, grid, brush, ring, people, heat, arrows, reach]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); }
       for (const k of ['uPrev', 'uNext']) ((heat.material as THREE.ShaderMaterial).uniforms[k].value as THREE.Texture).dispose();
       library.dispose(); renderer.dispose(); el.remove();
       runtime.current = null; framedProject.current = null;
@@ -865,6 +929,37 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     r.dirty = true;
   }, [props.theme, props.gridStyle, gridElevation, library]);
 
+  // Exit reach: every exit's area tinted, or only the hovered exit's.
+  const focusExit = props.editing ? hoverExit : null;
+  const reachFloor = floorOf(props.doc, props.floorId);
+  const reachShade = reachFloor ? props.reach?.floors[reachFloor.id] : undefined;
+  const reachExits = props.reach?.exits;
+  const showReach = !!props.showReach;
+  const reachElevation = reachFloor?.elevationM ?? 0;
+  useEffect(() => {
+    const r = runtime.current; if (!r) return;
+    r.dirty = true;
+    const focus = focusExit && reachExits ? reachExits.findIndex(e => e.openingId === focusExit) : -1;
+    r.reach.visible = !!reachShade && (showReach || focus >= 0);
+    if (!r.reach.visible || !reachShade) return;
+    const { grid, cells } = reachShade;
+    const pixels = new Uint8Array(cells.length * 4);
+    for (let i = 0; i < cells.length; i++) {
+      const e = cells[i];
+      if (e < 0 || (focus >= 0 && e !== focus)) continue;
+      pixels.set([...REACH_COLORS[e % REACH_COLORS.length], focus >= 0 ? 150 : 105], i * 4);
+    }
+    const texture = new THREE.DataTexture(pixels, grid.width, grid.height, THREE.RGBAFormat);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    r.reach.material.map?.dispose();
+    r.reach.material.map = texture;
+    r.reach.material.needsUpdate = true;
+    r.reach.scale.set(grid.width * grid.cellSizeM, grid.height * grid.cellSizeM, 1);
+    r.reach.position.set(grid.origin.x + grid.width * grid.cellSizeM / 2, reachElevation + 0.034, -(grid.origin.y + grid.height * grid.cellSizeM / 2));
+  }, [reachShade, reachExits, focusExit, showReach, reachElevation, library]);
+  const reachLabels = (reachExits ?? []).filter(e => e.floorId === reachFloor?.id && (showReach || e.openingId === focusExit));
+
   const finishCuts = useMemo(() => slabCutouts(props.doc?.slabs ?? []), [props.doc?.slabs]);
   // ── Geometry ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -902,9 +997,15 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       if (!shown.has(wall.floorId)) continue;
       const g = new THREE.Group(); groups.set(wall.id, g); r.walls.add(g);
     }
+    /** The wall's look with the Wall color setting applied. Only normal walls change: glass stays glass, reinforced stays gray. */
+    const wallSurface = (wall: Wall) => {
+      const m = r.library.material(wall), tint = props.wallColor ?? 'original';
+      if (tint !== 'original' && wall.material === 'normal') m.color.set(WALL_COLORS[tint]);
+      return m;
+    };
     const wallMaterial = (wallId: string) => {
       const wall = byWall.get(wallId)!;
-      return dimmed(style(hatchable(r.library.material(wall)), [wallId]), wall.floorId);
+      return dimmed(style(hatchable(wallSurface(wall)), [wallId]), wall.floorId);
     };
     for (const piece of derived.walls.pieces) {
       const wall = byWall.get(piece.wallId); if (!wall || !groups.has(wall.id)) continue;
@@ -931,7 +1032,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
       groups.get(wall.id)!.add(group);
       const lit = highlight.has(o.id);
       const box = (width: number, height: number, depth: number, x: number, y: number, look: string | null, glass = false) => {
-        const m = look ? new THREE.MeshStandardMaterial({ color: look, roughness: 0.6, transparent: glass, opacity: glass ? 0.35 : 1 }) : r.library.material(wall);
+        const m = look ? new THREE.MeshStandardMaterial({ color: look, roughness: 0.6, transparent: glass, opacity: glass ? 0.35 : 1 }) : wallSurface(wall);
         const mesh = tag(new THREE.Mesh(new THREE.BoxGeometry(width, Math.max(0.005, height), depth), dimmed(style(hatchable(m), lit ? [o.id] : [wall.id, o.id]), wall.floorId)), wall.id, o.id, glass);
         mesh.position.set(x, y, 0); group.add(mesh); return mesh;
       };
@@ -1012,7 +1113,7 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     for (const note of props.notes ?? []) { const at = entityAnchor.get(note.entityId); if (at) anchors.set(note.key, at); }
     r.anchors = anchors;
     if (framedProject.current !== doc.projectId) { framedProject.current = doc.projectId; r.frame(latest.current.editing ? 'top' : 'iso', false); }
-  }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, library, finishCuts]);
+  }, [props.doc, props.selected, props.highlight, props.notes, props.floorId, props.wallColor, library, finishCuts]);
 
   // Geometry above is ready before framing. Acknowledge the camera only after its final frame is drawn.
   useEffect(() => {
@@ -1030,6 +1131,9 @@ const EgressScene = forwardRef<SceneHandle, Props>(function EgressScene(props, r
     <div className="viewcube-host" ref={cubeHost} title={props.editing ? 'Edit is top-down' : 'Drag to orbit · click a face, edge or corner'} />
     <div className="scene-dim" ref={dim} hidden />
     {(props.notes ?? []).map(n => <div key={n.key} className="scene-note" ref={el => { if (el) noteEls.current.set(n.key, el); else noteEls.current.delete(n.key); }}><span>{n.text}</span></div>)}
+    {reachLabels.map(e => <div key={e.openingId} className={`exit-reach-label ${e.slowest ? 'slowest' : ''}`} ref={el => { if (el) reachEls.current.set(e.openingId, el); else reachEls.current.delete(e.openingId); }}>
+      {e.slowest && 'Slowest · '}≈{Math.round(e.people)} people · clears in {clearText(e.clearSeconds)}
+    </div>)}
     {(props.tags ?? []).map(t => <button key={t.key} className={`room-tag ${t.muted ? 'muted' : ''}`} ref={el => { if (el) tagEls.current.set(t.key, el); else tagEls.current.delete(t.key); }}
       onClick={e => { const r = host.current!.getBoundingClientRect(); props.onTag?.(t.key, { x: e.clientX - r.left, y: e.clientY - r.top }); }}>{t.text}</button>)}
   </div>;

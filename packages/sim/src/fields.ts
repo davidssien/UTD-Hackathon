@@ -100,7 +100,7 @@ export class FieldAccumulator {
   }
 
   /** Browser path: derive speeds from the previous frame and add a sample. */
-  addFrame(frame: ActorFrame, previous: ActorFrame | null, floor = 0): void {
+  addFrame(frame: ActorFrame, previous: ActorFrame | null, floor = 0, only?: Uint8Array): void {
     const count = frame.actorFlags.length;
     const xs = new Float64Array(count), ys = new Float64Array(count), speeds = new Float64Array(count);
     const dt = previous ? Math.max(1e-6, (frame.tick - previous.tick) / TICK_RATE_HZ) : 1;
@@ -109,7 +109,7 @@ export class FieldAccumulator {
       ys[i] = frame.actorXY[i * 2 + 1];
       speeds[i] = previous ? Math.hypot(xs[i] - previous.actorXY[i * 2], ys[i] - previous.actorXY[i * 2 + 1]) / dt : FREE_WALK_SPEED;
     }
-    this.addSample(frame.tick, count, xs, ys, speeds, i => (frame.actorFloor?.[i] ?? 0) === floor && frame.actorFlags[i] !== ACTOR_EXITED && frame.actorFlags[i] !== ACTOR_TRANSITIONING);
+    this.addSample(frame.tick, count, xs, ys, speeds, i => (!only || only[i] === 1) && (frame.actorFloor?.[i] ?? 0) === floor && frame.actorFlags[i] !== ACTOR_EXITED && frame.actorFlags[i] !== ACTOR_TRANSITIONING);
   }
 
   field(fieldId: FieldId, aggregation: Aggregation): ScalarField | null {

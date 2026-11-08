@@ -22,7 +22,8 @@ import {
 import { compileFloor, paintWeights, populationCapacity, type WindFrom, type FloorAirflow } from '@egress/sim';
 import twoRooms from '../../content/scenes/two-rooms-corridor.json';
 import { useFloorAirflow } from '@/lib/use-floor-airflow';
-import type { GridStyle, SceneTheme, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
+import { useExitReach } from '@/lib/use-exit-reach';
+import type { GridStyle, SceneTheme, WallColor, HeatOverlay, PaintBrush, PaintStroke, SceneHandle, SceneLayer, SceneNote, SceneTool } from './egress-scene';
 import SketchImporter from './sketch-importer';
 import SavesPage from './saves-page';
 import WindCompass from './wind-compass';
@@ -149,12 +150,13 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
     return next;
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [appearance, setAppearance] = useState<{ theme: SceneTheme; grid: GridStyle }>(() => {
-    const initial = { theme: new URLSearchParams(location.search).get('theme') === 'black' ? 'black' as const : 'blueprint' as const, grid: 'dotted' as const };
+  const [appearance, setAppearance] = useState<{ theme: SceneTheme; grid: GridStyle; wall: WallColor }>(() => {
+    const initial = { theme: new URLSearchParams(location.search).get('theme') === 'black' ? 'black' as const : 'blueprint' as const, grid: 'dotted' as const, wall: 'original' as const };
     try {
       const saved = JSON.parse(localStorage.getItem('egress.appearance') ?? '{}');
-      return { theme: ['blueprint', 'black', 'white'].includes(saved.theme) ? saved.theme : initial.theme,
-        grid: ['dotted', 'lined', 'off'].includes(saved.grid) ? saved.grid : initial.grid };
+      return { theme: ['blueprint', 'black', 'white', 'red'].includes(saved.theme) ? saved.theme : initial.theme,
+        grid: ['dotted', 'lined', 'off'].includes(saved.grid) ? saved.grid : initial.grid,
+        wall: ['original', 'blue', 'white', 'black', 'red'].includes(saved.wall) ? saved.wall : initial.wall };
     } catch { return initial; }
   });
   const { theme } = appearance;
@@ -323,6 +325,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
   }, [mode, distribution, brush, doc, floor, strokes]);
   const sceneDoc = ghost?.doc ?? doc;
   const airflow = useFloorAirflow(screen === 'editor' && layer.family === 'air' ? sceneDoc : null, floor?.id, wind);
+  const [crowd, setCrowd] = useState(150);
+  const reachStrokes = useMemo(() => (distribution === 'painted' ? strokes : []), [distribution, strokes]);
+  const reach = useExitReach(screen === 'editor' && (mode === 'edit' || layer.family === 'reach') ? sceneDoc : null, crowd, reachStrokes);
   const overlay: HeatOverlay | null = layer.family === 'air' ? (airflow?.flow ? { field: airflow.flow.magnitude, diverging: false, airflow: airflow.flow } : null)
     : paintField ? { field: paintField, diverging: false }
     : mode === 'analysis' && diffMap && comparison?.congestionDiff ? { field: comparison.congestionDiff, diverging: true } : null;
@@ -404,7 +409,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       if (!target.closest('.layers-panel, .hud-button')) setLayersOpen(false);
     }}>
     <div className="editor-surface" inert={screen === 'saves'}>
-    <Scene ref={scene} theme={theme} gridStyle={appearance.grid} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
+    <Scene ref={scene} theme={theme} wallColor={appearance.wall} gridStyle={appearance.grid} doc={sceneDoc} editing={mode === 'edit'} tool={editable || tool === 'pan' ? tool : 'select'} wallType={wallType} selected={selected}
       floorId={floor?.id ?? null} slabMaterial={slabType} paint={mode === 'simulate' ? brush : null} onPaint={paintStroke}
       placeItem={placeItem} placeRotation={placeRotation}
       inputBlocked={screen === 'saves' || !!entry}
@@ -415,7 +420,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         else setEntry(null);
       }}
       onEntryError={message => { setEntry(null); setScreen('saves'); setError(message); }}
-      highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay}
+      highlight={highlight} notes={notes} playback={mode === 'edit' ? null : playback} layer={layer} overlay={overlay} reach={reach} showReach={layer.family === 'reach'}
       onSelect={setSelected} onEdit={edit}
       tags={tags} onTag={(hash, at) => { if (canEdit) setTagMenu({ hash, ...at }); }}
       onContext={(at, hit) => {
@@ -457,7 +462,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         </div>}
         <button className={`hud-button ${layersOpen ? 'on' : ''}`} onClick={() => { setLayersOpen(v => !v); setExportOpen(false); }} aria-expanded={layersOpen}><Square3Stack3DIcon />Layers<ChevronDownIcon className="caret" /></button>
       </div>
-      {layersOpen && <LayersPanel layer={layer} onChange={setLayer} wind={wind} onWind={setWind} flow={airflow?.flow} error={airflow?.error} />}
+      {layersOpen && <LayersPanel layer={layer} onChange={setLayer} wind={wind} onWind={setWind} flow={airflow?.flow} error={airflow?.error} crowd={crowd} />}
       {showPane && <aside className="pane" aria-label="Details" aria-hidden={paneCollapsed} inert={paneCollapsed}>
         <button className="pane-collapse" aria-label="Collapse panel" data-tip="Collapse" data-tip-side="left" onClick={() => setPaneCollapsed(true)}><ChevronRightIcon /></button>
         {mode === 'edit' && wall && <WallInspector wall={wall} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [wall.id] }]); setSelected(null); }} doc={doc!} />}
@@ -465,7 +470,7 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
         {mode === 'edit' && slab && <SlabInspector slab={slab} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [slab.id] }]); setSelected(null); }} />}
         {mode === 'edit' && placeable && <PlaceableInspector placeable={placeable} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [placeable.id] }]); setSelected(null); }} />}
         {mode === 'edit' && stair && doc && <StairInspector stair={stair} doc={doc} canEdit={editable} onEdit={edit} onDelete={() => { edit([{ kind: 'deleteEntities', ids: [stair.id] }]); setSelected(null); }} />}
-        {mode === 'simulate' && <SimulatePane doc={doc} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }}
+        {mode === 'simulate' && <SimulatePane requested={crowd} setPeople={setCrowd} doc={doc} playback={playback} running={running} runFailed={activeRun?.status === 'failed' ? activeRun.error?.message ?? 'Run failed' : null} runnerOnline={runner.online || backend === 'mock'} onRun={startRun} onStop={() => { if (activeRunId) void client.cancelRun(activeRunId).catch(fail); }}
           distribution={distribution} onDistribution={d => { setDistribution(d); setBrush(d === 'painted' ? { radiusM: 2, mode: 'increase' } : null); }}
           brush={brush} onBrush={setBrush} strokes={strokes} onClearStrokes={() => setStrokes([])} onUndoStroke={() => setStrokes(list => list.slice(0, -1))} upperFloors={upperContent}
           canRun={canEdit} />}
@@ -496,7 +501,9 @@ function Studio({ client, backend, bootError }: { client: EgressClient; backend:
       <button className="icon-button settings-toggle" aria-label="Workspace settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(v => !v)}><Cog6ToothIcon /></button>
       {settingsOpen && <div className="menu settings-panel" aria-label="Workspace settings">
         <div className="menu-label">Background color</div>
-        <Segmented value={theme} options={[{ id: 'blueprint', name: 'Blue' }, { id: 'white', name: 'White' }, { id: 'black', name: 'Black' }]} onChange={theme => changeAppearance({ ...appearance, theme })} />
+        <Segmented value={theme} options={[{ id: 'blueprint', name: 'Blue' }, { id: 'white', name: 'White' }, { id: 'black', name: 'Black' }, { id: 'red', name: 'Red' }]} onChange={theme => changeAppearance({ ...appearance, theme })} />
+        <div className="menu-label">Wall color</div>
+        <Segmented value={appearance.wall} options={[{ id: 'original', name: 'Original' }, { id: 'blue', name: 'Blue' }, { id: 'white', name: 'White' }, { id: 'black', name: 'Black' }, { id: 'red', name: 'Red' }]} onChange={wall => changeAppearance({ ...appearance, wall })} />
         <div className="menu-label">Grid</div>
         <Segmented value={appearance.grid} options={[{ id: 'lined', name: 'Lined' }, { id: 'dotted', name: 'Dotted' }, { id: 'off', name: 'Off' }]} onChange={grid => changeAppearance({ ...appearance, grid })} />
       </div>}
@@ -600,15 +607,16 @@ function Segmented<T extends string>({ value, options, onChange, disabled }: { v
   return <div className="segmented">{options.map(o => <button key={o.id} aria-pressed={value === o.id} disabled={disabled || o.disabled} onClick={() => onChange(o.id)}>{o.name}</button>)}</div>;
 }
 
-function LayersPanel({ layer, onChange, wind, onWind, flow, error }: {
-  layer: SceneLayer; onChange(l: SceneLayer): void; wind: number; onWind(v: number): void; flow?: FloorAirflow; error?: string;
+function LayersPanel({ layer, onChange, wind, onWind, flow, error, crowd }: {
+  layer: SceneLayer; onChange(l: SceneLayer): void; wind: number; onWind(v: number): void; flow?: FloorAirflow; error?: string; crowd: number;
 }) {
   return <div className="layers-panel" aria-label="Layers">
     <div className="menu-label">Layer</div>
     <button aria-pressed={layer.family === 'people'} onClick={() => onChange({ ...layer, family: 'people' })}>People{layer.family === 'people' && <CheckIcon />}</button>
     <button aria-pressed={layer.family === 'air'} onClick={() => onChange({ ...layer, family: 'air' })}>Airflow{layer.family === 'air' && <CheckIcon />}</button>
+    <button aria-pressed={layer.family === 'reach'} onClick={() => onChange({ ...layer, family: 'reach' })}>Exit reach{layer.family === 'reach' && <CheckIcon />}</button>
     <hr />
-    {layer.family === 'air' ? <>
+    {layer.family === 'reach' ? <p className="air-readout">Shaded by the exit each area walks to, for a crowd of {crowd}. Labels are estimates from door width; a run measures the real result.</p> : layer.family === 'air' ? <>
       <div className="menu-label">Wind</div>
       <WindCompass value={wind} onChange={onWind} />
       {(error || !flow || flow.peak < 1e-6) && <p className="air-readout" role="status">{error ?? (!flow ? 'Calculating airflow…' : 'No through-flow under this wind. Open exterior windows or doors on different sides.')}</p>}
@@ -700,13 +708,14 @@ function FloorPanel({ floor, count, canEdit, onEdit, onDelete, onClose }: {
 
 // ── Simulate ────────────────────────────────────────────────────────────────
 
-function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun }: {
+function SimulatePane({ doc, playback, running, runFailed, runnerOnline, onRun, onStop, distribution, onDistribution, brush, onBrush, strokes, onClearStrokes, onUndoStroke, upperFloors, canRun, requested, setPeople }: {
+  requested: number; setPeople(people: number): void;
   doc: EgressDocument | null; playback: PlaybackController | null; running: boolean; runFailed: string | null; runnerOnline: boolean; canRun: boolean;
   onRun(people: number, seed: number): void; onStop(): void;
   distribution: 'uniform' | 'painted'; onDistribution(d: 'uniform' | 'painted'): void;
   brush: PaintBrush | null; onBrush(b: PaintBrush | null): void; strokes: PopulationBrushStroke[]; onClearStrokes(): void; onUndoStroke(): void; upperFloors: boolean;
 }) {
-  const [requested, setPeople] = useState(150), [seed, setSeed] = useState(1);
+  const [seed, setSeed] = useState(1);
   const capacity = useMemo(() => doc ? populationCapacity(doc, { count: 2000, seed, distribution, strokes }) : 0,
     [doc, seed, distribution, strokes]);
   const people = Math.min(requested, capacity);
