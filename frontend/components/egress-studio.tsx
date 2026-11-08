@@ -16,7 +16,7 @@ import {
 import { createMockClient, createSpacetimeClient, type AgentStep, type EgressClient, type PlaybackController, type ProposalView, type RunComparison } from '@egress/client';
 import { useEgress } from '@egress/client/react';
 import {
-  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, PLACEABLES, type Placeable, type PlaceableItem, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
+  describeRooms, floorsByLevel, LOCKED_MESSAGE, locksEditing, PLACEABLES, VERDICT_TAGLINE, type Placeable, type PlaceableItem, parseDocument, roomFacts, signedArea, type EditCommand, type PresenceMode, type EgressDocument, type Floor, type Opening, type PopulationBrushStroke,
   type Role, type RoomKind, type ScalarField, type SimulationMetrics, type Slab, type SlabMaterial, type Stair, type Wall, type WallMaterial,
 } from '@egress/core';
 import { compileFloor, paintWeights, populationCapacity, type WindFrom, type FloorAirflow } from '@egress/sim';
@@ -793,7 +793,10 @@ function RunReadout({ playback, doc }: { playback: PlaybackController; doc: Egre
   if (m?.unreachablePeople) rows.push(['Cannot reach an exit', String(m.unreachablePeople)]);
   if (m?.exitSwitches !== undefined) rows.push(['Exit changes', m.exitReversals ? `${m.exitSwitches} (${m.exitReversals} back)` : String(m.exitSwitches)]);
   return <section className="readout">
-    <div className={`run-state ${m?.complete ? 'done' : 'live'}`}>{endText(m)}</div>
+    {m?.complete && m.verdict
+      ? <><div className={`run-state done verdict-${m.verdict.grade}`}>{VERDICT_TAGLINE[m.verdict.grade]}</div>
+        <p className="verdict-reason">{m.verdict.reason}{m.verdict.source === 'nemotron' ? ' · graded by Nemotron' : ''}</p></>
+      : <div className={`run-state ${m?.complete ? 'done' : 'live'}`}>{endText(m)}</div>}
     <dl>{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
   </section>;
 }

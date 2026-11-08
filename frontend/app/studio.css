@@ -108,6 +108,10 @@
 .run-state{font-weight:650;margin-bottom:4px;display:flex;align-items:center;gap:6px}
 .run-state.live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--bad);animation:blink 1s infinite}
 .run-state.done::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--good)}
+.run-state.verdict-great,.run-state.verdict-good{color:var(--good)}
+.run-state.verdict-poor{color:var(--warn)}.run-state.verdict-poor::before{background:var(--warn)}
+.run-state.verdict-bad{color:var(--bad)}.run-state.verdict-bad::before{background:var(--bad)}
+.verdict-reason{margin:-2px 0 6px;color:var(--muted);font-size:11.5px}
 .readout dl,.delta{margin:0}
 .readout dl>div,.delta>div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--chrome-2)}
 .readout dt,.delta dt{color:var(--muted)}

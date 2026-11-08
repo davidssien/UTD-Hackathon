@@ -4,7 +4,7 @@
  * generated bindings (reducers + runner views) to this interface.
  */
 import {
-  canonicalJson, DomainError, encodeChunk, encodeFieldBundle, FIELDS_ENCODING, frameEncoding, parseDocumentJson, parseScenarioJson,
+  canonicalJson, DomainError, encodeChunk, encodeFieldBundle, FIELDS_ENCODING, frameEncoding, parseDocumentJson, parseScenarioJson, ruleVerdict,
   TICK_RATE_HZ, type AgentContext, type AgentStepKind, type EditCommand, type EgressDocument, type ID, type Pace, type ProposalNotes,
   type SimulationMetrics,
 } from '@egress/core';
@@ -71,7 +71,11 @@ export interface RunOutcome {
 export async function processRun(
   backend: RunnerBackend,
   run: QueuedRun,
-  options: { clock?: Clock; log?: (line: string) => void; claim?: boolean; streamChunks?: boolean; initialActors?: InitialActors; document?: EgressDocument } = {},
+  options: {
+    clock?: Clock; log?: (line: string) => void; claim?: boolean; streamChunks?: boolean; initialActors?: InitialActors; document?: EgressDocument;
+    /** User runs: grade the finished run. The rule grade is published at once; a model grade replaces it when it arrives. */
+    judge?: (document: EgressDocument, metrics: SimulationMetrics) => Promise<NonNullable<SimulationMetrics['verdict']>>;
+  } = {},
 ): Promise<RunOutcome> {
   const clock = options.clock ?? systemClock;
   const log = options.log ?? (() => {});
@@ -128,7 +132,17 @@ export async function processRun(
         'people.density/perCellPeak': fields.field('people.density', 'perCellPeak')!.values,
       },
     });
-    await backend.publishResult(run.runId, canonicalJson(outcome.metrics), bundle, canonicalJson({ ...state.compiled.grid, encoding: FIELDS_ENCODING }));
+    const grid = canonicalJson({ ...state.compiled.grid, encoding: FIELDS_ENCODING });
+    if (options.judge && outcome.metrics) outcome.metrics = { ...outcome.metrics, verdict: { ...ruleVerdict(outcome.metrics), source: 'rules' } };
+    await backend.publishResult(run.runId, canonicalJson(outcome.metrics), bundle, grid);
+    if (options.judge && outcome.metrics) {
+      const verdict = await options.judge(document, outcome.metrics);
+      if (verdict.source !== 'rules') {
+        outcome.metrics = { ...outcome.metrics, verdict };
+        await backend.publishResult(run.runId, canonicalJson(outcome.metrics), bundle, grid);
+      }
+      log(`[run ${run.runId}] verdict ${verdict.grade} (${verdict.source}): ${verdict.reason}`);
+    }
     log(`[run ${run.runId}] ${state.n} people, ${outcome.chunks} chunks, ${(outcome.bytes / 1024).toFixed(0)} KB, ` +
       `${(outcome.computeMs / Math.max(1, state.tick)).toFixed(2)} ms/tick, evacuated ${outcome.metrics?.evacuatedPeople}/${state.n}`);
     return outcome;

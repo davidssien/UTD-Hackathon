@@ -283,6 +283,8 @@ export const SimulationMetricsSchema = z.object({
   /** Exit choice v0.2: total exit switches, and switches back to an exit the person had left (A→B→A). */
   exitSwitches: z.number().int().nonnegative().optional(),
   exitReversals: z.number().int().nonnegative().optional(),
+  /** A finished user run's grade: chosen by Nemotron from building facts and these measures, or by the rules. */
+  verdict: z.object({ grade: z.enum(['great', 'good', 'poor', 'bad']), reason: z.string().max(300), source: z.enum(['nemotron', 'rules']) }).optional(),
 });
 
 // ── Agent ───────────────────────────────────────────────────────────────────

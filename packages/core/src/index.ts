@@ -15,6 +15,7 @@ export * from './parse.ts';
 export * from './random.ts';
 export * from './live.ts';
 export * from './placeables.ts';
+export * from './verdict.ts';
 export * from './derive/index.ts';
 export * from './codec/fields.ts';
 export * from './compare.ts';

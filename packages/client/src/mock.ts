@@ -5,7 +5,7 @@
  * the runner (one 2 s chunk every 2 s ÷ pace) so the LIVE edge behaves the same.
  */
 import {
-  applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, LOCKED_MESSAGE, locksEditing, metricsDelta,
+  applyEdit, DomainError, emptyDocument, fieldDifference, layoutHash, LOCKED_MESSAGE, locksEditing, metricsDelta, ruleVerdict,
   ruleLabels, type PresenceMode, type AgentContext, type EditCommand, type EgressDocument, type ID, type Pace, type Role, type RoomFacts, type RoomKind, type RoomLabel, type SimulationScenario,
 } from '@egress/core';
 import { initialize, simulateChunks, type RunChunk, type SimState } from '@egress/sim';
@@ -324,6 +324,8 @@ class MockEgressClient implements EgressClient {
       const { value: chunk, done } = chunks.next();
       if (done || !chunk) return;
       playback.pushFrames(chunk.frames);
+      // The in-browser mock has no model key, so a finished run is graded by the rules.
+      if (chunk.last) chunk.metrics = { ...chunk.metrics, verdict: { ...ruleVerdict(chunk.metrics), source: 'rules' } };
       playback.setMetrics(chunk.metrics);
       update({ progressTick: chunk.frames[chunk.frames.length - 1].tick, status: chunk.last ? 'complete' : 'running' });
       if (chunk.last) {

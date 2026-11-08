@@ -10,6 +10,7 @@ import type { Pace } from '@egress/core';
 import { config, loadToken, saveToken } from './config.ts';
 import { processAgentJob, processRun } from './jobs.ts';
 import { processLabelRequest } from './labels.ts';
+import { judgeRun } from './verdict.ts';
 import { hasNemotronKey, nemotronChatFn } from './llm.ts';
 import { connect, SpacetimeBackend } from './spacetime.ts';
 
@@ -47,7 +48,7 @@ export async function startRunner(options: { uri?: string; db?: string; token?: 
     for (const run of conn.db.runnerQueue.iter()) {
       if (run.status !== 'queued' || busy.has(run.id) || run.agentJobId) continue;
       busy.add(run.id);
-      void processRun(backend, { runId: run.id, layoutHash: run.layoutHash, scenarioJson: run.scenario, pace: run.pace as Pace }, { log })
+      void processRun(backend, { runId: run.id, layoutHash: run.layoutHash, scenarioJson: run.scenario, pace: run.pace as Pace }, { log, judge: (doc, metrics) => judgeRun(doc, metrics, log) })
         .then(outcome => {
           if (outcome.state && outcome.metrics) {
             backend.records.set(run.id, {
